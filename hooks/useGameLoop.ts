@@ -148,11 +148,13 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const cy = canvas.clientHeight / 2;
       useArenaStore.getState().centerPlayer(canvas.clientWidth, canvas.clientHeight);
 
+      const stats = game.getEffectiveStats();
+
       const player = new Player(
         cx,
         cy,
         arena.currentHp,
-        game.getMaxHp(),
+        stats.maxHp,
         PLAYER_RADIUS,
       );
 
@@ -174,11 +176,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const combat = runCombatSystem({
         player,
         enemies,
-        arms: game.arms,
+        arms: stats.arms,
         armTier: game.armTier,
-        baseDamage: game.getBaseDamage(),
-        baseRange: game.getAttackRange(),
-        baseAttackSpeed: game.getAttackCooldown(),
+        baseDamage: stats.damage,
+        baseRange: stats.attackRange,
+        baseAttackSpeed: stats.attackCooldownMs,
         matchBuffs: arena.matchBuffs,
         lastAttackTime: arena.lastAttackTime,
         lastPunchSide: arena.lastPunchSide,

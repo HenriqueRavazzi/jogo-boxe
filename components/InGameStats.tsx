@@ -13,26 +13,36 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const gameSpeed = useArenaStore((s) => s.gameSpeed);
   const toggleGameSpeed = useArenaStore((s) => s.toggleGameSpeed);
 
-  const arms = useGameStore((s) => s.arms);
+  // Dependências dos derived stats (ouro + skills) — força re-render quando mudam
+  const skillTree = useGameStore((s) => s.skillTree);
+  const maxHpLevel = useGameStore((s) => s.maxHpLevel);
+  const baseDamage = useGameStore((s) => s.baseDamage);
+  const attackSpeedLevel = useGameStore((s) => s.attackSpeedLevel);
+  const rangeLevel = useGameStore((s) => s.rangeLevel);
+  const xpBonusLevel = useGameStore((s) => s.xpBonusLevel);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
-  const getMaxHp = useGameStore((s) => s.getMaxHp);
-  const getBaseDamage = useGameStore((s) => s.getBaseDamage);
-  const getAttackRange = useGameStore((s) => s.getAttackRange);
-  const getAttackCooldown = useGameStore((s) => s.getAttackCooldown);
+  const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
 
-  const maxHp = getMaxHp();
-  const damage = Math.round(getBaseDamage() * matchBuffs.damageMultiplier);
-  const range = Math.round(getAttackRange() * matchBuffs.attackRange);
-  const cooldown = Math.round(
-    getAttackCooldown() / matchBuffs.attackSpeed,
-  );
+  void skillTree;
+  void maxHpLevel;
+  void baseDamage;
+  void attackSpeedLevel;
+  void rangeLevel;
+  void xpBonusLevel;
+
+  const stats = getEffectiveStats();
+  const damage = Math.round(stats.damage * matchBuffs.damageMultiplier);
+  const range = Math.round(stats.attackRange * matchBuffs.attackRange);
+  const cooldown = Math.round(stats.attackCooldownMs / matchBuffs.attackSpeed);
+  const xpPct = Math.round((stats.xpMultiplier - 1) * 100);
 
   const rows: { label: string; value: string }[] = [
-    { label: "HP", value: `${currentHp}/${maxHp}` },
+    { label: "HP", value: `${currentHp}/${stats.maxHp}` },
     { label: "Dano", value: String(damage) },
-    { label: "Braços", value: String(arms) },
+    { label: "Braços", value: String(stats.arms) },
     { label: "Velocidade", value: `${cooldown}ms` },
     { label: "Alcance", value: String(range) },
+    { label: "XP", value: xpPct > 0 ? `+${xpPct}%` : "0%" },
     { label: "Nível", value: String(matchLevel) },
     { label: "Renda", value: incomeMultiplier.toFixed(1) },
     { label: "Tempo", value: `${Math.floor(timeAlive)}s` },

@@ -16,7 +16,7 @@ export function GameCanvas() {
     const parent = canvas.parentElement;
     const w = parent?.clientWidth ?? window.innerWidth;
     const h = parent?.clientHeight ?? window.innerHeight;
-    const maxHp = useGameStore.getState().getMaxHp();
+    const maxHp = useGameStore.getState().getEffectiveStats().maxHp;
     useArenaStore.getState().resetArena(maxHp, w / 2, h / 2);
   }, []);
 

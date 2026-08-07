@@ -211,14 +211,14 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   runStats: { ...EMPTY_RUN_STATS },
 
   startGame: () => {
-    const maxHp = useGameStore.getState().getMaxHp();
+    const stats = useGameStore.getState().getEffectiveStats();
     const { playerX, playerY } = get();
     const w = typeof window !== "undefined" ? window.innerWidth : 800;
     const h = typeof window !== "undefined" ? window.innerHeight : 600;
 
     set({
       gameState: "playing",
-      currentHp: maxHp,
+      currentHp: stats.maxHp,
       enemies: [],
       drops: [],
       lastAttackTime: 0,
@@ -271,7 +271,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       levelUpOptions: [],
       gameSpeed: 1,
       runStats: { ...EMPTY_RUN_STATS },
-      currentHp: useGameStore.getState().getMaxHp(),
+      currentHp: useGameStore.getState().getEffectiveStats().maxHp,
     }),
 
   toggleGameSpeed: () =>
@@ -316,8 +316,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       return;
     }
 
-    const { xpBonusLevel } = useGameStore.getState();
-    const finalXp = Math.round(baseAmount * (1 + xpBonusLevel * 0.1));
+    const finalXp = Math.round(
+      baseAmount * useGameStore.getState().getEffectiveStats().xpMultiplier,
+    );
 
     // Durante level_up, só acumula XP sem subir de novo
     if (state.gameState === "level_up") {

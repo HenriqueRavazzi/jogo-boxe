@@ -17,6 +17,22 @@ export {
 } from "@/src/game/entities/Player";
 export type { ArmDistribution, ArmSide } from "@/src/game/entities/Player";
 
+/** Stats finais = upgrades de ouro + bônus da árvore de skills. */
+export type EffectiveStats = {
+  maxHp: number;
+  damage: number;
+  attackRange: number;
+  attackCooldownMs: number;
+  xpMultiplier: number;
+  arms: number;
+  skillBonus: {
+    hp: number;
+    damage: number;
+    range: number;
+    cooldownReductionMs: number;
+  };
+};
+
 /** Estado persistente — espelha o JSONB `save_data` no banco (por slot). */
 export type GameStoreState = {
   activeSlotId: SaveSlotId | null;
@@ -60,6 +76,8 @@ export type GameStoreState = {
   getArmsUpgradeCost: () => number;
   getXpBonusUpgradeCost: () => number;
   getXpMultiplier: () => number;
+  /** Atributos finais (ouro + skills) usados na partida e na UI. */
+  getEffectiveStats: () => EffectiveStats;
   getMaxHp: () => number;
   getBaseDamage: () => number;
   getAttackRange: () => number;
@@ -229,15 +247,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   addGems: (amount) => set((s) => ({ gems: s.gems + amount })),
 
-  /** Skills custam diamantes (gems), não ouro. */
+  /** Skills custam diamantes (gems), não ouro. Só altera gems + skillTree. */
   unlockSkill: (nodeId, cost) => {
-    const { skillTree, gems } = get();
-    if (!canUnlockSkill(skillTree, nodeId, gems)) return false;
-    if (cost > gems) return false;
+    const current = get();
+    if (!canUnlockSkill(current.skillTree, nodeId, current.gems)) return false;
+    if (cost > current.gems) return false;
 
-    set((s) => ({
-      gems: s.gems - cost,
-      skillTree: { ...s.skillTree, [nodeId]: true },
+    set((state) => ({
+      gems: state.gems - cost,
+      skillTree: { ...state.skillTree, [nodeId]: true },
     }));
     return true;
   },
@@ -263,34 +281,49 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getXpMultiplier: () => xpMultiplierAt(get().xpBonusLevel),
 
-  getMaxHp: () =>
-    HP_BASE +
-    (get().maxHpLevel - 1) * HP_PER_LEVEL +
-    skillHpBonus(get().skillTree),
+  /**
+   * Derived state: upgrades de ouro + bônus da skill tree.
+   * Fonte única para partida, HUD e painéis.
+   */
+  getEffectiveStats: () => {
+    const s = get();
+    const tree = s.skillTree;
+    const skillHp = skillHpBonus(tree);
+    const skillDmg = skillDamageBonus(tree);
+    const skillRange = skillRangeBonus(tree);
+    const skillCd = skillCooldownReduction(tree);
 
-  /** Dano absoluto: baseDamage persistido + bônus da skill tree. */
-  getBaseDamage: () =>
-    Math.round(get().baseDamage + skillDamageBonus(get().skillTree)),
+    const goldHp = HP_BASE + (s.maxHpLevel - 1) * HP_PER_LEVEL;
+    const goldRange = rangeAtLevel(s.rangeLevel);
+    const goldCooldown = cooldownAtLevel(s.attackSpeedLevel);
+
+    return {
+      maxHp: Math.round(goldHp + skillHp),
+      damage: Math.round(s.baseDamage + skillDmg),
+      attackRange: Math.round(goldRange + skillRange),
+      attackCooldownMs: Math.max(50, Math.round(goldCooldown - skillCd)),
+      xpMultiplier: xpMultiplierAt(s.xpBonusLevel),
+      arms: s.arms,
+      skillBonus: {
+        hp: skillHp,
+        damage: skillDmg,
+        range: skillRange,
+        cooldownReductionMs: skillCd,
+      },
+    };
+  },
+
+  getMaxHp: () => get().getEffectiveStats().maxHp,
+
+  getBaseDamage: () => get().getEffectiveStats().damage,
 
   getUpgradeCooldownAt: (level) => cooldownAtLevel(level),
 
   getUpgradeRangeAt: (level) => rangeAtLevel(level),
 
-  /** Range absoluto já arredondado — combate consome direto, sem % no frame. */
-  getAttackRange: () =>
-    Math.round(
-      rangeAtLevel(get().rangeLevel) + skillRangeBonus(get().skillTree),
-    ),
+  getAttackRange: () => get().getEffectiveStats().attackRange,
 
-  /** Cooldown absoluto (ms) já arredondado — combate consome direto. */
-  getAttackCooldown: () =>
-    Math.max(
-      50,
-      Math.round(
-        cooldownAtLevel(get().attackSpeedLevel) -
-          skillCooldownReduction(get().skillTree),
-      ),
-    ),
+  getAttackCooldown: () => get().getEffectiveStats().attackCooldownMs,
 
   upgradeHP: () => {
     const cost = get().getHpUpgradeCost();
@@ -373,13 +406,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return true;
   },
 
-  /** Compra nível de bônus de XP com diamantes. */
+  /** Compra nível de bônus de XP com diamantes (só gems + xpBonusLevel). */
   upgradeXpBonus: () => {
     const cost = get().getXpBonusUpgradeCost();
     if (get().gems < cost) return false;
-    set((s) => ({
-      gems: s.gems - cost,
-      xpBonusLevel: s.xpBonusLevel + 1,
+    set((state) => ({
+      gems: state.gems - cost,
+      xpBonusLevel: state.xpBonusLevel + 1,
     }));
     return true;
   },

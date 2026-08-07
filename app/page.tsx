@@ -73,15 +73,17 @@ export default function Home() {
         <InGameStats onExitMatch={() => void handleExitMatch()} />
       )}
 
-      {/* Menu principal (não no game over) */}
-      {gameState === "menu" && !showTalents && (
+      {/* Menu principal (não no game over) — permanece montado sob a skill tree */}
+      {gameState === "menu" && (
         <MainMenu
           canPlay={canPlay}
           isGameOver={false}
           onStart={() => {
             void syncWithDB().finally(() => startGame());
           }}
-          onOpenTalents={() => setShowTalents(true)}
+          onOpenTalents={() => {
+            void syncWithDB().finally(() => setShowTalents(true));
+          }}
           onSlotReady={() => setSlotReady(true)}
         />
       )}

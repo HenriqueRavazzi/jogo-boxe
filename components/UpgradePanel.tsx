@@ -10,6 +10,7 @@ import {
   Swords,
 } from "lucide-react";
 import { MAX_STAT_LEVEL, useGameStore } from "@/store/useGameStore";
+import { syncWithDB } from "@/lib/syncWithDB";
 
 /** Painel de upgrades com ouro. */
 export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
@@ -188,7 +189,10 @@ function UpgradeCard({
       <button
         type="button"
         disabled={!canAfford}
-        onClick={() => onUpgrade()}
+        onClick={() => {
+          const ok = onUpgrade();
+          if (ok) void syncWithDB();
+        }}
         className="shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
       >
         Upgrade
