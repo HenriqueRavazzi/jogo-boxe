@@ -30,6 +30,12 @@ export type SpawnerInput = {
   hasBossAlive: boolean;
   spawnAccumulatorMs: number;
   dt: number;
+  /** Multiplicadores da dificuldade selecionada no menu. */
+  difficulty?: {
+    enemyHpMultiplier: number;
+    enemyDamageMultiplier: number;
+    enemySpeedMultiplier: number;
+  };
 };
 
 export type SpawnerResult = {
@@ -57,16 +63,39 @@ export function getEnemyMaxHpAtTime(
   return Math.round(baseEnemyHp * Math.pow(ENEMY_HP_GROWTH_PER_CYCLE, cycles));
 }
 
-export function getScaledEnemyStats(timeAlive: number, matchLevel: number) {
-  const currentEnemyMaxHp = getEnemyMaxHpAtTime(timeAlive);
+export function getScaledEnemyStats(
+  timeAlive: number,
+  matchLevel: number,
+  difficulty?: {
+    enemyHpMultiplier: number;
+    enemyDamageMultiplier: number;
+    enemySpeedMultiplier: number;
+  },
+) {
+  const hpMul = difficulty?.enemyHpMultiplier ?? 1;
+  const dmgMul = difficulty?.enemyDamageMultiplier ?? 1;
+  const spdMul = difficulty?.enemySpeedMultiplier ?? 1;
+
+  const currentEnemyMaxHp = Math.max(
+    1,
+    Math.round(getEnemyMaxHpAtTime(timeAlive) * hpMul),
+  );
   return {
     hp: currentEnemyMaxHp,
     maxHp: currentEnemyMaxHp,
     speed: Math.min(
-      140,
-      BASE_SPEED * (1 + timeAlive / 90) * (1 + (matchLevel - 1) * 0.05),
+      140 * Math.max(1, spdMul),
+      BASE_SPEED *
+        (1 + timeAlive / 90) *
+        (1 + (matchLevel - 1) * 0.05) *
+        spdMul,
     ),
-    contactDamage: Math.floor(BASE_CONTACT_DAMAGE * (1 + timeAlive / 75)),
+    contactDamage: Math.max(
+      1,
+      Math.floor(
+        BASE_CONTACT_DAMAGE * (1 + timeAlive / 75) * dmgMul,
+      ),
+    ),
   };
 }
 
@@ -95,6 +124,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     currentEnemyCount,
     hasBossAlive,
     dt,
+    difficulty,
   } = input;
 
   let bossesSpawned = input.bossesSpawned;
@@ -107,7 +137,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
 
   // Momento de boss: pausa normal e spawna 1 boss por ciclo
   if (expectedBosses > bossesSpawned && !hasBossAlive && count < MAX_ENEMIES) {
-    const stats = getScaledEnemyStats(timeAlive, matchLevel);
+    const stats = getScaledEnemyStats(timeAlive, matchLevel, difficulty);
     const boss = Enemy.spawnAtEdge(canvasWidth, canvasHeight, {
       hp: stats.hp,
       speed: stats.speed,
@@ -129,7 +159,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
 
   while (spawnAccumulatorMs >= spawnIntervalMs && count < MAX_ENEMIES) {
     spawnAccumulatorMs -= spawnIntervalMs;
-    const stats = getScaledEnemyStats(timeAlive, matchLevel);
+    const stats = getScaledEnemyStats(timeAlive, matchLevel, difficulty);
     const type = rollRegularType();
     const enemy = Enemy.spawnAtEdge(canvasWidth, canvasHeight, {
       hp: stats.hp,

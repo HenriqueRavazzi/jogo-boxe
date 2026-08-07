@@ -38,6 +38,8 @@ export type LootSystemInput = {
   playerRadius: number;
   dt: number;
   now?: number;
+  /** Multiplicador de ouro da dificuldade (ex.: Infernal 3×). */
+  goldDropMultiplier?: number;
 };
 
 export type LootSystemResult = {
@@ -57,11 +59,16 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
     playerRadius,
     dt,
     now = Date.now(),
+    goldDropMultiplier = 1,
   } = input;
 
   let collectedGold = 0;
   let collectedDiamonds = 0;
   const remaining: Drop[] = [];
+  const goldValue = Math.max(
+    1,
+    Math.round(GOLD_DROP_VALUE * goldDropMultiplier),
+  );
 
   for (const drop of drops) {
     const age = now - drop.spawnTime;
@@ -79,7 +86,7 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
     const distToPlayer = Math.hypot(playerX - x, playerY - y);
     if (distToPlayer < playerRadius) {
       if (drop.type === "gold") {
-        collectedGold += GOLD_DROP_VALUE;
+        collectedGold += goldValue;
       } else {
         collectedDiamonds += 1;
       }

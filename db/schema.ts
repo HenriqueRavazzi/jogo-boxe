@@ -1,4 +1,13 @@
-import { jsonb, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import {
+  integer,
+  jsonb,
+  pgTable,
+  real,
+  serial,
+  timestamp,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 
 import type { SkillTreeState } from "@/lib/skillTree";
 
@@ -34,4 +43,27 @@ export const gameSaves = pgTable("game_saves", {
     .defaultNow()
     .notNull()
     .$onUpdate(() => new Date()),
+});
+
+/**
+ * Configuração base do jogador (tabela de linha única).
+ * Valores padrão espelham os números usados hoje no cliente.
+ */
+export const gameSettings = pgTable("game_settings", {
+  id: serial("id").primaryKey(),
+  /** Cooldown base de ataque em ms (ex.: 1000–2000). */
+  baseAttackSpeed: integer("base_attack_speed").notNull().default(1500),
+  baseDamage: integer("base_damage").notNull().default(10),
+  baseHp: integer("base_hp").notNull().default(100),
+  baseRange: integer("base_range").notNull().default(100),
+});
+
+/** Níveis de dificuldade e multiplicadores de inimigos / loot. */
+export const difficulties = pgTable("difficulties", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 32 }).notNull().unique(),
+  enemyHpMultiplier: real("enemy_hp_multiplier").notNull(),
+  enemyDamageMultiplier: real("enemy_damage_multiplier").notNull(),
+  enemySpeedMultiplier: real("enemy_speed_multiplier").notNull(),
+  goldDropMultiplier: real("gold_drop_multiplier").notNull(),
 });

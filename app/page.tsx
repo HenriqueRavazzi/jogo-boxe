@@ -11,6 +11,7 @@ import { QuestsPanel } from "@/components/QuestsPanel";
 import { SkillTree } from "@/components/SkillTree";
 import { TopBar } from "@/components/TopBar";
 import { syncWithDB } from "@/lib/syncWithDB";
+import { fetchGameConfigs } from "@/actions/fetchGameConfigs";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -27,12 +28,25 @@ export default function Home() {
   const exitMatch = useArenaStore((s) => s.exitMatch);
   const togglePause = useArenaStore((s) => s.togglePause);
   const activeSlotId = useGameStore((s) => s.activeSlotId);
+  const setGameConfigs = useGameStore((s) => s.setGameConfigs);
   const [showTalents, setShowTalents] = useState(false);
   const [slotReady, setSlotReady] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const canPlay = Boolean(activeSlotId) && slotReady;
   const inMatch = gameState === "playing" || gameState === "level_up";
+
+  // Carrega game_settings + difficulties do Neon
+  useEffect(() => {
+    let cancelled = false;
+    void fetchGameConfigs().then((result) => {
+      if (cancelled) return;
+      setGameConfigs(result.settings, result.difficulties);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setGameConfigs]);
 
   // Sync com Neon ao voltar ao menu
   useEffect(() => {

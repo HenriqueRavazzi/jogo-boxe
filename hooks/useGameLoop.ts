@@ -5,9 +5,11 @@ import type { RefObject } from "react";
 import { Enemy } from "@/src/game/entities/Enemy";
 import {
   Player,
+  facingToCanvasRotation,
   getArmDistribution,
   getArmPunchOrder,
   getArmRestPosition,
+  rotateLocalOffset,
 } from "@/src/game/entities/Player";
 import {
   runCombatSystem,
@@ -89,11 +91,16 @@ function shoulderOf(
   playerX: number,
   playerY: number,
   side: "left" | "right",
+  facingRadians = -Math.PI / 2,
 ): { x: number; y: number } {
-  return {
-    x: side === "left" ? playerX - BODY_RADIUS * 0.7 : playerX + BODY_RADIUS * 0.7,
-    y: playerY - 2,
-  };
+  const localX = side === "left" ? -BODY_RADIUS * 0.7 : BODY_RADIUS * 0.7;
+  const localY = -2;
+  const rotated = rotateLocalOffset(
+    localX,
+    localY,
+    facingToCanvasRotation(facingRadians),
+  );
+  return { x: playerX + rotated.x, y: playerY + rotated.y };
 }
 
 
@@ -155,6 +162,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         arena.currentHp,
         stats.maxHp,
         PLAYER_RADIUS,
+        arena.playerRotation,
       );
 
       const enemies = arena.enemies.map((e) =>
@@ -185,6 +193,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         lastPunchSide: arena.lastPunchSide,
         now: gameNow,
         contactDamage: CONTACT_DAMAGE,
+        playerRotation: arena.playerRotation,
       });
 
       const livingEnemies = combat.enemies
@@ -216,6 +225,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const newDrops = createDropsFromKills(combat.killSites, gameNow);
       const dropsWithNew = [...arena.drops, ...newDrops];
 
+      const difficulty = game.getDifficultyMultipliers();
+
       const loot = runLootSystem({
         drops: dropsWithNew,
         playerX: cx,
@@ -223,6 +234,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         playerRadius: PLAYER_RADIUS,
         dt,
         now: gameNow,
+        goldDropMultiplier: difficulty.goldDropMultiplier,
       });
 
       if (loot.collectedGold > 0) {
@@ -249,6 +261,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       useArenaStore.setState({
         playerX: cx,
         playerY: cy,
+        playerRotation: combat.playerRotation,
         enemies: livingEnemies,
         drops: loot.drops,
         currentHp: combat.player.hp,
@@ -279,6 +292,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         hasBossAlive,
         spawnAccumulatorMs: spawnAccumulator,
         dt,
+        difficulty: {
+          enemyHpMultiplier: difficulty.enemyHpMultiplier,
+          enemyDamageMultiplier: difficulty.enemyDamageMultiplier,
+          enemySpeedMultiplier: difficulty.enemySpeedMultiplier,
+        },
       });
       spawnAccumulator = spawn.spawnAccumulatorMs;
 
@@ -309,28 +327,33 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const drawBoxer = (
       x: number,
       y: number,
+      facing: number,
       arms: number,
       punching: ActiveAttack[],
       now: number,
     ) => {
-      // —— Corpo: círculo azul escuro ——
+      const canvasRot = facingToCanvasRotation(facing);
+
+      // Corpo, cabeça e braços em repouso no espaço local rotacionado
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(canvasRot);
+
       ctx.beginPath();
-      ctx.arc(x, y, BODY_RADIUS, 0, Math.PI * 2);
+      ctx.arc(0, 0, BODY_RADIUS, 0, Math.PI * 2);
       ctx.fillStyle = "#1e3a5f";
       ctx.fill();
 
-      // —— Cabeça: círculo azul claro sobreposto ——
-      const headY = y - BODY_RADIUS * 0.85;
+      const headY = -BODY_RADIUS * 0.85;
       ctx.beginPath();
-      ctx.arc(x, headY, HEAD_RADIUS, 0, Math.PI * 2);
+      ctx.arc(0, headY, HEAD_RADIUS, 0, Math.PI * 2);
       ctx.fillStyle = "#7dd3fc";
       ctx.fill();
 
-      // —— Faixa branca na cabeça (headband) ——
       ctx.fillStyle = "#f8fafc";
-      ctx.fillRect(x - HEAD_RADIUS + 1, headY - 4, HEAD_RADIUS * 2 - 2, 5);
+      ctx.fillRect(-HEAD_RADIUS + 1, headY - 4, HEAD_RADIUS * 2 - 2, 5);
       ctx.beginPath();
-      ctx.arc(x, headY - 1.5, HEAD_RADIUS - 1, Math.PI, 0);
+      ctx.arc(0, headY - 1.5, HEAD_RADIUS - 1, Math.PI, 0);
       ctx.strokeStyle = "#f8fafc";
       ctx.lineWidth = 3;
       ctx.stroke();
@@ -338,30 +361,31 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const { leftArms, rightArms } = getArmDistribution(arms);
       const busy = new Set(punching.map((a) => `${a.side}:${a.armIndex}`));
 
-      // —— Luvas em repouso (bolinhas vermelhas empilhadas L/R) ——
       for (const arm of getArmPunchOrder(arms)) {
         if (busy.has(`${arm.side}:${arm.armIndex}`)) continue;
         const armsOnSide = arm.side === "left" ? leftArms : rightArms;
         const rest = getArmRestPosition(
-          x,
-          y,
+          0,
+          0,
           arm.side,
           arm.armIndex,
           armsOnSide,
+          -Math.PI / 2, // espaço local já rotacionado: offsets “neutros”
         );
-        const shoulder = shoulderOf(x, y, arm.side);
+        const shoulderX =
+          arm.side === "left" ? -BODY_RADIUS * 0.7 : BODY_RADIUS * 0.7;
+        const shoulderY = -2;
 
         ctx.beginPath();
-        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.moveTo(shoulderX, shoulderY);
         ctx.lineTo(rest.x, rest.y);
         ctx.strokeStyle = "#1e3a5f";
         ctx.lineWidth = 5;
         ctx.lineCap = "round";
         ctx.stroke();
 
-        // Camada de “pele” por cima da manga
         ctx.beginPath();
-        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.moveTo(shoulderX, shoulderY);
         ctx.lineTo(rest.x, rest.y);
         ctx.strokeStyle = "#f0c4a0";
         ctx.lineWidth = 2.5;
@@ -370,10 +394,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         drawGlove(rest.x, rest.y);
       }
 
-      // —— Socos ativos: braço esticando + luva com lerp/easing ——
+      ctx.restore();
+
+      // Socos ativos: interpolação em coordenadas globais
       for (const attack of punching) {
         const pos = glovePosition(attack, now);
-        const shoulder = shoulderOf(x, y, attack.side);
+        const shoulder = shoulderOf(x, y, attack.side, facing);
 
         ctx.beginPath();
         ctx.moveTo(shoulder.x, shoulder.y);
@@ -397,7 +423,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const drawScene = () => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      const { playerX, playerY, enemies, drops, activeAttacks, floatingTexts } =
+      const { playerX, playerY, playerRotation, enemies, drops, activeAttacks, floatingTexts } =
         useArenaStore.getState();
       const arms = useGameStore.getState().arms;
       const now = gameClockMs;
@@ -443,7 +469,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
-      drawBoxer(playerX, playerY, arms, activeAttacks, now);
+      drawBoxer(playerX, playerY, playerRotation, arms, activeAttacks, now);
 
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";

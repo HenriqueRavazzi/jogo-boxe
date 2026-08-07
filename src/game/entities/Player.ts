@@ -17,8 +17,30 @@ export function getArmDistribution(totalArms: number): ArmDistribution {
 }
 
 /**
+ * O sprite local olha para cima (−Y). Converte ângulo de facing (atan2)
+ * para rotação de canvas.
+ */
+export function facingToCanvasRotation(facingRadians: number): number {
+  return facingRadians + Math.PI / 2;
+}
+
+/** Rotaciona um offset local pelo ângulo de canvas. */
+export function rotateLocalOffset(
+  localX: number,
+  localY: number,
+  canvasRotation: number,
+): { x: number; y: number } {
+  const c = Math.cos(canvasRotation);
+  const s = Math.sin(canvasRotation);
+  return {
+    x: localX * c - localY * s,
+    y: localX * s + localY * c,
+  };
+}
+
+/**
  * Posição de repouso da luva relativa ao centro do player.
- * Vários braços no mesmo lado empilham verticalmente.
+ * `facingRadians` = atan2 para o alvo (0 = direita); default −π/2 = olhar para cima.
  */
 export function getArmRestPosition(
   playerX: number,
@@ -26,12 +48,28 @@ export function getArmRestPosition(
   side: ArmSide,
   armIndex: number,
   armsOnSide: number,
+  facingRadians = -Math.PI / 2,
 ): { x: number; y: number } {
-  const baseX = side === "left" ? playerX - 26 : playerX + 26;
-  const baseY = playerY + 2;
   const spread = 14;
   const offsetY = (armIndex - (armsOnSide - 1) / 2) * spread;
-  return { x: baseX, y: baseY + offsetY };
+  const localX = side === "left" ? -26 : 26;
+  const localY = 2 + offsetY;
+  const rotated = rotateLocalOffset(
+    localX,
+    localY,
+    facingToCanvasRotation(facingRadians),
+  );
+  return { x: playerX + rotated.x, y: playerY + rotated.y };
+}
+
+/** Ângulo (radianos) do jogador em direção a um ponto. */
+export function angleToward(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+): number {
+  return Math.atan2(toY - fromY, toX - fromX);
 }
 
 /** Ordem de soco: L0, R0, L1, R1, … */
@@ -72,6 +110,8 @@ export class Player {
     public hp: number,
     public maxHp: number,
     public radius: number = 18,
+    /** Facing em radianos (atan2); −π/2 = cima. */
+    public rotation: number = -Math.PI / 2,
   ) {}
 
   /** Aplica dano e retorna o HP restante. */
@@ -82,5 +122,9 @@ export class Player {
 
   get isDead(): boolean {
     return this.hp <= 0;
+  }
+
+  faceToward(targetX: number, targetY: number): void {
+    this.rotation = angleToward(this.x, this.y, targetX, targetY);
   }
 }

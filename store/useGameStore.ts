@@ -2,7 +2,19 @@
 
 import { create } from "zustand";
 import type { SaveData } from "@/db/schema";
-import { createDefaultSaveData, normalizeSaveData, type SaveSlotId } from "@/lib/saveSlots";
+import {
+  FALLBACK_DIFFICULTIES,
+  FALLBACK_GAME_SETTINGS,
+  NEUTRAL_DIFFICULTY,
+  type DifficultyConfig,
+  type DifficultyMultipliers,
+  type GameBaseSettings,
+} from "@/lib/gameConfig";
+import {
+  createDefaultSaveData,
+  normalizeSaveData,
+  type SaveSlotId,
+} from "@/lib/saveSlots";
 import {
   DEFAULT_SKILL_TREE,
   canUnlockSkill,
@@ -54,9 +66,23 @@ export type GameStoreState = {
   /** Nível de bônus de XP (+10% por nível). */
   xpBonusLevel: number;
   skillTree: SkillTreeState;
+  /** Status iniciais vindos do Neon (`game_settings`). */
+  baseConfig: GameBaseSettings;
+  /** Lista de dificuldades do Neon. */
+  difficulties: DifficultyConfig[];
+  /** Id da dificuldade selecionada no menu. */
+  selectedDifficultyId: number | null;
+  configsLoaded: boolean;
   hydrateFromSave: (slotId: SaveSlotId, data: SaveData) => void;
   clearActiveSlot: () => void;
   getSaveSnapshot: () => SaveData;
+  setGameConfigs: (
+    settings: GameBaseSettings,
+    difficulties: DifficultyConfig[],
+  ) => void;
+  setSelectedDifficulty: (id: number) => void;
+  getSelectedDifficulty: () => DifficultyConfig | null;
+  getDifficultyMultipliers: () => DifficultyMultipliers;
   addGold: (baseAmount: number) => void;
   addGems: (amount: number) => void;
   unlockSkill: (nodeId: SkillNodeId, cost: number) => boolean;
@@ -88,7 +114,6 @@ export type GameStoreState = {
   getUpgradeRangeAt: (level: number) => number;
 };
 
-const HP_BASE = 100;
 const HP_PER_LEVEL = 25;
 const DAMAGE_PER_LEVEL = 5;
 const UPGRADE_COST_BASE = 50;
@@ -99,8 +124,6 @@ const ARMS_PRESTIGE_DAMAGE = 1.15;
 const ARMS_MAX = 6;
 const ARMS_MIN = 2;
 
-const BASE_ATTACK_SPEED_MS = 1000;
-const BASE_RANGE = 100;
 /** Bônus máximo acumulado (12%) em MAX_STAT_LEVEL níveis → 2% por nível. */
 const MAX_STAT_BONUS = 0.12;
 const MAX_STAT_LEVEL = 6;
@@ -158,25 +181,39 @@ function skillCooldownReduction(tree: SkillTreeState): number {
 
 /**
  * Cooldown absoluto (ms): base − (2% da base × nível), capped em MAX_STAT_LEVEL.
- * Nível 0 = 1000, nível 1 = 980, … nível 6 = 880.
  */
-export function cooldownAtLevel(level: number): number {
+export function cooldownAtLevel(
+  level: number,
+  baseAttackSpeedMs = FALLBACK_GAME_SETTINGS.baseAttackSpeed,
+): number {
   const lv = Math.min(Math.max(0, level), MAX_STAT_LEVEL);
-  return Math.round(BASE_ATTACK_SPEED_MS * (1 - BONUS_PER_LEVEL * lv));
+  return Math.round(baseAttackSpeedMs * (1 - BONUS_PER_LEVEL * lv));
 }
 
 /**
  * Range absoluto (px): base + (2% da base × nível), capped em MAX_STAT_LEVEL.
- * Nível 0 = 100, nível 1 = 102, … nível 6 = 112.
  */
-export function rangeAtLevel(level: number): number {
+export function rangeAtLevel(
+  level: number,
+  baseRange = FALLBACK_GAME_SETTINGS.baseRange,
+): number {
   const lv = Math.min(Math.max(0, level), MAX_STAT_LEVEL);
-  return Math.round(BASE_RANGE * (1 + BONUS_PER_LEVEL * lv));
+  return Math.round(baseRange * (1 + BONUS_PER_LEVEL * lv));
 }
 
-export { MAX_STAT_LEVEL, BASE_ATTACK_SPEED_MS, BASE_RANGE };
+export { MAX_STAT_LEVEL, FALLBACK_GAME_SETTINGS as DEFAULT_BASE_CONFIG };
+
+/** @deprecated Use baseConfig.baseAttackSpeed da store. */
+export const BASE_ATTACK_SPEED_MS = FALLBACK_GAME_SETTINGS.baseAttackSpeed;
+/** @deprecated Use baseConfig.baseRange da store. */
+export const BASE_RANGE = FALLBACK_GAME_SETTINGS.baseRange;
 
 const defaults = createDefaultSaveData();
+
+function pickDefaultDifficultyId(list: DifficultyConfig[]): number | null {
+  const medium = list.find((d) => d.name === "Médio");
+  return medium?.id ?? list[0]?.id ?? null;
+}
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
   activeSlotId: null,
@@ -193,6 +230,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   incomeMultiplier: defaults.incomeMultiplier,
   xpBonusLevel: defaults.xpBonusLevel,
   skillTree: { ...DEFAULT_SKILL_TREE },
+  baseConfig: { ...FALLBACK_GAME_SETTINGS },
+  difficulties: [...FALLBACK_DIFFICULTIES],
+  selectedDifficultyId: pickDefaultDifficultyId(FALLBACK_DIFFICULTIES),
+  configsLoaded: false,
 
   hydrateFromSave: (slotId, data) => {
     const n = normalizeSaveData(data);
@@ -203,13 +244,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       maxHpLevel: n.maxHpLevel,
       baseDamageLevel: n.baseDamageLevel,
       baseDamage: n.baseDamage,
-      attackSpeedLevel: n.attackSpeedLevel ?? 0,
-      rangeLevel: n.rangeLevel ?? 0,
+      attackSpeedLevel: n.attackSpeedLevel,
+      rangeLevel: n.rangeLevel,
       arms: n.arms,
       armTier: n.armTier,
       armsNextCost: n.armsNextCost,
       incomeMultiplier: n.incomeMultiplier,
-      xpBonusLevel: n.xpBonusLevel ?? 0,
+      xpBonusLevel: n.xpBonusLevel,
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
     });
   },
@@ -240,9 +281,48 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     };
   },
 
-  addGold: (baseAmount) =>
+  setGameConfigs: (settings, difficultiesList) => {
+    const list =
+      difficultiesList.length > 0
+        ? difficultiesList
+        : [...FALLBACK_DIFFICULTIES];
+    const currentId = get().selectedDifficultyId;
+    const stillValid = list.some((d) => d.id === currentId);
+    set({
+      baseConfig: { ...settings },
+      difficulties: list,
+      selectedDifficultyId: stillValid
+        ? currentId
+        : pickDefaultDifficultyId(list),
+      configsLoaded: true,
+    });
+  },
+
+  setSelectedDifficulty: (id) => {
+    const exists = get().difficulties.some((d) => d.id === id);
+    if (!exists) return;
+    set({ selectedDifficultyId: id });
+  },
+
+  getSelectedDifficulty: () => {
+    const { difficulties: list, selectedDifficultyId } = get();
+    return list.find((d) => d.id === selectedDifficultyId) ?? null;
+  },
+
+  getDifficultyMultipliers: () => {
+    const selected = get().getSelectedDifficulty();
+    if (!selected) return { ...NEUTRAL_DIFFICULTY };
+    return {
+      enemyHpMultiplier: selected.enemyHpMultiplier,
+      enemyDamageMultiplier: selected.enemyDamageMultiplier,
+      enemySpeedMultiplier: selected.enemySpeedMultiplier,
+      goldDropMultiplier: selected.goldDropMultiplier,
+    };
+  },
+
+  addGold: (amount) =>
     set((s) => ({
-      gold: s.gold + Math.floor(baseAmount * s.incomeMultiplier),
+      gold: s.gold + Math.round(amount * s.incomeMultiplier),
     })),
 
   addGems: (amount) => set((s) => ({ gems: s.gems + amount })),
@@ -283,19 +363,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Derived state: upgrades de ouro + bônus da skill tree.
-   * Fonte única para partida, HUD e painéis.
+   * Bases de CD/range/HP vêm de `baseConfig` (Neon).
    */
   getEffectiveStats: () => {
     const s = get();
     const tree = s.skillTree;
+    const cfg = s.baseConfig;
     const skillHp = skillHpBonus(tree);
     const skillDmg = skillDamageBonus(tree);
     const skillRange = skillRangeBonus(tree);
     const skillCd = skillCooldownReduction(tree);
 
-    const goldHp = HP_BASE + (s.maxHpLevel - 1) * HP_PER_LEVEL;
-    const goldRange = rangeAtLevel(s.rangeLevel);
-    const goldCooldown = cooldownAtLevel(s.attackSpeedLevel);
+    const goldHp = cfg.baseHp + (s.maxHpLevel - 1) * HP_PER_LEVEL;
+    const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
+    const goldCooldown = cooldownAtLevel(
+      s.attackSpeedLevel,
+      cfg.baseAttackSpeed,
+    );
 
     return {
       maxHp: Math.round(goldHp + skillHp),
@@ -317,9 +401,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getBaseDamage: () => get().getEffectiveStats().damage,
 
-  getUpgradeCooldownAt: (level) => cooldownAtLevel(level),
+  getUpgradeCooldownAt: (level) =>
+    cooldownAtLevel(level, get().baseConfig.baseAttackSpeed),
 
-  getUpgradeRangeAt: (level) => rangeAtLevel(level),
+  getUpgradeRangeAt: (level) =>
+    rangeAtLevel(level, get().baseConfig.baseRange),
 
   getAttackRange: () => get().getEffectiveStats().attackRange,
 

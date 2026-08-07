@@ -1,6 +1,7 @@
 import type { Player } from "@/src/game/entities/Player";
 import type { Enemy } from "@/src/game/entities/Enemy";
 import {
+  angleToward,
   getArmDistribution,
   getArmRestPosition,
   pickNextPunchSide,
@@ -53,6 +54,8 @@ export type CombatSystemInput = {
   contactDamage: number;
   knockbackImpulse?: number;
   punchDurationMs?: number;
+  /** Facing atual (atan2) — mantido se não houver ataque. */
+  playerRotation?: number;
 };
 
 export type CombatSystemResult = {
@@ -69,6 +72,8 @@ export type CombatSystemResult = {
   contactHits: number;
   /** Eventos para progresso de quests in-game. */
   questEvents: QuestProgressEvent[];
+  /** Facing atual do jogador (atan2); inalterado se não atacou neste frame. */
+  playerRotation: number;
 };
 
 const DEFAULT_KNOCKBACK = 14;
@@ -103,11 +108,19 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     contactDamage,
     knockbackImpulse = DEFAULT_KNOCKBACK,
     punchDurationMs = PUNCH_DURATION_MS,
+    playerRotation: inputRotation = -Math.PI / 2,
   } = input;
+
+  let playerRotation = inputRotation;
 
   const skillTree = useGameStore.getState().skillTree;
   const hasFreeze = Boolean(skillTree.node_frost_chance);
   const hasShock = Boolean(skillTree.node_shock_chance);
+  const difficulty = useGameStore.getState().getDifficultyMultipliers();
+  /** Fallback de contato se o inimigo não trouxer damage (já escalado no spawn). */
+  const scaledContactFallback = Math.round(
+    contactDamage * difficulty.enemyDamageMultiplier,
+  );
 
   let contactHits = 0;
   const afterContact: Enemy[] = [];
@@ -128,7 +141,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
     if (dist < player.radius + enemy.radius) {
       contactHits += 1;
-      contactDamageDealt += enemy.contactDamage || contactDamage;
+      contactDamageDealt += enemy.contactDamage || scaledContactFallback;
       killSites.push({ x: enemy.x, y: enemy.y });
       pushKillQuests(enemy.type);
       continue;
@@ -173,6 +186,16 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         damageById.set(id, (damageById.get(id) ?? 0) + amount);
       };
 
+      // Olha para o último alvo do lote neste tick
+      const lastTarget = inRange[inRange.length - 1]!.enemy;
+      playerRotation = angleToward(
+        player.x,
+        player.y,
+        lastTarget.x,
+        lastTarget.y,
+      );
+      player.rotation = playerRotation;
+
       const { leftArms, rightArms } = getArmDistribution(arms);
       const sideUseCount: Record<ArmSide, number> = { left: 0, right: 0 };
       let punchSide = lastPunchSide;
@@ -196,6 +219,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           punchSide,
           armIndex,
           Math.max(1, armsOnSide),
+          playerRotation,
         );
 
         newAttacks.push({
@@ -310,5 +334,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     killSites,
     contactHits,
     questEvents,
+    playerRotation,
   };
 }

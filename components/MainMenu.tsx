@@ -29,6 +29,12 @@ export function MainMenu({
 }: MainMenuProps) {
   const gold = useGameStore((s) => s.gold);
   const gems = useGameStore((s) => s.gems);
+  const difficulties = useGameStore((s) => s.difficulties);
+  const selectedDifficultyId = useGameStore((s) => s.selectedDifficultyId);
+  const setSelectedDifficulty = useGameStore((s) => s.setSelectedDifficulty);
+  const configsLoaded = useGameStore((s) => s.configsLoaded);
+
+  const selected = difficulties.find((d) => d.id === selectedDifficultyId);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex">
@@ -68,6 +74,41 @@ export function MainMenu({
             </div>
           </div>
         </div>
+
+        {!isGameOver && (
+          <div className="rounded-xl border border-white/10 bg-zinc-900/70 p-3">
+            <label
+              htmlFor="difficulty-select"
+              className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500"
+            >
+              Dificuldade
+            </label>
+            <select
+              id="difficulty-select"
+              value={selectedDifficultyId ?? ""}
+              disabled={difficulties.length === 0}
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                if (!Number.isFinite(id)) return;
+                setSelectedDifficulty(id);
+              }}
+              className="w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-2.5 text-sm font-semibold text-zinc-100 outline-none transition focus:border-sky-400/60"
+            >
+              {difficulties.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.enemyHpMultiplier.toFixed(1)}×)
+                </option>
+              ))}
+            </select>
+            {selected && (
+              <p className="mt-2 text-[11px] leading-snug text-zinc-400">
+                Inimigos {selected.enemyHpMultiplier.toFixed(1)}× HP · Ouro{" "}
+                {selected.goldDropMultiplier.toFixed(1)}×
+                {!configsLoaded ? " · defaults locais" : null}
+              </p>
+            )}
+          </div>
+        )}
 
         {!isGameOver && <SaveSlotMenu onSlotReady={onSlotReady} />}
 

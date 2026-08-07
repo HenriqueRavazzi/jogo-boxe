@@ -107,6 +107,8 @@ export type ArenaStoreState = {
   currentHp: number;
   playerX: number;
   playerY: number;
+  /** Facing do jogador em radianos (atan2); −π/2 = cima. */
+  playerRotation: number;
   enemies: Enemy[];
   drops: Drop[];
   lastAttackTime: number;
@@ -227,6 +229,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   currentHp: 100,
   playerX: 0,
   playerY: 0,
+  playerRotation: -Math.PI / 2,
   enemies: [],
   drops: [],
   lastAttackTime: 0,
@@ -273,6 +276,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesSpawned: 0,
       activeQuests: createRandomQuests(2),
       isPaused: false,
+      playerRotation: -Math.PI / 2,
       playerX: playerX || w / 2,
       playerY: playerY || h / 2,
     });
@@ -312,6 +316,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesSpawned: 0,
       activeQuests: [],
       isPaused: false,
+      playerRotation: -Math.PI / 2,
       matchBuffs: { ...DEFAULT_BUFFS },
       levelUpOptions: [],
       gameSpeed: 1,
@@ -559,6 +564,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
     if (inRange.length === 0) return false;
 
+    const lastEnemy = inRange[inRange.length - 1]!.enemy;
+    const playerRotation = Math.atan2(
+      lastEnemy.y - playerY,
+      lastEnemy.x - playerX,
+    );
+
     const damage =
       (baseDamage || getBaseDamage()) * matchBuffs.damageMultiplier;
     const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
@@ -578,6 +589,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         punchSide,
         armIndex,
         Math.max(1, armsOnSide),
+        playerRotation,
       );
       return {
         id: crypto.randomUUID(),
@@ -613,6 +625,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     set({
       lastAttackTime: now,
       lastPunchSide: punchSide,
+      playerRotation,
       enemies: nextEnemies,
       activeAttacks: [...activeAttacks, ...newAttacks],
     });
@@ -644,6 +657,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       currentHp: maxHp,
       playerX: centerX,
       playerY: centerY,
+      playerRotation: -Math.PI / 2,
       enemies: [],
       drops: [],
       lastAttackTime: 0,
