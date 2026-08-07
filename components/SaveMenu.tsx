@@ -221,7 +221,8 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
                     </span>
                     <span className="mt-0.5 block text-[10px] text-zinc-500">
                       {save.gold.toLocaleString("pt-BR")} ouro ·{" "}
-                      {save.gems.toLocaleString("pt-BR")} diamantes
+                      {save.gems.toLocaleString("pt-BR")} diamantes ·{" "}
+                      {save.purpleDiamonds.toLocaleString("pt-BR")} roxos
                     </span>
                   </button>
                   <button

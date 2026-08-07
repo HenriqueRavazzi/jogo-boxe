@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Coins, Gem } from "lucide-react";
+import { AdvancedSkillsPanel } from "@/components/AdvancedSkillsPanel";
 import { MetaTreePanel } from "@/components/MetaTreePanel";
 import { SaveMenu } from "@/components/SaveMenu";
 import { UpgradePanel } from "@/components/UpgradePanel";
@@ -17,7 +18,7 @@ type MainMenuProps = {
   onReturnToMenu?: () => void;
 };
 
-type UpgradeTab = "gold" | "diamonds";
+type UpgradeTab = "gold" | "diamonds" | "skills";
 
 /**
  * Menu principal: saves dinâmicos, START, upgrades e skill tree.
@@ -32,6 +33,7 @@ export function MainMenu({
 }: MainMenuProps) {
   const gold = useGameStore((s) => s.gold);
   const gems = useGameStore((s) => s.gems);
+  const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const difficulties = useGameStore((s) => s.difficulties);
   const selectedDifficultyId = useGameStore((s) => s.selectedDifficultyId);
   const setSelectedDifficulty = useGameStore((s) => s.setSelectedDifficulty);
@@ -74,6 +76,17 @@ export function MainMenu({
               </p>
               <p className="truncate text-sm font-bold tabular-nums text-cyan-200">
                 {gems.toLocaleString("pt-BR")}
+              </p>
+            </div>
+          </div>
+          <div className="inline-flex min-w-0 flex-[1.1] items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-3 py-2">
+            <Gem className="h-4 w-4 shrink-0 text-violet-300" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-violet-200/70">
+                Roxos
+              </p>
+              <p className="truncate text-sm font-bold tabular-nums text-violet-200">
+                {purpleDiamonds.toLocaleString("pt-BR")}
               </p>
             </div>
           </div>
@@ -152,11 +165,11 @@ export function MainMenu({
         </div>
       </aside>
 
-      {/* Área central: upgrades ouro / árvore de diamantes */}
+      {/* Área central: upgrades ouro / atributos / skills avançadas */}
       {!isGameOver && (
         <div className="pointer-events-none relative hidden flex-1 sm:block">
           <div className="pointer-events-auto absolute inset-x-4 bottom-4 top-auto max-h-[60%] overflow-y-auto rounded-2xl border border-white/10 bg-black/50 p-3 backdrop-blur-sm">
-            <div className="mb-2 flex items-center gap-1 px-1">
+            <div className="mb-2 flex flex-wrap items-center gap-1 px-1">
               <button
                 type="button"
                 onClick={() => setUpgradeTab("gold")}
@@ -179,11 +192,24 @@ export function MainMenu({
               >
                 Diamantes
               </button>
+              <button
+                type="button"
+                onClick={() => setUpgradeTab("skills")}
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition ${
+                  upgradeTab === "skills"
+                    ? "bg-violet-500/20 text-violet-200"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Skills Roxas
+              </button>
             </div>
             {upgradeTab === "gold" ? (
               <UpgradePanel embedded />
-            ) : (
+            ) : upgradeTab === "diamonds" ? (
               <MetaTreePanel embedded />
+            ) : (
+              <AdvancedSkillsPanel embedded />
             )}
           </div>
         </div>

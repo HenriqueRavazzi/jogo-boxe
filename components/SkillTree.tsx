@@ -52,6 +52,7 @@ const LINE_UNLOCKED: Record<string, string> = {
 /** Overlay da árvore de talents (custa diamantes). */
 export function SkillTree({ onClose }: SkillTreeProps) {
   const gems = useGameStore((s) => s.gems);
+  const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const skillTree = useGameStore((s) => s.skillTree);
   const xpBonusLevel = useGameStore((s) => s.xpBonusLevel);
   const unlockSkill = useGameStore((s) => s.unlockSkill);
@@ -88,10 +89,14 @@ export function SkillTree({ onClose }: SkillTreeProps) {
               Árvore de Habilidades
             </h2>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500/15 px-3 py-1.5 text-sm font-semibold tabular-nums text-cyan-300">
               <Gem className="h-4 w-4" />
-              {gems.toLocaleString("pt-BR")} Diamantes
+              {gems.toLocaleString("pt-BR")}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-3 py-1.5 text-sm font-semibold tabular-nums text-violet-300">
+              <Gem className="h-4 w-4" />
+              {purpleDiamonds.toLocaleString("pt-BR")} Roxos
             </span>
             <button
               type="button"

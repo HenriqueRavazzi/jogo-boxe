@@ -8,6 +8,7 @@ import { useGameStore } from "@/store/useGameStore";
 export function TopBar() {
   const gold = useGameStore((s) => s.gold);
   const gems = useGameStore((s) => s.gems);
+  const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const currentHp = useArenaStore((s) => s.currentHp);
   const currentXp = useArenaStore((s) => s.currentXp);
@@ -31,6 +32,11 @@ export function TopBar() {
         <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
           <Gem className="h-4 w-4 text-cyan-400" aria-hidden />
           {gems.toLocaleString("pt-BR")}
+        </span>
+        <span className="h-4 w-px bg-white/20" aria-hidden />
+        <span className="inline-flex items-center gap-1.5 font-medium tabular-nums text-violet-200">
+          <Gem className="h-4 w-4 text-violet-400" aria-hidden />
+          {purpleDiamonds.toLocaleString("pt-BR")}
         </span>
       </div>
 
