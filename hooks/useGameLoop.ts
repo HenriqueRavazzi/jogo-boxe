@@ -138,11 +138,19 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     let last = performance.now();
 
     const loop = (now: number) => {
+      rafId.current = window.requestAnimationFrame(loop);
+
+      // Pausa física/combate quando não está em partida
+      if (useArenaStore.getState().gameState !== "playing") {
+        last = now;
+        draw();
+        return;
+      }
+
       const dt = Math.min((now - last) / 1000, 0.05); // evita saltos após tab inactive
       last = now;
       update(dt);
       draw();
-      rafId.current = window.requestAnimationFrame(loop);
     };
 
     rafId.current = window.requestAnimationFrame(loop);

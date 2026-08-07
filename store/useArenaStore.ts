@@ -12,8 +12,11 @@ export type Enemy = {
   speed: number;
 };
 
+export type GameState = "menu" | "playing" | "gameover";
+
 /** Estado volátil da partida atual (não persistido). */
 export type ArenaStoreState = {
+  gameState: GameState;
   currentHp: number;
   playerX: number;
   playerY: number;
@@ -22,9 +25,11 @@ export type ArenaStoreState = {
   /** Alvo do último auto-ataque (feedback visual no canvas). */
   lastAttackTargetX: number | null;
   lastAttackTargetY: number | null;
+  startGame: () => void;
+  setGameOver: () => void;
   setPlayerPosition: (x: number, y: number) => void;
   setCurrentHp: (hp: number) => void;
-  /** Aplica dano de contato; em 0 HP limpa a arena e reinicia. */
+  /** Aplica dano de contato; em 0 HP limpa a arena e vai para game over. */
   takeDamage: (amount: number) => void;
   damagePlayer: (amount: number) => void;
   setEnemies: (enemies: Enemy[]) => void;
@@ -69,6 +74,7 @@ function randomEdgePosition(canvasWidth: number, canvasHeight: number) {
 }
 
 export const useArenaStore = create<ArenaStoreState>((set, get) => ({
+  gameState: "menu",
   currentHp: 100,
   playerX: 0,
   playerY: 0,
@@ -76,6 +82,33 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   lastAttackTime: 0,
   lastAttackTargetX: null,
   lastAttackTargetY: null,
+
+  startGame: () => {
+    const maxHp = useGameStore.getState().getMaxHp();
+    const { playerX, playerY } = get();
+    const w = typeof window !== "undefined" ? window.innerWidth : 800;
+    const h = typeof window !== "undefined" ? window.innerHeight : 600;
+
+    set({
+      gameState: "playing",
+      currentHp: maxHp,
+      enemies: [],
+      lastAttackTime: 0,
+      lastAttackTargetX: null,
+      lastAttackTargetY: null,
+      playerX: playerX || w / 2,
+      playerY: playerY || h / 2,
+    });
+  },
+
+  setGameOver: () =>
+    set({
+      gameState: "gameover",
+      enemies: [],
+      lastAttackTime: 0,
+      lastAttackTargetX: null,
+      lastAttackTargetY: null,
+    }),
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),
 
@@ -85,15 +118,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     const nextHp = Math.max(0, get().currentHp - amount);
 
     if (nextHp <= 0) {
-      const maxHp = useGameStore.getState().getMaxHp();
-      set({
-        currentHp: maxHp,
-        enemies: [],
-        lastAttackTime: 0,
-        lastAttackTargetX: null,
-        lastAttackTargetY: null,
-      });
-      alert("Game Over! Reiniciando...");
+      set({ currentHp: 0, enemies: [] });
+      get().setGameOver();
       return;
     }
 
