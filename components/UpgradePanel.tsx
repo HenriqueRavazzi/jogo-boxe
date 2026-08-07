@@ -1,27 +1,37 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { HeartPulse, Swords } from "lucide-react";
+import { Coins, HeartPulse, Hand, Swords } from "lucide-react";
 import { useGameStore } from "@/store/useGameStore";
 
-/** Painel inferior com cards de upgrade (placeholder). */
+/** Painel inferior com cards de upgrade. */
 export function UpgradePanel() {
   const maxHpLevel = useGameStore((s) => s.maxHpLevel);
   const baseDamageLevel = useGameStore((s) => s.baseDamageLevel);
+  const arms = useGameStore((s) => s.arms);
+  const armTier = useGameStore((s) => s.armTier);
+  const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
   const gold = useGameStore((s) => s.gold);
+
   const getHpUpgradeCost = useGameStore((s) => s.getHpUpgradeCost);
   const getDamageUpgradeCost = useGameStore((s) => s.getDamageUpgradeCost);
+  const getIncomeUpgradeCost = useGameStore((s) => s.getIncomeUpgradeCost);
+  const getArmsUpgradeCost = useGameStore((s) => s.getArmsUpgradeCost);
   const upgradeHP = useGameStore((s) => s.upgradeHP);
   const upgradeDamage = useGameStore((s) => s.upgradeDamage);
+  const upgradeIncome = useGameStore((s) => s.upgradeIncome);
+  const upgradeArms = useGameStore((s) => s.upgradeArms);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const getBaseDamage = useGameStore((s) => s.getBaseDamage);
 
   const hpCost = getHpUpgradeCost();
   const damageCost = getDamageUpgradeCost();
+  const incomeCost = getIncomeUpgradeCost();
+  const armsCost = getArmsUpgradeCost();
 
   return (
     <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4">
-      <div className="pointer-events-auto mx-auto flex max-w-2xl flex-col gap-2 sm:flex-row">
+      <div className="pointer-events-auto mx-auto grid max-w-4xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <UpgradeCard
           icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
           title={`Max HP: Nível ${maxHpLevel}`}
@@ -37,6 +47,22 @@ export function UpgradePanel() {
           cost={damageCost}
           canAfford={gold >= damageCost}
           onUpgrade={upgradeDamage}
+        />
+        <UpgradeCard
+          icon={<Coins className="h-5 w-5 text-yellow-400" />}
+          title={`Multiplicador: ${incomeMultiplier.toFixed(1)}x`}
+          subtitle="Renda de ouro por kill"
+          cost={incomeCost}
+          canAfford={gold >= incomeCost}
+          onUpgrade={upgradeIncome}
+        />
+        <UpgradeCard
+          icon={<Hand className="h-5 w-5 text-sky-400" />}
+          title={`Braços: ${arms} (Tier ${armTier})`}
+          subtitle={arms < 6 ? "Próximo: +1 braço" : "Próximo: sobe Tier"}
+          cost={armsCost}
+          canAfford={gold >= armsCost}
+          onUpgrade={upgradeArms}
         />
       </div>
     </footer>
@@ -61,7 +87,7 @@ function UpgradeCard({
   onUpgrade,
 }: UpgradeCardProps) {
   return (
-    <div className="flex flex-1 items-center gap-3 rounded-xl border border-white/10 bg-black/60 px-4 py-3 shadow-lg backdrop-blur-md">
+    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/60 px-4 py-3 shadow-lg backdrop-blur-md">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5">
         {icon}
       </div>

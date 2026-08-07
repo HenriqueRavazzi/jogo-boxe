@@ -6,6 +6,8 @@ export type SaveData = {
   gems: number;
   maxHpLevel: number;
   baseDamageLevel: number;
+  arms: number;
+  armTier: number;
   incomeMultiplier: number;
 };
 
