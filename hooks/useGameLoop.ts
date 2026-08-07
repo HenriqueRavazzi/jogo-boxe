@@ -56,7 +56,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const { getBaseDamage, getAttackRange, getAttackCooldown } =
         useGameStore.getState();
 
-      updateEnemies(playerX, playerY, dt);
+      updateEnemies(playerX, playerY, dt, PLAYER_RADIUS, ENEMY_RADIUS);
 
       processCombat(getBaseDamage(), getAttackRange(), getAttackCooldown());
 
