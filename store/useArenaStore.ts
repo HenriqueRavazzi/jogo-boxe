@@ -12,6 +12,12 @@ export type Enemy = {
   speed: number;
 };
 
+export type ActiveAttack = {
+  targetX: number;
+  targetY: number;
+  timestamp: number;
+};
+
 export type GameState = "menu" | "playing" | "gameover";
 
 /** Estado volátil da partida atual (não persistido). */
@@ -22,9 +28,8 @@ export type ArenaStoreState = {
   playerY: number;
   enemies: Enemy[];
   lastAttackTime: number;
-  /** Alvo do último auto-ataque (feedback visual no canvas). */
-  lastAttackTargetX: number | null;
-  lastAttackTargetY: number | null;
+  /** Socos recentes para feedback visual (linha do braço). */
+  activeAttacks: ActiveAttack[];
   startGame: () => void;
   setGameOver: () => void;
   setPlayerPosition: (x: number, y: number) => void;
@@ -48,6 +53,7 @@ export type ArenaStoreState = {
     attackRange: number,
     attackCooldown: number,
   ) => boolean;
+  pruneActiveAttacks: (maxAgeMs?: number) => void;
   resetArena: (maxHp: number, centerX: number, centerY: number) => void;
 };
 
@@ -80,8 +86,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   playerY: 0,
   enemies: [],
   lastAttackTime: 0,
-  lastAttackTargetX: null,
-  lastAttackTargetY: null,
+  activeAttacks: [],
 
   startGame: () => {
     const maxHp = useGameStore.getState().getMaxHp();
@@ -94,8 +99,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       currentHp: maxHp,
       enemies: [],
       lastAttackTime: 0,
-      lastAttackTargetX: null,
-      lastAttackTargetY: null,
+      activeAttacks: [],
       playerX: playerX || w / 2,
       playerY: playerY || h / 2,
     });
@@ -106,8 +110,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       gameState: "gameover",
       enemies: [],
       lastAttackTime: 0,
-      lastAttackTargetX: null,
-      lastAttackTargetY: null,
+      activeAttacks: [],
     }),
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),
@@ -188,56 +191,73 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   },
 
   /**
-   * Auto-ataca o inimigo mais próximo dentro do alcance, respeitando o cooldown.
-   * @returns true se um golpe foi aplicado neste frame
+   * Auto-ataca até N inimigos mais próximos (N = braços),
+   * com dano baseDamage * armTier.
    */
   processCombat: (baseDamage, attackRange, attackCooldown) => {
     const now = performance.now();
-    const { playerX, playerY, enemies, lastAttackTime } = get();
+    const { playerX, playerY, enemies, lastAttackTime, activeAttacks } = get();
+    const { arms, armTier } = useGameStore.getState();
 
     if (enemies.length === 0) return false;
     if (now < lastAttackTime + attackCooldown) return false;
 
-    let nearest: Enemy | null = null;
-    let nearestDist = Infinity;
+    const inRange = enemies
+      .map((enemy) => ({
+        enemy,
+        dist: Math.hypot(enemy.x - playerX, enemy.y - playerY),
+      }))
+      .filter(({ dist }) => dist <= attackRange)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, arms);
+
+    if (inRange.length === 0) return false;
+
+    const damage = baseDamage * armTier;
+    const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
+    const newAttacks: ActiveAttack[] = inRange.map(({ enemy }) => ({
+      targetX: enemy.x,
+      targetY: enemy.y,
+      timestamp: now,
+    }));
+
+    let kills = 0;
+    const nextEnemies: Enemy[] = [];
 
     for (const enemy of enemies) {
-      const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = enemy;
+      if (!hitIds.has(enemy.id)) {
+        nextEnemies.push(enemy);
+        continue;
+      }
+
+      const nextHp = enemy.hp - damage;
+      if (nextHp <= 0) {
+        kills += 1;
+      } else {
+        nextEnemies.push({ ...enemy, hp: nextHp });
       }
     }
 
-    if (!nearest || nearestDist > attackRange) return false;
-
-    const nextHp = nearest.hp - baseDamage;
-    const targetId = nearest.id;
-    const targetX = nearest.x;
-    const targetY = nearest.y;
-
-    // Abate: remove inimigo e concede ouro
-    if (nextHp <= 0) {
-      useGameStore.getState().addGold(GOLD_PER_KILL);
-      set({
-        lastAttackTime: now,
-        lastAttackTargetX: targetX,
-        lastAttackTargetY: targetY,
-        enemies: enemies.filter((e) => e.id !== targetId),
-      });
-      return true;
+    if (kills > 0) {
+      useGameStore.getState().addGold(GOLD_PER_KILL * kills);
     }
 
     set({
       lastAttackTime: now,
-      lastAttackTargetX: targetX,
-      lastAttackTargetY: targetY,
-      enemies: enemies.map((e) =>
-        e.id === targetId ? { ...e, hp: nextHp } : e,
-      ),
+      enemies: nextEnemies,
+      activeAttacks: [...activeAttacks, ...newAttacks],
     });
 
     return true;
+  },
+
+  pruneActiveAttacks: (maxAgeMs = 150) => {
+    const now = performance.now();
+    set((s) => ({
+      activeAttacks: s.activeAttacks.filter(
+        (a) => now - a.timestamp < maxAgeMs,
+      ),
+    }));
   },
 
   resetArena: (maxHp, centerX, centerY) =>
@@ -247,7 +267,6 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       playerY: centerY,
       enemies: [],
       lastAttackTime: 0,
-      lastAttackTargetX: null,
-      lastAttackTargetY: null,
+      activeAttacks: [],
     }),
 }));

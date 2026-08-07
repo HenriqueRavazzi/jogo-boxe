@@ -8,8 +8,8 @@ import { useGameStore } from "@/store/useGameStore";
 const PLAYER_RADIUS = 18;
 const ENEMY_RADIUS = 12;
 const SPAWN_INTERVAL_MS = 2000;
-/** Quanto tempo a linha do golpe permanece visível. */
-const ATTACK_FLASH_MS = 120;
+/** Flash visual dos socos (braços esticados). */
+const ATTACK_FLASH_MS = 150;
 
 /**
  * Loop principal do jogo via requestAnimationFrame.
@@ -51,14 +51,21 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
     /** Atualiza entidades: movimento, spawn e auto-ataque. */
     const update = (dt: number) => {
-      const { playerX, playerY, updateEnemies, spawnEnemy, processCombat } =
-        useArenaStore.getState();
+      const {
+        playerX,
+        playerY,
+        updateEnemies,
+        spawnEnemy,
+        processCombat,
+        pruneActiveAttacks,
+      } = useArenaStore.getState();
       const { getBaseDamage, getAttackRange, getAttackCooldown } =
         useGameStore.getState();
 
       updateEnemies(playerX, playerY, dt, PLAYER_RADIUS, ENEMY_RADIUS);
 
       processCombat(getBaseDamage(), getAttackRange(), getAttackCooldown());
+      pruneActiveAttacks(ATTACK_FLASH_MS);
 
       spawnAccumulator += dt * 1000;
       if (spawnAccumulator >= SPAWN_INTERVAL_MS) {
@@ -67,18 +74,47 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
     };
 
+    /** Boxeador estilizado (cabeça + torso + luvas). */
+    const drawBoxer = (x: number, y: number) => {
+      // Torso
+      ctx.fillStyle = "#1e3a5f";
+      ctx.beginPath();
+      ctx.roundRect(x - 12, y - 4, 24, 28, 6);
+      ctx.fill();
+
+      // Cabeça
+      ctx.beginPath();
+      ctx.arc(x, y - 14, 11, 0, Math.PI * 2);
+      ctx.fillStyle = "#f0c4a0";
+      ctx.fill();
+
+      // Cabelo / bandana
+      ctx.beginPath();
+      ctx.arc(x, y - 18, 10, Math.PI, 0);
+      ctx.fillStyle = "#0ea5e9";
+      ctx.fill();
+
+      // Luvas de boxe (repouso)
+      ctx.fillStyle = "#e11d48";
+      ctx.beginPath();
+      ctx.arc(x - 16, y + 6, 7, 0, Math.PI * 2);
+      ctx.arc(x + 16, y + 6, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Contorno leve
+      ctx.strokeStyle = "#e0f2fe";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y - 14, 11, 0, Math.PI * 2);
+      ctx.stroke();
+    };
+
     /** Limpa o canvas e desenha o frame atual. */
     const draw = () => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      const {
-        playerX,
-        playerY,
-        enemies,
-        lastAttackTime,
-        lastAttackTargetX,
-        lastAttackTargetY,
-      } = useArenaStore.getState();
+      const { playerX, playerY, enemies, activeAttacks } =
+        useArenaStore.getState();
       const now = performance.now();
 
       // Fundo da arena
@@ -102,22 +138,27 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
-      // Feedback do golpe: linha do jogador até o alvo recente
-      if (
-        lastAttackTargetX != null &&
-        lastAttackTargetY != null &&
-        now - lastAttackTime < ATTACK_FLASH_MS
-      ) {
+      // Socos: braços esticados até cada alvo recente
+      for (const attack of activeAttacks) {
+        if (now - attack.timestamp >= ATTACK_FLASH_MS) continue;
+
+        const fade = 1 - (now - attack.timestamp) / ATTACK_FLASH_MS;
         ctx.beginPath();
         ctx.moveTo(playerX, playerY);
-        ctx.lineTo(lastAttackTargetX, lastAttackTargetY);
-        ctx.strokeStyle = "#fde047";
-        ctx.lineWidth = 3;
+        ctx.lineTo(attack.targetX, attack.targetY);
+        ctx.strokeStyle = `rgba(253, 224, 71, ${0.45 + fade * 0.55})`;
+        ctx.lineWidth = 5 + fade * 3;
         ctx.lineCap = "round";
         ctx.stroke();
+
+        // Luva no impacto
+        ctx.beginPath();
+        ctx.arc(attack.targetX, attack.targetY, 6, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(225, 29, 72, ${0.5 + fade * 0.5})`;
+        ctx.fill();
       }
 
-      // Inimigos (círculos vermelhos, menores que o jogador)
+      // Inimigos (círculos vermelhos)
       for (const enemy of enemies) {
         ctx.beginPath();
         ctx.arc(enemy.x, enemy.y, ENEMY_RADIUS, 0, Math.PI * 2);
@@ -125,14 +166,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.fill();
       }
 
-      // Jogador (círculo no centro / posição do store)
-      ctx.beginPath();
-      ctx.arc(playerX, playerY, PLAYER_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = "#38bdf8";
-      ctx.fill();
-      ctx.strokeStyle = "#e0f2fe";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      drawBoxer(playerX, playerY);
     };
 
     let last = performance.now();
