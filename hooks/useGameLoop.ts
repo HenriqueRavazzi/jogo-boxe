@@ -226,11 +226,13 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         shakeFrames = Math.max(0, shakeFrames - gameSpeed);
       }
 
-      // Drops nas coordenadas exatas da morte (sem ouro instantâneo)
-      const newDrops = createDropsFromKills(combat.killSites, gameNow);
-      const dropsWithNew = [...arena.drops, ...newDrops];
-
+      // Drops: N moedas espalhadas (renda × dificuldade) + diamante opcional no centro
       const difficulty = game.getDifficultyMultipliers();
+      const newDrops = createDropsFromKills(combat.killSites, gameNow, {
+        incomeMultiplier: game.incomeMultiplier,
+        goldDropMultiplier: difficulty.goldDropMultiplier,
+      });
+      const dropsWithNew = [...arena.drops, ...newDrops];
 
       const loot = runLootSystem({
         drops: dropsWithNew,
@@ -239,11 +241,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         playerRadius: PLAYER_RADIUS,
         dt,
         now: gameNow,
-        goldDropMultiplier: difficulty.goldDropMultiplier,
       });
 
       if (loot.collectedGold > 0) {
-        game.addGold(loot.collectedGold);
+        // Multiplicadores já aplicados no nº de moedas — não reaplicar renda
+        game.addGold(loot.collectedGold, { applyIncome: false });
       }
       if (loot.collectedDiamonds > 0) {
         game.addGems(loot.collectedDiamonds);

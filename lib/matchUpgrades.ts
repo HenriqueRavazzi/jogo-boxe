@@ -2,6 +2,9 @@
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
+/** Categoria da carta — usada para evitar duplicatas no pack de level-up. */
+export type UpgradeCategory = "damage" | "speed" | "range";
+
 export type UpgradeType =
   | "attackSpeed"
   | "attackRange"
@@ -10,6 +13,7 @@ export type UpgradeType =
 export type MatchUpgrade = {
   id: string;
   type: UpgradeType;
+  category: UpgradeCategory;
   /** Bônus percentual (0.1 = +10%). */
   value: number;
   rarity: Rarity;
@@ -43,13 +47,31 @@ const RARITY_BONUS: Record<Rarity, number> = {
 
 const UPGRADE_POOL: {
   type: UpgradeType;
+  category: UpgradeCategory;
   name: string;
   short: string;
 }[] = [
-  { type: "attackSpeed", name: "Attack Speed", short: "Velocidade de Ataque" },
-  { type: "attackRange", name: "Range", short: "Alcance" },
-  { type: "damageMultiplier", name: "Damage", short: "Dano" },
+  {
+    type: "attackSpeed",
+    category: "speed",
+    name: "Attack Speed",
+    short: "Velocidade de Ataque",
+  },
+  {
+    type: "attackRange",
+    category: "range",
+    name: "Range",
+    short: "Alcance",
+  },
+  {
+    type: "damageMultiplier",
+    category: "damage",
+    name: "Damage",
+    short: "Dano",
+  },
 ];
+
+const ALL_CATEGORIES: UpgradeCategory[] = UPGRADE_POOL.map((p) => p.category);
 
 export const RARITY_LABEL: Record<Rarity, string> = {
   common: "Comum",
@@ -112,14 +134,19 @@ function rollRarity(): Rarity {
   return "legendary";
 }
 
-function createUpgrade(rarity: Rarity): MatchUpgrade {
-  const pool = UPGRADE_POOL[Math.floor(Math.random() * UPGRADE_POOL.length)]!;
+function createUpgradeForCategory(
+  category: UpgradeCategory,
+  rarity: Rarity,
+): MatchUpgrade {
+  const pool =
+    UPGRADE_POOL.find((p) => p.category === category) ?? UPGRADE_POOL[0]!;
   const value = RARITY_BONUS[rarity];
   const pct = Math.round(value * 100);
 
   return {
     id: crypto.randomUUID(),
     type: pool.type,
+    category: pool.category,
     value,
     rarity,
     label: `+${pct}% ${pool.name}`,
@@ -127,7 +154,25 @@ function createUpgrade(rarity: Rarity): MatchUpgrade {
   };
 }
 
-/** Gera N cartas aleatórias com raridade ponderada. */
+/**
+ * Gera N cartas com raridade ponderada e categorias distintas
+ * (nunca duas cartas da mesma categoria no mesmo pack).
+ */
 export function generateUpgradeOptions(count = 3): MatchUpgrade[] {
-  return Array.from({ length: count }, () => createUpgrade(rollRarity()));
+  const selectedCards: MatchUpgrade[] = [];
+  let availableCategories = [...ALL_CATEGORIES];
+
+  while (selectedCards.length < count && availableCategories.length > 0) {
+    const categoryIndex = Math.floor(
+      Math.random() * availableCategories.length,
+    );
+    const category = availableCategories[categoryIndex]!;
+
+    const rarity = rollRarity();
+    selectedCards.push(createUpgradeForCategory(category, rarity));
+
+    availableCategories = availableCategories.filter((c) => c !== category);
+  }
+
+  return selectedCards;
 }

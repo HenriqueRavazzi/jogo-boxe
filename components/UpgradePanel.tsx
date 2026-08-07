@@ -9,7 +9,12 @@ import {
   HeartPulse,
   Swords,
 } from "lucide-react";
-import { MAX_STAT_LEVEL, useGameStore } from "@/store/useGameStore";
+import {
+  MAX_ATTACK_RANGE,
+  MAX_STAT_LEVEL,
+  MIN_ATTACK_COOLDOWN_MS,
+  useGameStore,
+} from "@/store/useGameStore";
 import { syncWithDB } from "@/lib/syncWithDB";
 
 /** Painel de upgrades com ouro. */
@@ -53,14 +58,20 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
     Math.min(attackSpeedLevel + 1, MAX_STAT_LEVEL),
   );
   const cdDelta = nextCd - currentCd;
-  const speedAtMax = attackSpeedLevel >= MAX_STAT_LEVEL;
+  const speedAtMax =
+    attackSpeedLevel >= MAX_STAT_LEVEL ||
+    currentCd <= MIN_ATTACK_COOLDOWN_MS ||
+    nextCd >= currentCd;
 
   const currentRange = getUpgradeRangeAt(rangeLevel);
   const nextRange = getUpgradeRangeAt(
     Math.min(rangeLevel + 1, MAX_STAT_LEVEL),
   );
   const rangeDelta = nextRange - currentRange;
-  const rangeAtMax = rangeLevel >= MAX_STAT_LEVEL;
+  const rangeAtMax =
+    rangeLevel >= MAX_STAT_LEVEL ||
+    currentRange >= MAX_ATTACK_RANGE ||
+    nextRange <= currentRange;
 
   const grid = (
     <div
@@ -91,11 +102,14 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         }
         subtitle={
           speedAtMax
-            ? `Nível máximo (${MAX_STAT_LEVEL})`
+            ? currentCd <= MIN_ATTACK_COOLDOWN_MS
+              ? `Máximo (${MIN_ATTACK_COOLDOWN_MS}ms)`
+              : `Nível máximo (${MAX_STAT_LEVEL})`
             : `Nível ${attackSpeedLevel}/${MAX_STAT_LEVEL}`
         }
         cost={speedCost}
         canAfford={!speedAtMax && gold >= speedCost}
+        atMax={speedAtMax}
         onUpgrade={upgradeAttackSpeed}
       />
       <UpgradeCard
@@ -107,11 +121,14 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         }
         subtitle={
           rangeAtMax
-            ? `Nível máximo (${MAX_STAT_LEVEL})`
+            ? currentRange >= MAX_ATTACK_RANGE
+              ? `Máximo (${MAX_ATTACK_RANGE}px)`
+              : `Nível máximo (${MAX_STAT_LEVEL})`
             : `Nível ${rangeLevel}/${MAX_STAT_LEVEL}`
         }
         cost={rangeCost}
         canAfford={!rangeAtMax && gold >= rangeCost}
+        atMax={rangeAtMax}
         onUpgrade={upgradeRange}
       />
       <UpgradeCard
@@ -158,6 +175,7 @@ type UpgradeCardProps = {
   subtitleClassName?: string;
   cost: number;
   canAfford: boolean;
+  atMax?: boolean;
   onUpgrade: () => boolean;
 };
 
@@ -168,6 +186,7 @@ function UpgradeCard({
   subtitleClassName,
   cost,
   canAfford,
+  atMax = false,
   onUpgrade,
 }: UpgradeCardProps) {
   return (
@@ -183,19 +202,20 @@ function UpgradeCard({
           {subtitle}
         </p>
         <p className="mt-0.5 text-xs text-amber-300/90">
-          Custo: {cost.toLocaleString("pt-BR")} Ouro
+          {atMax ? "Limite atingido" : `Custo: ${cost.toLocaleString("pt-BR")} Ouro`}
         </p>
       </div>
       <button
         type="button"
-        disabled={!canAfford}
+        disabled={atMax || !canAfford}
         onClick={() => {
+          if (atMax) return;
           const ok = onUpgrade();
           if (ok) void syncWithDB();
         }}
-        className="shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+        className="shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400 disabled:opacity-50"
       >
-        Upgrade
+        {atMax ? "MÁXIMO" : "Upgrade"}
       </button>
     </div>
   );

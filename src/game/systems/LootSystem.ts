@@ -17,18 +17,65 @@ export type KillSite = {
 
 const DROP_IDLE_MS = 800;
 const MAGNET_SPEED = 520; // px/s
+/** Valor de cada moeda física ao coletar. */
 const GOLD_DROP_VALUE = 10;
+/** Moedas base por kill (antes dos multiplicadores). */
+const BASE_GOLD_DROP = 1;
 const DIAMOND_CHANCE = 0.1;
+/** Espalhamento aleatório das moedas em px. */
+const COIN_SCATTER_PX = 40;
 
-/** Cria drops nas posições de morte (90% gold / 10% diamond). */
-export function createDropsFromKills(sites: KillSite[], now = Date.now()): Drop[] {
-  return sites.map((site) => ({
-    id: crypto.randomUUID(),
-    x: site.x,
-    y: site.y,
-    type: Math.random() < DIAMOND_CHANCE ? "diamond" : "gold",
-    spawnTime: now,
-  }));
+export type CreateDropsOptions = {
+  /** Multiplicador de renda da loja. */
+  incomeMultiplier?: number;
+  /** Multiplicador de ouro da dificuldade. */
+  goldDropMultiplier?: number;
+};
+
+/**
+ * Gera várias moedas físicas espalhadas por kill + rolagem separada de diamante.
+ * coinCount = max(1, floor(baseGoldDrop * income * goldDropMult))
+ */
+export function createDropsFromKills(
+  sites: KillSite[],
+  now = Date.now(),
+  options: CreateDropsOptions = {},
+): Drop[] {
+  const incomeMultiplier = options.incomeMultiplier ?? 1;
+  const goldDropMultiplier = options.goldDropMultiplier ?? 1;
+  const drops: Drop[] = [];
+
+  for (const site of sites) {
+    const coinCount = Math.max(
+      1,
+      Math.floor(BASE_GOLD_DROP * incomeMultiplier * goldDropMultiplier),
+    );
+
+    for (let i = 0; i < coinCount; i++) {
+      const dropX = site.x + (Math.random() - 0.5) * COIN_SCATTER_PX;
+      const dropY = site.y + (Math.random() - 0.5) * COIN_SCATTER_PX;
+      drops.push({
+        id: crypto.randomUUID(),
+        x: dropX,
+        y: dropY,
+        type: "gold",
+        spawnTime: now,
+      });
+    }
+
+    // Diamante: 10% independente, no centro da morte
+    if (Math.random() < DIAMOND_CHANCE) {
+      drops.push({
+        id: crypto.randomUUID(),
+        x: site.x,
+        y: site.y,
+        type: "diamond",
+        spawnTime: now,
+      });
+    }
+  }
+
+  return drops;
 }
 
 export type LootSystemInput = {
@@ -38,8 +85,6 @@ export type LootSystemInput = {
   playerRadius: number;
   dt: number;
   now?: number;
-  /** Multiplicador de ouro da dificuldade (ex.: Infernal 3×). */
-  goldDropMultiplier?: number;
 };
 
 export type LootSystemResult = {
@@ -50,6 +95,7 @@ export type LootSystemResult = {
 
 /**
  * Idle 800ms → magnetismo em direção ao player → coleta por proximidade.
+ * Cada moeda física vale GOLD_DROP_VALUE (multiplicadores já vieram no spawn).
  */
 export function runLootSystem(input: LootSystemInput): LootSystemResult {
   const {
@@ -59,16 +105,11 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
     playerRadius,
     dt,
     now = Date.now(),
-    goldDropMultiplier = 1,
   } = input;
 
   let collectedGold = 0;
   let collectedDiamonds = 0;
   const remaining: Drop[] = [];
-  const goldValue = Math.max(
-    1,
-    Math.round(GOLD_DROP_VALUE * goldDropMultiplier),
-  );
 
   for (const drop of drops) {
     const age = now - drop.spawnTime;
@@ -86,7 +127,7 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
     const distToPlayer = Math.hypot(playerX - x, playerY - y);
     if (distToPlayer < playerRadius) {
       if (drop.type === "gold") {
-        collectedGold += goldValue;
+        collectedGold += GOLD_DROP_VALUE;
       } else {
         collectedDiamonds += 1;
       }
@@ -103,4 +144,4 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
   };
 }
 
-export { DROP_IDLE_MS, GOLD_DROP_VALUE };
+export { DROP_IDLE_MS, GOLD_DROP_VALUE, BASE_GOLD_DROP, COIN_SCATTER_PX };

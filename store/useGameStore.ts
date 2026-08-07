@@ -83,7 +83,7 @@ export type GameStoreState = {
   setSelectedDifficulty: (id: number) => void;
   getSelectedDifficulty: () => DifficultyConfig | null;
   getDifficultyMultipliers: () => DifficultyMultipliers;
-  addGold: (baseAmount: number) => void;
+  addGold: (baseAmount: number, options?: { applyIncome?: boolean }) => void;
   addGems: (amount: number) => void;
   unlockSkill: (nodeId: SkillNodeId, cost: number) => boolean;
   upgradeHP: () => boolean;
@@ -179,29 +179,39 @@ function skillCooldownReduction(tree: SkillTreeState): number {
   return reduction;
 }
 
+/** Floor duro de cooldown de ataque (ms). */
+export const MIN_ATTACK_COOLDOWN_MS = 300;
+/** Teto duro de alcance (px). */
+export const MAX_ATTACK_RANGE = 600;
+
 /**
- * Cooldown absoluto (ms): base − (2% da base × nível), capped em MAX_STAT_LEVEL.
+ * Cooldown absoluto (ms): base − (2% da base × nível), nunca abaixo de 300ms.
  */
 export function cooldownAtLevel(
   level: number,
   baseAttackSpeedMs = FALLBACK_GAME_SETTINGS.baseAttackSpeed,
 ): number {
   const lv = Math.min(Math.max(0, level), MAX_STAT_LEVEL);
-  return Math.round(baseAttackSpeedMs * (1 - BONUS_PER_LEVEL * lv));
+  const calculated = Math.round(baseAttackSpeedMs * (1 - BONUS_PER_LEVEL * lv));
+  return Math.max(calculated, MIN_ATTACK_COOLDOWN_MS);
 }
 
 /**
- * Range absoluto (px): base + (2% da base × nível), capped em MAX_STAT_LEVEL.
+ * Range absoluto (px): base + (2% da base × nível), nunca acima de 600px.
  */
 export function rangeAtLevel(
   level: number,
   baseRange = FALLBACK_GAME_SETTINGS.baseRange,
 ): number {
   const lv = Math.min(Math.max(0, level), MAX_STAT_LEVEL);
-  return Math.round(baseRange * (1 + BONUS_PER_LEVEL * lv));
+  const calculated = Math.round(baseRange * (1 + BONUS_PER_LEVEL * lv));
+  return Math.min(calculated, MAX_ATTACK_RANGE);
 }
 
-export { MAX_STAT_LEVEL, FALLBACK_GAME_SETTINGS as DEFAULT_BASE_CONFIG };
+export {
+  MAX_STAT_LEVEL,
+  FALLBACK_GAME_SETTINGS as DEFAULT_BASE_CONFIG,
+};
 
 /** @deprecated Use baseConfig.baseAttackSpeed da store. */
 export const BASE_ATTACK_SPEED_MS = FALLBACK_GAME_SETTINGS.baseAttackSpeed;
@@ -320,10 +330,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     };
   },
 
-  addGold: (amount) =>
+  addGold: (amount, options) => {
+    const applyIncome = options?.applyIncome !== false;
     set((s) => ({
-      gold: s.gold + Math.round(amount * s.incomeMultiplier),
-    })),
+      gold:
+        s.gold +
+        Math.round(amount * (applyIncome ? s.incomeMultiplier : 1)),
+    }));
+  },
 
   addGems: (amount) => set((s) => ({ gems: s.gems + amount })),
 
@@ -384,8 +398,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return {
       maxHp: Math.round(goldHp + skillHp),
       damage: Math.round(s.baseDamage + skillDmg),
-      attackRange: Math.round(goldRange + skillRange),
-      attackCooldownMs: Math.max(50, Math.round(goldCooldown - skillCd)),
+      attackRange: Math.min(
+        MAX_ATTACK_RANGE,
+        Math.round(goldRange + skillRange),
+      ),
+      attackCooldownMs: Math.max(
+        MIN_ATTACK_COOLDOWN_MS,
+        Math.round(goldCooldown - skillCd),
+      ),
       xpMultiplier: xpMultiplierAt(s.xpBonusLevel),
       arms: s.arms,
       skillBonus: {
@@ -431,6 +451,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   upgradeAttackSpeed: () => {
     if (get().attackSpeedLevel >= MAX_STAT_LEVEL) return false;
+    const currentCd = get().getUpgradeCooldownAt(get().attackSpeedLevel);
+    if (currentCd <= MIN_ATTACK_COOLDOWN_MS) return false;
+    const nextCd = get().getUpgradeCooldownAt(get().attackSpeedLevel + 1);
+    // Sem ganho real (já no hard cap)
+    if (nextCd >= currentCd) return false;
     const cost = get().getAttackSpeedUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({
@@ -442,6 +467,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   upgradeRange: () => {
     if (get().rangeLevel >= MAX_STAT_LEVEL) return false;
+    const currentRange = get().getUpgradeRangeAt(get().rangeLevel);
+    if (currentRange >= MAX_ATTACK_RANGE) return false;
+    const nextRange = get().getUpgradeRangeAt(get().rangeLevel + 1);
+    if (nextRange <= currentRange) return false;
     const cost = get().getRangeUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({
