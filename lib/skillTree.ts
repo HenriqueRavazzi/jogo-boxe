@@ -39,12 +39,12 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
 };
 
 export const SKILL_NODES: SkillNodeDef[] = [
-  // Vitality
+  // Vitality — custos em diamantes (gems)
   {
     id: "node_hp_1",
     name: "Tough Hide",
     description: "+25 Max HP",
-    cost: 150,
+    cost: 5,
     requires: null,
     branch: "vitality",
     tier: 0,
@@ -54,7 +54,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_hp_2",
     name: "Iron Lungs",
     description: "+50 Max HP",
-    cost: 350,
+    cost: 12,
     requires: "node_hp_1",
     branch: "vitality",
     tier: 1,
@@ -64,7 +64,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_iron_guard",
     name: "Iron Guard",
     description: "+40 Max HP",
-    cost: 500,
+    cost: 20,
     requires: "node_hp_2",
     branch: "vitality",
     tier: 2,
@@ -75,7 +75,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_dmg_1",
     name: "Heavy Hands",
     description: "+5 Base Damage",
-    cost: 150,
+    cost: 5,
     requires: null,
     branch: "power",
     tier: 0,
@@ -85,7 +85,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_dmg_2",
     name: "Bone Crusher",
     description: "+10 Base Damage",
-    cost: 350,
+    cost: 12,
     requires: "node_dmg_1",
     branch: "power",
     tier: 1,
@@ -95,7 +95,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_range_focus",
     name: "Long Reach",
     description: "+25 Range",
-    cost: 500,
+    cost: 20,
     requires: "node_dmg_2",
     branch: "power",
     tier: 2,
@@ -106,7 +106,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_spark_ignition",
     name: "Spark Ignition",
     description: "-50ms Attack Cooldown",
-    cost: 200,
+    cost: 8,
     requires: null,
     branch: "spark",
     tier: 0,
@@ -116,7 +116,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_spark_burst",
     name: "Spark Burst",
     description: "-75ms Attack Cooldown",
-    cost: 400,
+    cost: 15,
     requires: "node_spark_ignition",
     branch: "spark",
     tier: 1,
@@ -126,7 +126,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_spark_fury",
     name: "Spark Fury",
     description: "-100ms Attack Cooldown",
-    cost: 650,
+    cost: 25,
     requires: "node_spark_burst",
     branch: "spark",
     tier: 2,
@@ -147,11 +147,11 @@ export function getSkillNode(id: SkillNodeId): SkillNodeDef {
 export function canUnlockSkill(
   skillTree: SkillTreeState,
   nodeId: SkillNodeId,
-  gold: number,
+  gems: number,
 ): boolean {
   const node = getSkillNode(nodeId);
   if (skillTree[nodeId]) return false;
   if (node.requires && !skillTree[node.requires]) return false;
-  if (gold < node.cost) return false;
+  if (gems < node.cost) return false;
   return true;
 }

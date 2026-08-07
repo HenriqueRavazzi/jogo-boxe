@@ -8,8 +8,10 @@ export type SaveData = {
   gems: number;
   maxHpLevel: number;
   baseDamageLevel: number;
-  baseAttackSpeed: number;
-  baseRange: number;
+  /** Nível 0–6: cooldown absoluto (−2% da base por nível, máx −12%). */
+  attackSpeedLevel: number;
+  /** Nível 0–6: range absoluto (+2% da base por nível, máx +12%). */
+  rangeLevel: number;
   arms: number;
   armTier: number;
   incomeMultiplier: number;

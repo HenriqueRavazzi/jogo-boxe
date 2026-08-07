@@ -15,12 +15,32 @@ export type Enemy = {
   hp: number;
   maxHp: number;
   speed: number;
+  vx: number;
+  vy: number;
+  contactDamage: number;
 };
 
 export type ActiveAttack = {
   targetX: number;
   targetY: number;
   timestamp: number;
+};
+
+export type FloatingText = {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  age: number;
+  color: string;
+};
+
+export type Drop = {
+  id: string;
+  x: number;
+  y: number;
+  type: "gold" | "diamond";
+  spawnTime: number;
 };
 
 export type MatchBuffs = {
@@ -44,8 +64,13 @@ export type ArenaStoreState = {
   playerX: number;
   playerY: number;
   enemies: Enemy[];
+  drops: Drop[];
   lastAttackTime: number;
   activeAttacks: ActiveAttack[];
+  floatingTexts: FloatingText[];
+  shakeFrames: number;
+  /** Tempo vivo na partida atual (segundos). */
+  timeAlive: number;
   currentXp: number;
   xpToNextLevel: number;
   matchLevel: number;
@@ -56,6 +81,8 @@ export type ArenaStoreState = {
   addXp: (amount: number) => void;
   selectUpgrade: (upgradeType: UpgradeType, value: number) => void;
   setPlayerPosition: (x: number, y: number) => void;
+  /** Sempre centraliza o jogador no canvas (CSS px). */
+  centerPlayer: (canvasWidth: number, canvasHeight: number) => void;
   setCurrentHp: (hp: number) => void;
   takeDamage: (amount: number) => void;
   damagePlayer: (amount: number) => void;
@@ -63,6 +90,9 @@ export type ArenaStoreState = {
   addEnemy: (enemy: Enemy) => void;
   removeEnemy: (id: string) => void;
   spawnEnemy: (canvasWidth: number, canvasHeight: number) => void;
+  addFloatingTexts: (texts: FloatingText[]) => void;
+  tickFloatingTexts: () => void;
+  triggerShake: (frames?: number) => void;
   updateEnemies: (
     playerX: number,
     playerY: number,
@@ -112,6 +142,8 @@ function enterLevelUp(
   xpToNextLevel: number,
   matchLevel: number,
 ) {
+  // Recompensa de diamante por level up in-match
+  useGameStore.getState().addGems(1);
   set({
     currentXp: xp,
     xpToNextLevel,
@@ -127,8 +159,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   playerX: 0,
   playerY: 0,
   enemies: [],
+  drops: [],
   lastAttackTime: 0,
   activeAttacks: [],
+  floatingTexts: [],
+  shakeFrames: 0,
+  timeAlive: 0,
   currentXp: 0,
   xpToNextLevel: BASE_XP_TO_LEVEL,
   matchLevel: 1,
@@ -145,8 +181,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       gameState: "playing",
       currentHp: maxHp,
       enemies: [],
+      drops: [],
       lastAttackTime: 0,
       activeAttacks: [],
+      floatingTexts: [],
+      shakeFrames: 0,
+      timeAlive: 0,
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
@@ -161,10 +201,25 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     set({
       gameState: "gameover",
       enemies: [],
+      drops: [],
       lastAttackTime: 0,
       activeAttacks: [],
+      floatingTexts: [],
+      shakeFrames: 0,
       levelUpOptions: [],
     }),
+
+  addFloatingTexts: (texts) =>
+    set((s) => ({ floatingTexts: [...s.floatingTexts, ...texts] })),
+
+  tickFloatingTexts: () =>
+    set((s) => ({
+      floatingTexts: s.floatingTexts
+        .map((t) => ({ ...t, age: t.age + 1, y: t.y - 0.8 }))
+        .filter((t) => t.age < 60),
+    })),
+
+  triggerShake: (frames = 10) => set({ shakeFrames: frames }),
 
   addXp: (amount) => {
     const state = get();
@@ -217,6 +272,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),
 
+  centerPlayer: (canvasWidth, canvasHeight) =>
+    set({
+      playerX: canvasWidth / 2,
+      playerY: canvasHeight / 2,
+    }),
+
   setCurrentHp: (hp) => set({ currentHp: Math.max(0, hp) }),
 
   takeDamage: (amount) => {
@@ -249,6 +310,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       hp: DEFAULT_ENEMY_HP,
       maxHp: DEFAULT_ENEMY_HP,
       speed: DEFAULT_ENEMY_SPEED,
+      vx: 0,
+      vy: 0,
+      contactDamage: CONTACT_DAMAGE,
     };
     set((s) => ({ enemies: [...s.enemies, enemy] }));
   },
@@ -379,8 +443,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       playerX: centerX,
       playerY: centerY,
       enemies: [],
+      drops: [],
       lastAttackTime: 0,
       activeAttacks: [],
+      floatingTexts: [],
+      shakeFrames: 0,
+      timeAlive: 0,
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,

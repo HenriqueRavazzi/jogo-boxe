@@ -9,14 +9,14 @@ import {
   HeartPulse,
   Swords,
 } from "lucide-react";
-import { useGameStore } from "@/store/useGameStore";
+import { MAX_STAT_LEVEL, useGameStore } from "@/store/useGameStore";
 
-/** Painel inferior com cards de upgrade. */
-export function UpgradePanel() {
+/** Painel de upgrades com ouro. */
+export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const maxHpLevel = useGameStore((s) => s.maxHpLevel);
   const baseDamageLevel = useGameStore((s) => s.baseDamageLevel);
-  const baseAttackSpeed = useGameStore((s) => s.baseAttackSpeed);
-  const baseRange = useGameStore((s) => s.baseRange);
+  const attackSpeedLevel = useGameStore((s) => s.attackSpeedLevel);
+  const rangeLevel = useGameStore((s) => s.rangeLevel);
   const arms = useGameStore((s) => s.arms);
   const armTier = useGameStore((s) => s.armTier);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
@@ -38,6 +38,8 @@ export function UpgradePanel() {
   const upgradeArms = useGameStore((s) => s.upgradeArms);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const getBaseDamage = useGameStore((s) => s.getBaseDamage);
+  const getUpgradeCooldownAt = useGameStore((s) => s.getUpgradeCooldownAt);
+  const getUpgradeRangeAt = useGameStore((s) => s.getUpgradeRangeAt);
 
   const hpCost = getHpUpgradeCost();
   const damageCost = getDamageUpgradeCost();
@@ -45,60 +47,99 @@ export function UpgradePanel() {
   const rangeCost = getRangeUpgradeCost();
   const incomeCost = getIncomeUpgradeCost();
   const armsCost = getArmsUpgradeCost();
-  const speedMaxed = baseAttackSpeed <= 200;
+
+  const currentCd = getUpgradeCooldownAt(attackSpeedLevel);
+  const nextCd = getUpgradeCooldownAt(
+    Math.min(attackSpeedLevel + 1, MAX_STAT_LEVEL),
+  );
+  const cdDelta = nextCd - currentCd;
+  const speedAtMax = attackSpeedLevel >= MAX_STAT_LEVEL;
+
+  const currentRange = getUpgradeRangeAt(rangeLevel);
+  const nextRange = getUpgradeRangeAt(
+    Math.min(rangeLevel + 1, MAX_STAT_LEVEL),
+  );
+  const rangeDelta = nextRange - currentRange;
+  const rangeAtMax = rangeLevel >= MAX_STAT_LEVEL;
+
+  const grid = (
+    <div
+      className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${embedded ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}
+    >
+      <UpgradeCard
+        icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
+        title={`Max HP: Nível ${maxHpLevel}`}
+        subtitle={`HP atual: ${getMaxHp()}`}
+        cost={hpCost}
+        canAfford={gold >= hpCost}
+        onUpgrade={upgradeHP}
+      />
+      <UpgradeCard
+        icon={<Swords className="h-5 w-5 text-amber-400" />}
+        title={`Dano: Nível ${baseDamageLevel}`}
+        subtitle={`Dano base: ${getBaseDamage()}`}
+        cost={damageCost}
+        canAfford={gold >= damageCost}
+        onUpgrade={upgradeDamage}
+      />
+      <UpgradeCard
+        icon={<Gauge className="h-5 w-5 text-lime-400" />}
+        title={
+          speedAtMax
+            ? `Velocidade: ${currentCd}ms`
+            : `Velocidade: ${currentCd}ms (Próximo: ${cdDelta}ms)`
+        }
+        subtitle={
+          speedAtMax
+            ? `Nível máximo (${MAX_STAT_LEVEL})`
+            : `Nível ${attackSpeedLevel}/${MAX_STAT_LEVEL}`
+        }
+        cost={speedCost}
+        canAfford={!speedAtMax && gold >= speedCost}
+        onUpgrade={upgradeAttackSpeed}
+      />
+      <UpgradeCard
+        icon={<Crosshair className="h-5 w-5 text-orange-400" />}
+        title={
+          rangeAtMax
+            ? `Alcance: ${currentRange}`
+            : `Alcance: ${currentRange} (Próximo: +${rangeDelta})`
+        }
+        subtitle={
+          rangeAtMax
+            ? `Nível máximo (${MAX_STAT_LEVEL})`
+            : `Nível ${rangeLevel}/${MAX_STAT_LEVEL}`
+        }
+        cost={rangeCost}
+        canAfford={!rangeAtMax && gold >= rangeCost}
+        onUpgrade={upgradeRange}
+      />
+      <UpgradeCard
+        icon={<Coins className="h-5 w-5 text-yellow-400" />}
+        title={`Multiplicador: ${incomeMultiplier.toFixed(1)}x`}
+        subtitle="Renda de ouro por kill"
+        cost={incomeCost}
+        canAfford={gold >= incomeCost}
+        onUpgrade={upgradeIncome}
+      />
+      <UpgradeCard
+        icon={<Hand className="h-5 w-5 text-sky-400" />}
+        title={`Braços: ${arms} (Tier ${armTier})`}
+        subtitle={arms < 6 ? "Próximo: +1 braço" : "Próximo: sobe Tier"}
+        cost={armsCost}
+        canAfford={gold >= armsCost}
+        onUpgrade={upgradeArms}
+      />
+    </div>
+  );
+
+  if (embedded) {
+    return <div className="pointer-events-auto">{grid}</div>;
+  }
 
   return (
     <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4">
-      <div className="pointer-events-auto mx-auto grid max-w-5xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        <UpgradeCard
-          icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
-          title={`Max HP: Nível ${maxHpLevel}`}
-          subtitle={`HP atual: ${getMaxHp()}`}
-          cost={hpCost}
-          canAfford={gold >= hpCost}
-          onUpgrade={upgradeHP}
-        />
-        <UpgradeCard
-          icon={<Swords className="h-5 w-5 text-amber-400" />}
-          title={`Dano: Nível ${baseDamageLevel}`}
-          subtitle={`Dano base: ${getBaseDamage()}`}
-          cost={damageCost}
-          canAfford={gold >= damageCost}
-          onUpgrade={upgradeDamage}
-        />
-        <UpgradeCard
-          icon={<Gauge className="h-5 w-5 text-lime-400" />}
-          title={`Attack Speed: ${baseAttackSpeed}ms`}
-          subtitle={speedMaxed ? "Cooldown mínimo atingido" : "Menor cooldown"}
-          cost={speedCost}
-          canAfford={!speedMaxed && gold >= speedCost}
-          onUpgrade={upgradeAttackSpeed}
-        />
-        <UpgradeCard
-          icon={<Crosshair className="h-5 w-5 text-orange-400" />}
-          title={`Range: ${baseRange}px`}
-          subtitle="Alcance do auto-ataque"
-          cost={rangeCost}
-          canAfford={gold >= rangeCost}
-          onUpgrade={upgradeRange}
-        />
-        <UpgradeCard
-          icon={<Coins className="h-5 w-5 text-yellow-400" />}
-          title={`Multiplicador: ${incomeMultiplier.toFixed(1)}x`}
-          subtitle="Renda de ouro por kill"
-          cost={incomeCost}
-          canAfford={gold >= incomeCost}
-          onUpgrade={upgradeIncome}
-        />
-        <UpgradeCard
-          icon={<Hand className="h-5 w-5 text-sky-400" />}
-          title={`Braços: ${arms} (Tier ${armTier})`}
-          subtitle={arms < 6 ? "Próximo: +1 braço" : "Próximo: sobe Tier"}
-          cost={armsCost}
-          canAfford={gold >= armsCost}
-          onUpgrade={upgradeArms}
-        />
-      </div>
+      <div className="pointer-events-auto mx-auto max-w-5xl">{grid}</div>
     </footer>
   );
 }

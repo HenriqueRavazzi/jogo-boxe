@@ -1,12 +1,13 @@
 "use client";
 
-import { Lock, Unlock } from "lucide-react";
+import { Gem, Lock, Unlock } from "lucide-react";
 import {
   SKILL_BRANCHES,
   SKILL_NODES,
   canUnlockSkill,
   type SkillNodeDef,
 } from "@/lib/skillTree";
+import { syncWithDB } from "@/lib/syncWithDB";
 import { useGameStore } from "@/store/useGameStore";
 
 type SkillTreeProps = {
@@ -31,11 +32,18 @@ const LINE_UNLOCKED: Record<string, string> = {
   sky: "bg-sky-400",
 };
 
-/** Overlay da árvore de talents (menu). */
+/** Overlay da árvore de talents (custa diamantes). */
 export function SkillTree({ onClose }: SkillTreeProps) {
-  const gold = useGameStore((s) => s.gold);
+  const gems = useGameStore((s) => s.gems);
   const skillTree = useGameStore((s) => s.skillTree);
   const unlockSkill = useGameStore((s) => s.unlockSkill);
+
+  const handleUnlock = async (nodeId: SkillNodeDef["id"], cost: number) => {
+    const ok = unlockSkill(nodeId, cost);
+    if (ok) {
+      await syncWithDB();
+    }
+  };
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
@@ -45,11 +53,14 @@ export function SkillTree({ onClose }: SkillTreeProps) {
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
               Talents
             </p>
-            <h2 className="text-2xl font-black text-zinc-50">Árvore de Habilidades</h2>
+            <h2 className="text-2xl font-black text-zinc-50">
+              Árvore de Habilidades
+            </h2>
           </div>
           <div className="flex items-center gap-3">
-            <span className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-sm font-semibold tabular-nums text-amber-300">
-              {gold.toLocaleString("pt-BR")} Ouro
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500/15 px-3 py-1.5 text-sm font-semibold tabular-nums text-cyan-300">
+              <Gem className="h-4 w-4" />
+              {gems.toLocaleString("pt-BR")} Diamantes
             </span>
             <button
               type="button"
@@ -64,9 +75,9 @@ export function SkillTree({ onClose }: SkillTreeProps) {
         <div className="overflow-y-auto p-5">
           <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             {SKILL_BRANCHES.map((branch) => {
-              const nodes = SKILL_NODES.filter((n) => n.branch === branch.id).sort(
-                (a, b) => a.tier - b.tier,
-              );
+              const nodes = SKILL_NODES.filter(
+                (n) => n.branch === branch.id,
+              ).sort((a, b) => a.tier - b.tier);
 
               return (
                 <div key={branch.id} className="flex flex-col items-center">
@@ -78,7 +89,10 @@ export function SkillTree({ onClose }: SkillTreeProps) {
 
                   <div className="flex w-full flex-col items-center">
                     {nodes.map((node, index) => (
-                      <div key={node.id} className="flex w-full flex-col items-center">
+                      <div
+                        key={node.id}
+                        className="flex w-full flex-col items-center"
+                      >
                         {index > 0 && (
                           <div
                             className={`h-8 w-1 rounded-full ${
@@ -91,13 +105,17 @@ export function SkillTree({ onClose }: SkillTreeProps) {
                         <SkillNodeButton
                           node={node}
                           unlocked={skillTree[node.id]}
-                          available={canUnlockSkill(skillTree, node.id, gold)}
+                          available={canUnlockSkill(
+                            skillTree,
+                            node.id,
+                            gems,
+                          )}
                           locked={
                             !skillTree[node.id] &&
                             !!node.requires &&
                             !skillTree[node.requires]
                           }
-                          onUnlock={() => unlockSkill(node.id, node.cost)}
+                          onUnlock={() => void handleUnlock(node.id, node.cost)}
                         />
                       </div>
                     ))}
@@ -153,8 +171,15 @@ function SkillNodeButton({
         )}
       </div>
       <p className="text-xs opacity-80">{node.description}</p>
-      <p className="mt-2 text-xs font-semibold tabular-nums opacity-90">
-        {unlocked ? "Desbloqueado" : `${node.cost.toLocaleString("pt-BR")} Ouro`}
+      <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold tabular-nums opacity-90">
+        {unlocked ? (
+          "Desbloqueado"
+        ) : (
+          <>
+            <Gem className="h-3.5 w-3.5 text-cyan-300" />
+            {node.cost.toLocaleString("pt-BR")} Diamantes
+          </>
+        )}
       </p>
     </button>
   );
