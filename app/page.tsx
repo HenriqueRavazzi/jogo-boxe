@@ -1,6 +1,7 @@
 "use client";
 
 import { GameCanvas } from "@/components/GameCanvas";
+import { LevelUpModal } from "@/components/LevelUpModal";
 import { TopBar } from "@/components/TopBar";
 import { UpgradePanel } from "@/components/UpgradePanel";
 import { useArenaStore } from "@/store/useArenaStore";
@@ -8,7 +9,7 @@ import { useArenaStore } from "@/store/useArenaStore";
 /**
  * Página principal: duas camadas (z-index)
  * - Background: canvas da arena
- * - Foreground: UI flutuante (TopBar + UpgradePanel + Menu)
+ * - Foreground: UI flutuante (TopBar + UpgradePanel + Menu / Level Up)
  */
 export default function Home() {
   const gameState = useArenaStore((s) => s.gameState);
@@ -46,6 +47,9 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Modal de level up — pausa o combate até escolher uma carta */}
+      {gameState === "level_up" && <LevelUpModal />}
     </div>
   );
 }

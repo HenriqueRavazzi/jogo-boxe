@@ -1,6 +1,11 @@
 "use client";
 
 import { create } from "zustand";
+import {
+  generateUpgradeOptions,
+  type MatchUpgrade,
+  type UpgradeType,
+} from "@/lib/matchUpgrades";
 import { useGameStore } from "@/store/useGameStore";
 
 export type Enemy = {
@@ -18,7 +23,19 @@ export type ActiveAttack = {
   timestamp: number;
 };
 
-export type GameState = "menu" | "playing" | "gameover";
+export type MatchBuffs = {
+  attackSpeed: number;
+  attackRange: number;
+  damageMultiplier: number;
+};
+
+export type GameState = "menu" | "playing" | "gameover" | "level_up";
+
+const DEFAULT_BUFFS: MatchBuffs = {
+  attackSpeed: 1,
+  attackRange: 1,
+  damageMultiplier: 1,
+};
 
 /** Estado volátil da partida atual (não persistido). */
 export type ArenaStoreState = {
@@ -28,13 +45,18 @@ export type ArenaStoreState = {
   playerY: number;
   enemies: Enemy[];
   lastAttackTime: number;
-  /** Socos recentes para feedback visual (linha do braço). */
   activeAttacks: ActiveAttack[];
+  currentXp: number;
+  xpToNextLevel: number;
+  matchLevel: number;
+  matchBuffs: MatchBuffs;
+  levelUpOptions: MatchUpgrade[];
   startGame: () => void;
   setGameOver: () => void;
+  addXp: (amount: number) => void;
+  selectUpgrade: (upgradeType: UpgradeType, value: number) => void;
   setPlayerPosition: (x: number, y: number) => void;
   setCurrentHp: (hp: number) => void;
-  /** Aplica dano de contato; em 0 HP limpa a arena e vai para game over. */
   takeDamage: (amount: number) => void;
   damagePlayer: (amount: number) => void;
   setEnemies: (enemies: Enemy[]) => void;
@@ -59,24 +81,44 @@ export type ArenaStoreState = {
 
 const EDGE_MARGIN = 24;
 const DEFAULT_ENEMY_HP = 30;
-const DEFAULT_ENEMY_SPEED = 55; // px/s
+const DEFAULT_ENEMY_SPEED = 55;
 const GOLD_PER_KILL = 10;
+const XP_PER_KILL = 25;
 const CONTACT_DAMAGE = 20;
+const BASE_XP_TO_LEVEL = 100;
 
-/** Posição aleatória em uma das quatro bordas do canvas. */
 function randomEdgePosition(canvasWidth: number, canvasHeight: number) {
   const edge = Math.floor(Math.random() * 4);
 
   switch (edge) {
-    case 0: // topo
+    case 0:
       return { x: Math.random() * canvasWidth, y: -EDGE_MARGIN };
-    case 1: // direita
+    case 1:
       return { x: canvasWidth + EDGE_MARGIN, y: Math.random() * canvasHeight };
-    case 2: // baixo
+    case 2:
       return { x: Math.random() * canvasWidth, y: canvasHeight + EDGE_MARGIN };
-    default: // esquerda
+    default:
       return { x: -EDGE_MARGIN, y: Math.random() * canvasHeight };
   }
+}
+
+function enterLevelUp(
+  set: (
+    partial:
+      | Partial<ArenaStoreState>
+      | ((s: ArenaStoreState) => Partial<ArenaStoreState>),
+  ) => void,
+  xp: number,
+  xpToNextLevel: number,
+  matchLevel: number,
+) {
+  set({
+    currentXp: xp,
+    xpToNextLevel,
+    matchLevel,
+    gameState: "level_up",
+    levelUpOptions: generateUpgradeOptions(3),
+  });
 }
 
 export const useArenaStore = create<ArenaStoreState>((set, get) => ({
@@ -87,6 +129,11 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   enemies: [],
   lastAttackTime: 0,
   activeAttacks: [],
+  currentXp: 0,
+  xpToNextLevel: BASE_XP_TO_LEVEL,
+  matchLevel: 1,
+  matchBuffs: { ...DEFAULT_BUFFS },
+  levelUpOptions: [],
 
   startGame: () => {
     const maxHp = useGameStore.getState().getMaxHp();
@@ -100,6 +147,11 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       enemies: [],
       lastAttackTime: 0,
       activeAttacks: [],
+      currentXp: 0,
+      xpToNextLevel: BASE_XP_TO_LEVEL,
+      matchLevel: 1,
+      matchBuffs: { ...DEFAULT_BUFFS },
+      levelUpOptions: [],
       playerX: playerX || w / 2,
       playerY: playerY || h / 2,
     });
@@ -111,7 +163,57 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       enemies: [],
       lastAttackTime: 0,
       activeAttacks: [],
+      levelUpOptions: [],
     }),
+
+  addXp: (amount) => {
+    const state = get();
+    if (state.gameState !== "playing" && state.gameState !== "level_up") {
+      return;
+    }
+    // Durante level_up, só acumula XP sem subir de novo
+    if (state.gameState === "level_up") {
+      set({ currentXp: state.currentXp + amount });
+      return;
+    }
+
+    let xp = state.currentXp + amount;
+    let nextReq = state.xpToNextLevel;
+    let level = state.matchLevel;
+
+    if (xp >= nextReq) {
+      xp -= nextReq;
+      level += 1;
+      nextReq = Math.floor(nextReq * 1.5);
+      enterLevelUp(set, xp, nextReq, level);
+      return;
+    }
+
+    set({ currentXp: xp });
+  },
+
+  selectUpgrade: (upgradeType, value) => {
+    set((s) => ({
+      matchBuffs: {
+        ...s.matchBuffs,
+        [upgradeType]: s.matchBuffs[upgradeType] * (1 + value),
+      },
+      gameState: "playing",
+      levelUpOptions: [],
+    }));
+
+    // Se ainda houver XP sobrando para outro nível, abre o próximo card pack
+    const { currentXp, xpToNextLevel, matchLevel } = get();
+    if (currentXp >= xpToNextLevel) {
+      const remainder = currentXp - xpToNextLevel;
+      enterLevelUp(
+        set,
+        remainder,
+        Math.floor(xpToNextLevel * 1.5),
+        matchLevel + 1,
+      );
+    }
+  },
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),
 
@@ -175,7 +277,6 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       })
       .filter((enemy) => {
         const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
-        // Colisão: inimigo explode e causa dano
         if (dist < collideDist) {
           contactHits += 1;
           return false;
@@ -190,30 +291,38 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     }
   },
 
-  /**
-   * Auto-ataca até N inimigos mais próximos (N = braços),
-   * com dano baseDamage * armTier.
-   */
   processCombat: (baseDamage, attackRange, attackCooldown) => {
     const now = performance.now();
-    const { playerX, playerY, enemies, lastAttackTime, activeAttacks } = get();
+    const {
+      playerX,
+      playerY,
+      enemies,
+      lastAttackTime,
+      activeAttacks,
+      matchBuffs,
+    } = get();
     const { arms, armTier } = useGameStore.getState();
 
     if (enemies.length === 0) return false;
-    if (now < lastAttackTime + attackCooldown) return false;
+
+    const effectiveCooldown = attackCooldown / matchBuffs.attackSpeed;
+    if (now < lastAttackTime + effectiveCooldown) return false;
+
+    const effectiveRange = attackRange * matchBuffs.attackRange;
 
     const inRange = enemies
       .map((enemy) => ({
         enemy,
         dist: Math.hypot(enemy.x - playerX, enemy.y - playerY),
       }))
-      .filter(({ dist }) => dist <= attackRange)
+      .filter(({ dist }) => dist <= effectiveRange)
       .sort((a, b) => a.dist - b.dist)
       .slice(0, arms);
 
     if (inRange.length === 0) return false;
 
-    const damage = baseDamage * armTier;
+    const damage =
+      baseDamage * armTier * matchBuffs.damageMultiplier;
     const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
     const newAttacks: ActiveAttack[] = inRange.map(({ enemy }) => ({
       targetX: enemy.x,
@@ -238,15 +347,16 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       }
     }
 
-    if (kills > 0) {
-      useGameStore.getState().addGold(GOLD_PER_KILL * kills);
-    }
-
     set({
       lastAttackTime: now,
       enemies: nextEnemies,
       activeAttacks: [...activeAttacks, ...newAttacks],
     });
+
+    if (kills > 0) {
+      useGameStore.getState().addGold(GOLD_PER_KILL * kills);
+      get().addXp(XP_PER_KILL * kills);
+    }
 
     return true;
   },
@@ -268,5 +378,10 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       enemies: [],
       lastAttackTime: 0,
       activeAttacks: [],
+      currentXp: 0,
+      xpToNextLevel: BASE_XP_TO_LEVEL,
+      matchLevel: 1,
+      matchBuffs: { ...DEFAULT_BUFFS },
+      levelUpOptions: [],
     }),
 }));
