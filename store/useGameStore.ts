@@ -1,19 +1,29 @@
 "use client";
 
 import { create } from "zustand";
-import type { SaveData } from "@/db/schema";
+import type {
+  SaveData,
+  SkillsData,
+  SkillUpgradeType,
+  UnlockedSkillsData,
+} from "@/db/schema";
+import {
+  DEFAULT_SKILLS_DATA,
+  DEFAULT_UNLOCKED_SKILLS,
+} from "@/db/schema";
 import {
   FALLBACK_DIFFICULTIES,
+  FALLBACK_ENEMY_TYPES,
   FALLBACK_GAME_SETTINGS,
   NEUTRAL_DIFFICULTY,
   type DifficultyConfig,
   type DifficultyMultipliers,
+  type EnemyTypeConfig,
   type GameBaseSettings,
 } from "@/lib/gameConfig";
 import {
   createDefaultSaveData,
   normalizeSaveData,
-  type SaveSlotId,
 } from "@/lib/saveSlots";
 import {
   DEFAULT_SKILL_TREE,
@@ -43,6 +53,10 @@ export type EffectiveStats = {
   lifeStealLevel: number;
   /** Fração de cura sobre dano (0.01 = 1%). */
   lifeStealPercent: number;
+  /** Chance crítica efetiva (0–0.5). */
+  critChance: number;
+  /** Multiplicador de dano crítico. */
+  critDamageMultiplier: number;
   /** Skill de ricochete (meta-progresso). */
   ricochetUnlocked: boolean;
   ricochetCooldown: number;
@@ -58,11 +72,16 @@ export type EffectiveStats = {
   };
 };
 
-/** Estado persistente — espelha o JSONB `save_data` no banco (por slot). */
+/** Estado persistente — espelha o JSONB `save_data` no banco (por save autenticado). */
 export type GameStoreState = {
-  activeSlotId: SaveSlotId | null;
+  /** UUID do save autenticado no Neon. */
+  activeSaveId: string | null;
+  /** Nome do save autenticado. */
+  activeSaveName: string | null;
   gold: number;
   gems: number;
+  /** Moeda para skills avançadas (ricochet/ice/lightning/fire). */
+  purpleDiamonds: number;
   maxHpLevel: number;
   baseDamageLevel: number;
   /** Dano base absoluto (inteiro). */
@@ -82,27 +101,49 @@ export type GameStoreState = {
   knockbackLevel: number;
   /** Poder base de empurrão dos socos. */
   baseKnockbackPower: number;
+  /** Nível de chance crítica (+2%/nível, teto 50%). */
+  critChanceLevel: number;
+  /** Nível de dano crítico (+15% no multiplicador/nível). */
+  critDamageLevel: number;
   skillTree: SkillTreeState;
+  /** Níveis meta com Diamantes Roxos (teto in-run). */
+  skillLevels: SkillsData;
+  /** Desbloqueio permanente na base (Diamantes Normais). */
+  unlockedSkills: UnlockedSkillsData;
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
   /** Lista de dificuldades do Neon. */
   difficulties: DifficultyConfig[];
+  /** Catálogo de inimigos/bosses do Neon (`enemy_types`). */
+  enemyTypes: EnemyTypeConfig[];
   /** Id da dificuldade selecionada no menu. */
   selectedDifficultyId: number | null;
   configsLoaded: boolean;
-  hydrateFromSave: (slotId: SaveSlotId, data: SaveData) => void;
+  hydrateFromSave: (
+    saveId: string,
+    data: SaveData,
+    saveName?: string,
+  ) => void;
   clearActiveSlot: () => void;
   getSaveSnapshot: () => SaveData;
   setGameConfigs: (
     settings: GameBaseSettings,
     difficulties: DifficultyConfig[],
+    enemyTypes?: EnemyTypeConfig[],
   ) => void;
   setSelectedDifficulty: (id: number) => void;
   getSelectedDifficulty: () => DifficultyConfig | null;
   getDifficultyMultipliers: () => DifficultyMultipliers;
   addGold: (baseAmount: number, options?: { applyIncome?: boolean }) => void;
   addGems: (amount: number) => void;
+  addPurpleDiamonds: (amount: number) => void;
   unlockSkill: (nodeId: SkillNodeId, cost: number) => boolean;
+  /** Desbloqueia skill avançada na base (Diamantes Normais / gems). */
+  unlockAdvancedSkill: (skillType: SkillUpgradeType) => boolean;
+  getAdvancedSkillUnlockCost: (skillType: SkillUpgradeType) => number;
+  /** Upgrade de skill avançada com Purple Diamonds (+ sync DB). */
+  upgradeSkill: (skillType: SkillUpgradeType) => boolean;
+  getSkillUpgradeCost: (skillType: SkillUpgradeType) => number;
   upgradeHP: () => boolean;
   upgradeDamage: () => boolean;
   upgradeAttackSpeed: () => boolean;
@@ -111,6 +152,10 @@ export type GameStoreState = {
   upgradeArms: () => boolean;
   /** Upgrade de knockback com ouro. */
   upgradeKnockback: () => boolean;
+  /** Upgrade de chance crítica com ouro. */
+  upgradeCritChance: () => boolean;
+  /** Upgrade de dano crítico com ouro. */
+  upgradeCritDamage: () => boolean;
   /** Upgrade de XP com diamantes. */
   upgradeXpBonus: () => boolean;
   getHpUpgradeCost: () => number;
@@ -120,20 +165,30 @@ export type GameStoreState = {
   getIncomeUpgradeCost: () => number;
   getArmsUpgradeCost: () => number;
   getKnockbackUpgradeCost: () => number;
+  getCritChanceUpgradeCost: () => number;
+  getCritDamageUpgradeCost: () => number;
   getXpBonusUpgradeCost: () => number;
   getXpMultiplier: () => number;
   /** Poder total de empurrão: base + nível × 2. */
   getKnockbackPower: () => number;
+  /** Chance crítica (0–0.5). */
+  getCritChance: () => number;
+  /** Multiplicador de dano crítico (≥ 1.5). */
+  getCritDamageMultiplier: () => number;
   /** Atributos finais (ouro + skills) usados na partida e na UI. */
   getEffectiveStats: () => EffectiveStats;
   getMaxHp: () => number;
   getBaseDamage: () => number;
   getAttackRange: () => number;
   getAttackCooldown: () => number;
-  /** Cooldown base só do upgrade (sem talents), em ms. */
+  /** Cooldown base só do upgrade (sem talents / cards), em ms. */
   getUpgradeCooldownAt: (level: number) => number;
-  /** Range base só do upgrade (sem talents), em px. */
+  /** Range base só do upgrade (sem talents / cards), em px. */
   getUpgradeRangeAt: (level: number) => number;
+  /** Alias: CD meta atual (respeita teto 65%). */
+  getBaseAttackSpeed: () => number;
+  /** Alias: range meta atual (respeita teto 65%). */
+  getBaseRange: () => number;
 };
 
 const HP_PER_LEVEL = 25;
@@ -146,18 +201,73 @@ const ARMS_PRESTIGE_DAMAGE = 1.15;
 const ARMS_MAX = 6;
 const ARMS_MIN = 2;
 
-/** Bônus máximo acumulado (12%) em MAX_STAT_LEVEL níveis → 2% por nível. */
-const MAX_STAT_BONUS = 0.12;
-const MAX_STAT_LEVEL = 6;
-const BONUS_PER_LEVEL = MAX_STAT_BONUS / MAX_STAT_LEVEL; // 0.02
+/** Crescimento de custo meta (ouro/diamantes): base × 1.15^nível. */
+export const UPGRADE_COST_GROWTH = 1.15;
+
+/**
+ * Margem meta vs in-game: ouro cobre 65% do caminho até o hard cap;
+ * 35% fica reservado aos cards de level-up na arena.
+ */
+export const META_PROGRESS_SHARE = 0.65;
+
+/** Níveis máximos de meta-progresso (ouro). */
+export const MAX_UPGRADE_LEVELS = {
+  hp: 40,
+  damage: 40,
+  income: 25,
+  knockback: 30,
+  critChance: 22, // 5% + 22×2% = 49% (teto soft antes do hard 50%)
+  critDamage: 25,
+  attackSpeed: 10,
+  range: 10,
+} as const;
+
+/** @deprecated Prefer MAX_UPGRADE_LEVELS.attackSpeed / .range */
+const MAX_STAT_LEVEL = MAX_UPGRADE_LEVELS.attackSpeed;
+
 const ATTACK_SPEED_COST_BASE = 60;
 const RANGE_COST_BASE = 60;
 const KNOCKBACK_COST_BASE = 55;
-const KNOCKBACK_COST_GROWTH = 1.35;
 const KNOCKBACK_POWER_PER_LEVEL = 2;
+const CRIT_CHANCE_BASE = 0.05;
+const CRIT_CHANCE_PER_LEVEL = 0.02;
+export const MAX_CRIT_CHANCE = 0.5;
+const CRIT_DAMAGE_BASE = 1.5;
+const CRIT_DAMAGE_PER_LEVEL = 0.15;
+const CRIT_CHANCE_COST_BASE = 65;
+const CRIT_DAMAGE_COST_BASE = 70;
+const PURPLE_SKILL_COST_BASE = 3;
+const PURPLE_SKILL_COST_GROWTH = 1.55;
+/** Custo em diamantes normais para desbloquear skill avançada. */
+const ADVANCED_SKILL_UNLOCK_COST: Record<SkillUpgradeType, number> = {
+  ricochet: 20,
+  ice: 15,
+  fire: 15,
+  lightning: 18,
+};
 /** Custo base em diamantes do 1º nível de bônus de XP. */
 const XP_BONUS_COST_BASE = 5;
 const XP_BONUS_COST_GROWTH = 1.5;
+
+/** Custo exponencial controlado: floor(base × 1.15^currentLevel). */
+export function getUpgradeCost(baseCost: number, currentLevel: number): number {
+  return Math.max(
+    1,
+    Math.floor(
+      baseCost * Math.pow(UPGRADE_COST_GROWTH, Math.max(0, currentLevel)),
+    ),
+  );
+}
+
+export function getPurpleSkillCostAt(level: number): number {
+  return Math.max(
+    1,
+    Math.floor(
+      PURPLE_SKILL_COST_BASE *
+        Math.pow(PURPLE_SKILL_COST_GROWTH, Math.max(0, level)),
+    ),
+  );
+}
 
 /** Poder de knockback: base + nível × 2. */
 export function getKnockbackPowerAt(
@@ -171,12 +281,36 @@ export function getKnockbackPowerAt(
 }
 
 export function getKnockbackCostAt(level: number): number {
-  return Math.max(
-    1,
-    Math.floor(
-      KNOCKBACK_COST_BASE * Math.pow(KNOCKBACK_COST_GROWTH, Math.max(0, level)),
-    ),
+  return getUpgradeCost(KNOCKBACK_COST_BASE, level);
+}
+
+/** Chance crítica: 5% + 2%/nível, teto 50%. */
+export function getCritChanceAt(critChanceLevel: number): number {
+  const capped = Math.min(
+    MAX_UPGRADE_LEVELS.critChance,
+    Math.max(0, critChanceLevel),
   );
+  return Math.min(
+    MAX_CRIT_CHANCE,
+    CRIT_CHANCE_BASE + capped * CRIT_CHANCE_PER_LEVEL,
+  );
+}
+
+/** Multiplicador de crítico: 1.5 + 0.15 × nível. */
+export function getCritDamageMultiplierAt(critDamageLevel: number): number {
+  const capped = Math.min(
+    MAX_UPGRADE_LEVELS.critDamage,
+    Math.max(0, critDamageLevel),
+  );
+  return CRIT_DAMAGE_BASE + capped * CRIT_DAMAGE_PER_LEVEL;
+}
+
+export function getCritChanceCostAt(level: number): number {
+  return getUpgradeCost(CRIT_CHANCE_COST_BASE, level);
+}
+
+export function getCritDamageCostAt(level: number): number {
+  return getUpgradeCost(CRIT_DAMAGE_COST_BASE, level);
 }
 
 /** Multiplicador de XP: nível 0 = 1.0, nível 1 = 1.1, … (+10% por nível). */
@@ -224,33 +358,63 @@ function skillCooldownReduction(tree: SkillTreeState): number {
   return reduction;
 }
 
-/** Floor duro de cooldown de ataque (ms). */
+/** Floor duro de cooldown de ataque (ms) — hard cap absoluto. */
 export const MIN_ATTACK_COOLDOWN_MS = 300;
-/** Teto duro de alcance (px). */
+/** Teto duro de alcance (px) — hard cap absoluto. */
 export const MAX_ATTACK_RANGE = 600;
 
 /**
- * Cooldown absoluto (ms): base − (2% da base × nível), nunca abaixo de 300ms.
+ * Teto de meta-progresso (ouro) para CD: só 65% do caminho até 300ms.
+ * Ex.: base 1500 → meta floor = 1500 − 1200×0.65 = 720ms.
+ */
+export function getMetaMaxCooldownMs(
+  baseAttackSpeedMs = FALLBACK_GAME_SETTINGS.baseAttackSpeed,
+): number {
+  const span = Math.max(0, baseAttackSpeedMs - MIN_ATTACK_COOLDOWN_MS);
+  return Math.round(baseAttackSpeedMs - span * META_PROGRESS_SHARE);
+}
+
+/**
+ * Teto de meta-progresso (ouro) para range: só 65% do caminho até 600px.
+ * Ex.: base 200 → meta ceil = 200 + 400×0.65 = 460px.
+ */
+export function getMetaMaxRangePx(
+  baseRange = FALLBACK_GAME_SETTINGS.baseRange,
+): number {
+  const span = Math.max(0, MAX_ATTACK_RANGE - baseRange);
+  return Math.round(baseRange + span * META_PROGRESS_SHARE);
+}
+
+/**
+ * Cooldown só com upgrades de ouro (sem cards in-game).
+ * Interpola linearmente até o teto meta (65%); hard cap 300ms fica para a arena.
  */
 export function cooldownAtLevel(
   level: number,
   baseAttackSpeedMs = FALLBACK_GAME_SETTINGS.baseAttackSpeed,
 ): number {
-  const lv = Math.min(Math.max(0, level), MAX_STAT_LEVEL);
-  const calculated = Math.round(baseAttackSpeedMs * (1 - BONUS_PER_LEVEL * lv));
-  return Math.max(calculated, MIN_ATTACK_COOLDOWN_MS);
+  const maxLv = MAX_UPGRADE_LEVELS.attackSpeed;
+  const lv = Math.min(Math.max(0, level), maxLv);
+  const metaFloor = getMetaMaxCooldownMs(baseAttackSpeedMs);
+  if (maxLv <= 0) return Math.round(baseAttackSpeedMs);
+  const t = lv / maxLv;
+  return Math.round(baseAttackSpeedMs + (metaFloor - baseAttackSpeedMs) * t);
 }
 
 /**
- * Range absoluto (px): base + (2% da base × nível), nunca acima de 600px.
+ * Range só com upgrades de ouro (sem cards in-game).
+ * Interpola linearmente até o teto meta (65%); hard cap 600px fica para a arena.
  */
 export function rangeAtLevel(
   level: number,
   baseRange = FALLBACK_GAME_SETTINGS.baseRange,
 ): number {
-  const lv = Math.min(Math.max(0, level), MAX_STAT_LEVEL);
-  const calculated = Math.round(baseRange * (1 + BONUS_PER_LEVEL * lv));
-  return Math.min(calculated, MAX_ATTACK_RANGE);
+  const maxLv = MAX_UPGRADE_LEVELS.range;
+  const lv = Math.min(Math.max(0, level), maxLv);
+  const metaCeil = getMetaMaxRangePx(baseRange);
+  if (maxLv <= 0) return Math.round(baseRange);
+  const t = lv / maxLv;
+  return Math.round(baseRange + (metaCeil - baseRange) * t);
 }
 
 export {
@@ -271,9 +435,11 @@ function pickDefaultDifficultyId(list: DifficultyConfig[]): number | null {
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
-  activeSlotId: null,
+  activeSaveId: null,
+  activeSaveName: null,
   gold: defaults.gold,
   gems: defaults.gems,
+  purpleDiamonds: defaults.purpleDiamonds,
   maxHpLevel: defaults.maxHpLevel,
   baseDamageLevel: defaults.baseDamageLevel,
   baseDamage: defaults.baseDamage,
@@ -286,18 +452,25 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   xpBonusLevel: defaults.xpBonusLevel,
   knockbackLevel: defaults.knockbackLevel,
   baseKnockbackPower: defaults.baseKnockbackPower,
+  critChanceLevel: defaults.critChanceLevel,
+  critDamageLevel: defaults.critDamageLevel,
   skillTree: { ...DEFAULT_SKILL_TREE },
+  skillLevels: { ...DEFAULT_SKILLS_DATA },
+  unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
+  enemyTypes: [...FALLBACK_ENEMY_TYPES],
   selectedDifficultyId: pickDefaultDifficultyId(FALLBACK_DIFFICULTIES),
   configsLoaded: false,
 
-  hydrateFromSave: (slotId, data) => {
+  hydrateFromSave: (saveId, data, saveName) => {
     const n = normalizeSaveData(data);
     set({
-      activeSlotId: slotId,
+      activeSaveId: saveId,
+      activeSaveName: saveName ?? null,
       gold: n.gold,
       gems: n.gems,
+      purpleDiamonds: n.purpleDiamonds,
       maxHpLevel: n.maxHpLevel,
       baseDamageLevel: n.baseDamageLevel,
       baseDamage: n.baseDamage,
@@ -310,15 +483,22 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       xpBonusLevel: n.xpBonusLevel,
       knockbackLevel: n.knockbackLevel,
       baseKnockbackPower: n.baseKnockbackPower,
+      critChanceLevel: n.critChanceLevel,
+      critDamageLevel: n.critDamageLevel,
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
+      skillLevels: { ...DEFAULT_SKILLS_DATA, ...n.skillLevels },
+      unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
     });
   },
 
   clearActiveSlot: () =>
     set({
-      activeSlotId: null,
+      activeSaveId: null,
+      activeSaveName: null,
       ...createDefaultSaveData(),
       skillTree: { ...DEFAULT_SKILL_TREE },
+      skillLevels: { ...DEFAULT_SKILLS_DATA },
+      unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
     }),
 
   getSaveSnapshot: () => {
@@ -326,6 +506,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return {
       gold: s.gold,
       gems: s.gems,
+      purpleDiamonds: s.purpleDiamonds,
       maxHpLevel: s.maxHpLevel,
       baseDamageLevel: s.baseDamageLevel,
       baseDamage: s.baseDamage,
@@ -338,20 +519,29 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       xpBonusLevel: s.xpBonusLevel,
       knockbackLevel: s.knockbackLevel,
       baseKnockbackPower: s.baseKnockbackPower,
+      critChanceLevel: s.critChanceLevel,
+      critDamageLevel: s.critDamageLevel,
       skillTree: { ...s.skillTree },
+      skillLevels: { ...s.skillLevels },
+      unlockedSkills: { ...s.unlockedSkills },
     };
   },
 
-  setGameConfigs: (settings, difficultiesList) => {
+  setGameConfigs: (settings, difficultiesList, enemyTypesList) => {
     const list =
       difficultiesList.length > 0
         ? difficultiesList
         : [...FALLBACK_DIFFICULTIES];
+    const types =
+      enemyTypesList && enemyTypesList.length > 0
+        ? enemyTypesList
+        : [...FALLBACK_ENEMY_TYPES];
     const currentId = get().selectedDifficultyId;
     const stillValid = list.some((d) => d.id === currentId);
     set({
       baseConfig: { ...settings },
       difficulties: list,
+      enemyTypes: types,
       selectedDifficultyId: stillValid
         ? currentId
         : pickDefaultDifficultyId(list),
@@ -392,6 +582,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   addGems: (amount) => set((s) => ({ gems: s.gems + amount })),
 
+  addPurpleDiamonds: (amount) =>
+    set((s) => ({
+      purpleDiamonds: Math.max(0, s.purpleDiamonds + amount),
+    })),
+
   /** Skills custam diamantes (gems), não ouro. Só altera gems + skillTree. */
   unlockSkill: (nodeId, cost) => {
     const current = get();
@@ -405,19 +600,74 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return true;
   },
 
-  getHpUpgradeCost: () => get().maxHpLevel * UPGRADE_COST_BASE,
+  getSkillUpgradeCost: (skillType) =>
+    getPurpleSkillCostAt(get().skillLevels[skillType] ?? 0),
 
-  getDamageUpgradeCost: () => get().baseDamageLevel * UPGRADE_COST_BASE,
+  getAdvancedSkillUnlockCost: (skillType) =>
+    ADVANCED_SKILL_UNLOCK_COST[skillType],
+
+  /**
+   * Desbloqueia skill avançada na base com Diamantes Normais.
+   * Necessário para a carta aparecer na roleta in-game.
+   */
+  unlockAdvancedSkill: (skillType) => {
+    if (get().unlockedSkills[skillType]) return false;
+    const cost = ADVANCED_SKILL_UNLOCK_COST[skillType];
+    if (get().gems < cost) return false;
+
+    set((s) => ({
+      gems: s.gems - cost,
+      unlockedSkills: { ...s.unlockedSkills, [skillType]: true },
+    }));
+
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return true;
+  },
+
+  /**
+   * Upgrade de skill avançada com Purple Diamonds (sobe o teto in-run).
+   * Requer skill já desbloqueada.
+   */
+  upgradeSkill: (skillType) => {
+    if (!get().unlockedSkills[skillType]) return false;
+    const level = get().skillLevels[skillType] ?? 0;
+    const cost = getPurpleSkillCostAt(level);
+    if (get().purpleDiamonds < cost) return false;
+
+    set((s) => ({
+      purpleDiamonds: s.purpleDiamonds - cost,
+      skillLevels: {
+        ...s.skillLevels,
+        [skillType]: (s.skillLevels[skillType] ?? 0) + 1,
+      },
+    }));
+
+    // Persistência assíncrona (não bloqueia o retorno síncrono)
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return true;
+  },
+
+  getHpUpgradeCost: () => getUpgradeCost(UPGRADE_COST_BASE, get().maxHpLevel),
+
+  getDamageUpgradeCost: () =>
+    getUpgradeCost(UPGRADE_COST_BASE, get().baseDamageLevel),
 
   getAttackSpeedUpgradeCost: () =>
-    (get().attackSpeedLevel + 1) * ATTACK_SPEED_COST_BASE,
+    getUpgradeCost(ATTACK_SPEED_COST_BASE, get().attackSpeedLevel),
 
-  getRangeUpgradeCost: () => (get().rangeLevel + 1) * RANGE_COST_BASE,
+  getRangeUpgradeCost: () =>
+    getUpgradeCost(RANGE_COST_BASE, get().rangeLevel),
 
   getIncomeUpgradeCost: () => {
-    const incomeLevel =
-      Math.round((get().incomeMultiplier - 1) / INCOME_STEP) + 1;
-    return incomeLevel * INCOME_COST_BASE;
+    const incomeLevel = Math.max(
+      0,
+      Math.round((get().incomeMultiplier - 1) / INCOME_STEP),
+    );
+    return getUpgradeCost(INCOME_COST_BASE, incomeLevel);
   },
 
   getArmsUpgradeCost: () => get().armsNextCost,
@@ -426,6 +676,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getKnockbackPower: () =>
     getKnockbackPowerAt(get().baseKnockbackPower, get().knockbackLevel),
+
+  getCritChanceUpgradeCost: () => getCritChanceCostAt(get().critChanceLevel),
+
+  getCritDamageUpgradeCost: () => getCritDamageCostAt(get().critDamageLevel),
+
+  getCritChance: () => getCritChanceAt(get().critChanceLevel),
+
+  getCritDamageMultiplier: () =>
+    getCritDamageMultiplierAt(get().critDamageLevel),
 
   getXpBonusUpgradeCost: () => xpBonusCostAt(get().xpBonusLevel),
 
@@ -444,7 +703,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const skillRange = skillRangeBonus(tree);
     const skillCd = skillCooldownReduction(tree);
     const lifeStealLevel = getLifeStealLevel(tree);
-    const ricochet = getRicochetConfig(tree);
+    const ricochet = getRicochetConfig(
+      tree,
+      s.skillLevels.ricochet,
+    );
 
     const goldHp = cfg.baseHp + (s.maxHpLevel - 1) * HP_PER_LEVEL;
     const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
@@ -468,7 +730,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       arms: s.arms,
       lifeStealLevel,
       lifeStealPercent: lifeStealLevel * 0.01,
-      ricochetUnlocked: ricochet.unlocked,
+      critChance: getCritChanceAt(s.critChanceLevel),
+      critDamageMultiplier: getCritDamageMultiplierAt(s.critDamageLevel),
+      ricochetUnlocked: s.unlockedSkills.ricochet,
       ricochetCooldown: ricochet.cooldownMs,
       maxBounces: ricochet.maxBounces,
       bounceDamagePercent: ricochet.bounceDamagePercent,
@@ -495,11 +759,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getUpgradeRangeAt: (level) =>
     rangeAtLevel(level, get().baseConfig.baseRange),
 
+  getBaseAttackSpeed: () =>
+    cooldownAtLevel(
+      get().attackSpeedLevel,
+      get().baseConfig.baseAttackSpeed,
+    ),
+
+  getBaseRange: () =>
+    rangeAtLevel(get().rangeLevel, get().baseConfig.baseRange),
+
   getAttackRange: () => get().getEffectiveStats().attackRange,
 
   getAttackCooldown: () => get().getEffectiveStats().attackCooldownMs,
 
   upgradeHP: () => {
+    if (get().maxHpLevel >= MAX_UPGRADE_LEVELS.hp) return false;
     const cost = get().getHpUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({ gold: s.gold - cost, maxHpLevel: s.maxHpLevel + 1 }));
@@ -507,6 +781,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   upgradeDamage: () => {
+    if (get().baseDamageLevel >= MAX_UPGRADE_LEVELS.damage) return false;
     const cost = get().getDamageUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({
@@ -518,37 +793,46 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   upgradeAttackSpeed: () => {
-    if (get().attackSpeedLevel >= MAX_STAT_LEVEL) return false;
+    if (get().attackSpeedLevel >= MAX_UPGRADE_LEVELS.attackSpeed) return false;
+    const metaFloor = getMetaMaxCooldownMs(get().baseConfig.baseAttackSpeed);
     const currentCd = get().getUpgradeCooldownAt(get().attackSpeedLevel);
-    if (currentCd <= MIN_ATTACK_COOLDOWN_MS) return false;
+    if (currentCd <= metaFloor) return false;
     const nextCd = get().getUpgradeCooldownAt(get().attackSpeedLevel + 1);
-    // Sem ganho real (já no hard cap)
     if (nextCd >= currentCd) return false;
     const cost = get().getAttackSpeedUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({
       gold: s.gold - cost,
-      attackSpeedLevel: Math.min(MAX_STAT_LEVEL, s.attackSpeedLevel + 1),
+      attackSpeedLevel: Math.min(
+        MAX_UPGRADE_LEVELS.attackSpeed,
+        s.attackSpeedLevel + 1,
+      ),
     }));
     return true;
   },
 
   upgradeRange: () => {
-    if (get().rangeLevel >= MAX_STAT_LEVEL) return false;
+    if (get().rangeLevel >= MAX_UPGRADE_LEVELS.range) return false;
+    const metaCeil = getMetaMaxRangePx(get().baseConfig.baseRange);
     const currentRange = get().getUpgradeRangeAt(get().rangeLevel);
-    if (currentRange >= MAX_ATTACK_RANGE) return false;
+    if (currentRange >= metaCeil) return false;
     const nextRange = get().getUpgradeRangeAt(get().rangeLevel + 1);
     if (nextRange <= currentRange) return false;
     const cost = get().getRangeUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({
       gold: s.gold - cost,
-      rangeLevel: Math.min(MAX_STAT_LEVEL, s.rangeLevel + 1),
+      rangeLevel: Math.min(MAX_UPGRADE_LEVELS.range, s.rangeLevel + 1),
     }));
     return true;
   },
 
   upgradeIncome: () => {
+    const incomeLevel = Math.max(
+      0,
+      Math.round((get().incomeMultiplier - 1) / INCOME_STEP),
+    );
+    if (incomeLevel >= MAX_UPGRADE_LEVELS.income) return false;
     const cost = get().getIncomeUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({
@@ -590,11 +874,35 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   upgradeKnockback: () => {
+    if (get().knockbackLevel >= MAX_UPGRADE_LEVELS.knockback) return false;
     const cost = get().getKnockbackUpgradeCost();
     if (get().gold < cost) return false;
     set((s) => ({
       gold: s.gold - cost,
       knockbackLevel: s.knockbackLevel + 1,
+    }));
+    return true;
+  },
+
+  upgradeCritChance: () => {
+    if (get().critChanceLevel >= MAX_UPGRADE_LEVELS.critChance) return false;
+    if (get().getCritChance() >= MAX_CRIT_CHANCE) return false;
+    const cost = get().getCritChanceUpgradeCost();
+    if (get().gold < cost) return false;
+    set((s) => ({
+      gold: s.gold - cost,
+      critChanceLevel: s.critChanceLevel + 1,
+    }));
+    return true;
+  },
+
+  upgradeCritDamage: () => {
+    if (get().critDamageLevel >= MAX_UPGRADE_LEVELS.critDamage) return false;
+    const cost = get().getCritDamageUpgradeCost();
+    if (get().gold < cost) return false;
+    set((s) => ({
+      gold: s.gold - cost,
+      critDamageLevel: s.critDamageLevel + 1,
     }));
     return true;
   },

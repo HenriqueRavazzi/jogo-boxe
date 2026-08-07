@@ -4,11 +4,10 @@ import { db } from "@/db";
 import { gameSaves, type SaveData } from "@/db/schema";
 import { createDefaultSaveData } from "@/lib/saveSlots";
 
-const HEALTH_USER_ID = "__db_check_probe__";
+const HEALTH_SAVE_NAME = "__db_check_probe__";
 
 /**
- * Health check temporário: valida conexão Neon + schema `game_saves`.
- * Acesse `/api/db-check` no navegador para confirmar.
+ * Health check: valida conexão Neon + schema `game_saves`.
  */
 export async function GET() {
   try {
@@ -19,7 +18,6 @@ export async function GET() {
       );
     }
 
-    // Lista tabelas no schema public
     const tables = await db.execute<{
       table_name: string;
     }>(sql`
@@ -29,7 +27,6 @@ export async function GET() {
       ORDER BY table_name
     `);
 
-    // Colunas de game_saves
     const columns = await db.execute<{
       column_name: string;
       data_type: string;
@@ -47,30 +44,39 @@ export async function GET() {
       gems: 42,
     };
 
-    // Upsert de registro de teste
     const existing = await db.query.gameSaves.findFirst({
-      where: eq(gameSaves.userId, HEALTH_USER_ID),
+      where: eq(gameSaves.saveName, HEALTH_SAVE_NAME),
     });
 
     let probe;
     if (existing) {
       const [updated] = await db
         .update(gameSaves)
-        .set({ saveData: probeSaveData, updatedAt: new Date() })
-        .where(eq(gameSaves.userId, HEALTH_USER_ID))
+        .set({
+          saveData: probeSaveData,
+          purpleDiamonds: probeSaveData.purpleDiamonds,
+          skillsData: probeSaveData.skillLevels,
+          updatedAt: new Date(),
+        })
+        .where(eq(gameSaves.saveName, HEALTH_SAVE_NAME))
         .returning();
       probe = updated;
     } else {
       const [inserted] = await db
         .insert(gameSaves)
-        .values({ userId: HEALTH_USER_ID, saveData: probeSaveData })
+        .values({
+          saveName: HEALTH_SAVE_NAME,
+          password: "probe",
+          saveData: probeSaveData,
+          purpleDiamonds: probeSaveData.purpleDiamonds,
+          skillsData: probeSaveData.skillLevels,
+        })
         .returning();
       probe = inserted;
     }
 
-    // Leitura de volta
     const readBack = await db.query.gameSaves.findFirst({
-      where: eq(gameSaves.userId, HEALTH_USER_ID),
+      where: eq(gameSaves.saveName, HEALTH_SAVE_NAME),
     });
 
     const expectedKeys: (keyof SaveData)[] = [
@@ -88,6 +94,11 @@ export async function GET() {
       "xpBonusLevel",
       "knockbackLevel",
       "baseKnockbackPower",
+      "critChanceLevel",
+      "critDamageLevel",
+      "purpleDiamonds",
+      "skillLevels",
+      "unlockedSkills",
       "skillTree",
     ];
 
@@ -96,28 +107,43 @@ export async function GET() {
       (k) => saveData == null || !(k in saveData),
     );
 
+    const expectedColumns = [
+      "id",
+      "save_name",
+      "password",
+      "save_data",
+      "purple_diamonds",
+      "skills_data",
+      "updated_at",
+    ];
+    const columnNames = new Set(
+      (columns.rows ?? []).map((c) => c.column_name),
+    );
+    const missingColumns = expectedColumns.filter((c) => !columnNames.has(c));
+
     return NextResponse.json({
-      ok: missingKeys.length === 0,
+      ok: missingKeys.length === 0 && missingColumns.length === 0,
       message:
-        missingKeys.length === 0
-          ? "Conexão Neon OK — schema game_saves alinhado com SaveData"
-          : "Conexão OK, mas faltam chaves no JSONB",
+        missingKeys.length === 0 && missingColumns.length === 0
+          ? "Conexão Neon OK — schema game_saves alinhado"
+          : "Conexão OK, mas faltam chaves/colunas",
       tables: tables.rows?.map((r) => r.table_name) ?? tables,
       game_saves_columns: columns.rows ?? columns,
+      missingKeys,
+      missingColumns,
       probe: {
         id: readBack?.id,
-        userId: readBack?.userId,
+        saveName: readBack?.saveName,
         updatedAt: readBack?.updatedAt,
-        saveData: readBack?.saveData,
       },
-      expectedSaveDataKeys: expectedKeys,
-      missingKeys,
-      note: "Rota temporária — pode remover após validar.",
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (error) {
+    console.error("[db-check]", error);
     return NextResponse.json(
-      { ok: false, error: message },
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      },
       { status: 500 },
     );
   }

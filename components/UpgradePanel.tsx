@@ -8,12 +8,15 @@ import {
   Hand,
   HeartPulse,
   Move,
+  Sparkles,
   Swords,
+  Zap,
 } from "lucide-react";
 import {
-  MAX_ATTACK_RANGE,
-  MAX_STAT_LEVEL,
-  MIN_ATTACK_COOLDOWN_MS,
+  MAX_CRIT_CHANCE,
+  MAX_UPGRADE_LEVELS,
+  getMetaMaxCooldownMs,
+  getMetaMaxRangePx,
   useGameStore,
 } from "@/store/useGameStore";
 import { syncWithDB } from "@/lib/syncWithDB";
@@ -25,9 +28,12 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const attackSpeedLevel = useGameStore((s) => s.attackSpeedLevel);
   const rangeLevel = useGameStore((s) => s.rangeLevel);
   const knockbackLevel = useGameStore((s) => s.knockbackLevel);
+  const critChanceLevel = useGameStore((s) => s.critChanceLevel);
+  const critDamageLevel = useGameStore((s) => s.critDamageLevel);
   const arms = useGameStore((s) => s.arms);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
   const gold = useGameStore((s) => s.gold);
+  const baseConfig = useGameStore((s) => s.baseConfig);
 
   const getHpUpgradeCost = useGameStore((s) => s.getHpUpgradeCost);
   const getDamageUpgradeCost = useGameStore((s) => s.getDamageUpgradeCost);
@@ -39,6 +45,16 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const getArmsUpgradeCost = useGameStore((s) => s.getArmsUpgradeCost);
   const getKnockbackUpgradeCost = useGameStore((s) => s.getKnockbackUpgradeCost);
   const getKnockbackPower = useGameStore((s) => s.getKnockbackPower);
+  const getCritChanceUpgradeCost = useGameStore(
+    (s) => s.getCritChanceUpgradeCost,
+  );
+  const getCritDamageUpgradeCost = useGameStore(
+    (s) => s.getCritDamageUpgradeCost,
+  );
+  const getCritChance = useGameStore((s) => s.getCritChance);
+  const getCritDamageMultiplier = useGameStore(
+    (s) => s.getCritDamageMultiplier,
+  );
   const upgradeHP = useGameStore((s) => s.upgradeHP);
   const upgradeDamage = useGameStore((s) => s.upgradeDamage);
   const upgradeAttackSpeed = useGameStore((s) => s.upgradeAttackSpeed);
@@ -46,6 +62,8 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const upgradeIncome = useGameStore((s) => s.upgradeIncome);
   const upgradeArms = useGameStore((s) => s.upgradeArms);
   const upgradeKnockback = useGameStore((s) => s.upgradeKnockback);
+  const upgradeCritChance = useGameStore((s) => s.upgradeCritChance);
+  const upgradeCritDamage = useGameStore((s) => s.upgradeCritDamage);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const getBaseDamage = useGameStore((s) => s.getBaseDamage);
   const getUpgradeCooldownAt = useGameStore((s) => s.getUpgradeCooldownAt);
@@ -59,25 +77,46 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const armsCost = getArmsUpgradeCost();
   const knockbackCost = getKnockbackUpgradeCost();
   const knockbackPower = getKnockbackPower();
+  const critChanceCost = getCritChanceUpgradeCost();
+  const critDamageCost = getCritDamageUpgradeCost();
+  const critChance = getCritChance();
+  const critDamageMult = getCritDamageMultiplier();
+
+  const incomeLevel = Math.max(
+    0,
+    Math.round((incomeMultiplier - 1) / 0.2),
+  );
+
+  const hpAtMax = maxHpLevel >= MAX_UPGRADE_LEVELS.hp;
+  const damageAtMax = baseDamageLevel >= MAX_UPGRADE_LEVELS.damage;
+  const incomeAtMax = incomeLevel >= MAX_UPGRADE_LEVELS.income;
+  const knockbackAtMax = knockbackLevel >= MAX_UPGRADE_LEVELS.knockback;
+  const critChanceAtMax =
+    critChanceLevel >= MAX_UPGRADE_LEVELS.critChance ||
+    critChance >= MAX_CRIT_CHANCE;
+  const critDamageAtMax = critDamageLevel >= MAX_UPGRADE_LEVELS.critDamage;
+
+  const metaCdFloor = getMetaMaxCooldownMs(baseConfig.baseAttackSpeed);
+  const metaRangeCeil = getMetaMaxRangePx(baseConfig.baseRange);
 
   const currentCd = getUpgradeCooldownAt(attackSpeedLevel);
   const nextCd = getUpgradeCooldownAt(
-    Math.min(attackSpeedLevel + 1, MAX_STAT_LEVEL),
+    Math.min(attackSpeedLevel + 1, MAX_UPGRADE_LEVELS.attackSpeed),
   );
   const cdDelta = nextCd - currentCd;
   const speedAtMax =
-    attackSpeedLevel >= MAX_STAT_LEVEL ||
-    currentCd <= MIN_ATTACK_COOLDOWN_MS ||
+    attackSpeedLevel >= MAX_UPGRADE_LEVELS.attackSpeed ||
+    currentCd <= metaCdFloor ||
     nextCd >= currentCd;
 
   const currentRange = getUpgradeRangeAt(rangeLevel);
   const nextRange = getUpgradeRangeAt(
-    Math.min(rangeLevel + 1, MAX_STAT_LEVEL),
+    Math.min(rangeLevel + 1, MAX_UPGRADE_LEVELS.range),
   );
   const rangeDelta = nextRange - currentRange;
   const rangeAtMax =
-    rangeLevel >= MAX_STAT_LEVEL ||
-    currentRange >= MAX_ATTACK_RANGE ||
+    rangeLevel >= MAX_UPGRADE_LEVELS.range ||
+    currentRange >= metaRangeCeil ||
     nextRange <= currentRange;
 
   const grid = (
@@ -86,18 +125,20 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
     >
       <UpgradeCard
         icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
-        title={`Max HP: Nível ${maxHpLevel}`}
+        title={`Max HP: Nível ${maxHpLevel}/${MAX_UPGRADE_LEVELS.hp}`}
         subtitle={`HP atual: ${getMaxHp()}`}
         cost={hpCost}
-        canAfford={gold >= hpCost}
+        canAfford={!hpAtMax && gold >= hpCost}
+        atMax={hpAtMax}
         onUpgrade={upgradeHP}
       />
       <UpgradeCard
         icon={<Swords className="h-5 w-5 text-amber-400" />}
         title={`Dano: ${getBaseDamage()}`}
-        subtitle={`Nível ${baseDamageLevel} · valor absoluto`}
+        subtitle={`Nível ${baseDamageLevel}/${MAX_UPGRADE_LEVELS.damage}`}
         cost={damageCost}
-        canAfford={gold >= damageCost}
+        canAfford={!damageAtMax && gold >= damageCost}
+        atMax={damageAtMax}
         onUpgrade={upgradeDamage}
       />
       <UpgradeCard
@@ -109,10 +150,8 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         }
         subtitle={
           speedAtMax
-            ? currentCd <= MIN_ATTACK_COOLDOWN_MS
-              ? `Máximo (${MIN_ATTACK_COOLDOWN_MS}ms)`
-              : `Nível máximo (${MAX_STAT_LEVEL})`
-            : `Nível ${attackSpeedLevel}/${MAX_STAT_LEVEL}`
+            ? `MÁXIMO meta (${metaCdFloor}ms · 65%)`
+            : `Nível ${attackSpeedLevel}/${MAX_UPGRADE_LEVELS.attackSpeed}`
         }
         cost={speedCost}
         canAfford={!speedAtMax && gold >= speedCost}
@@ -128,10 +167,8 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         }
         subtitle={
           rangeAtMax
-            ? currentRange >= MAX_ATTACK_RANGE
-              ? `Máximo (${MAX_ATTACK_RANGE}px)`
-              : `Nível máximo (${MAX_STAT_LEVEL})`
-            : `Nível ${rangeLevel}/${MAX_STAT_LEVEL}`
+            ? `MÁXIMO meta (${metaRangeCeil}px · 65%)`
+            : `Nível ${rangeLevel}/${MAX_UPGRADE_LEVELS.range}`
         }
         cost={rangeCost}
         canAfford={!rangeAtMax && gold >= rangeCost}
@@ -139,19 +176,55 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         onUpgrade={upgradeRange}
       />
       <UpgradeCard
+        icon={<Sparkles className="h-5 w-5 text-yellow-300" />}
+        title={`Crítico: ${Math.round(critChance * 100)}%`}
+        subtitle={
+          critChanceAtMax
+            ? `MÁXIMO (${Math.round(MAX_CRIT_CHANCE * 100)}%)`
+            : `Nível ${critChanceLevel}/${MAX_UPGRADE_LEVELS.critChance}`
+        }
+        cost={critChanceCost}
+        canAfford={!critChanceAtMax && gold >= critChanceCost}
+        atMax={critChanceAtMax}
+        onUpgrade={upgradeCritChance}
+      />
+      <UpgradeCard
+        icon={<Zap className="h-5 w-5 text-orange-400" />}
+        title={`Dano Crítico: ${critDamageMult.toFixed(2)}x`}
+        subtitle={
+          critDamageAtMax
+            ? "MÁXIMO"
+            : `Nível ${critDamageLevel}/${MAX_UPGRADE_LEVELS.critDamage}`
+        }
+        cost={critDamageCost}
+        canAfford={!critDamageAtMax && gold >= critDamageCost}
+        atMax={critDamageAtMax}
+        onUpgrade={upgradeCritDamage}
+      />
+      <UpgradeCard
         icon={<Move className="h-5 w-5 text-violet-400" />}
         title={`Knockback: ${knockbackPower}`}
-        subtitle={`Nível ${knockbackLevel} · empurrão +2/nível`}
+        subtitle={
+          knockbackAtMax
+            ? "MÁXIMO"
+            : `Nível ${knockbackLevel}/${MAX_UPGRADE_LEVELS.knockback}`
+        }
         cost={knockbackCost}
-        canAfford={gold >= knockbackCost}
+        canAfford={!knockbackAtMax && gold >= knockbackCost}
+        atMax={knockbackAtMax}
         onUpgrade={upgradeKnockback}
       />
       <UpgradeCard
         icon={<Coins className="h-5 w-5 text-yellow-400" />}
         title={`Multiplicador: ${incomeMultiplier.toFixed(1)}x`}
-        subtitle="Renda de ouro por kill"
+        subtitle={
+          incomeAtMax
+            ? "MÁXIMO"
+            : `Nível ${incomeLevel}/${MAX_UPGRADE_LEVELS.income}`
+        }
         cost={incomeCost}
-        canAfford={gold >= incomeCost}
+        canAfford={!incomeAtMax && gold >= incomeCost}
+        atMax={incomeAtMax}
         onUpgrade={upgradeIncome}
       />
       <UpgradeCard
@@ -217,7 +290,9 @@ function UpgradeCard({
           {subtitle}
         </p>
         <p className="mt-0.5 text-xs text-amber-300/90">
-          {atMax ? "Limite atingido" : `Custo: ${cost.toLocaleString("pt-BR")} Ouro`}
+          {atMax
+            ? "MÁXIMO"
+            : `Custo: ${cost.toLocaleString("pt-BR")} Ouro`}
         </p>
       </div>
       <button

@@ -4,18 +4,16 @@ import { useGameStore } from "@/store/useGameStore";
 
 /**
  * Empurra o snapshot atual do Zustand para o Neon (PUT).
- * NÃO hidrata / NÃO relê o banco — evita sobrescrever progresso local em memória.
- * Usa Route Handler (fetch) em vez de Server Action para não disparar refresh do Next.
+ * Vinculado ao save autenticado (`activeSaveId`).
  */
 export async function syncWithDB(): Promise<boolean> {
-  const { activeSlotId, getSaveSnapshot } = useGameStore.getState();
-  if (!activeSlotId) return false;
+  const { activeSaveId, getSaveSnapshot } = useGameStore.getState();
+  if (!activeSaveId) return false;
 
-  // Congela o snapshot no momento da chamada (antes de qualquer await).
   const saveData = getSaveSnapshot();
 
   try {
-    const res = await fetch(`/api/saves/${activeSlotId}`, {
+    const res = await fetch(`/api/saves/${activeSaveId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ saveData }),
@@ -29,7 +27,6 @@ export async function syncWithDB(): Promise<boolean> {
       return false;
     }
 
-    // Intencionalmente ignora o body — push only, sem hydrate.
     return true;
   } catch (error) {
     console.error("[syncWithDB]", error);

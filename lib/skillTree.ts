@@ -269,11 +269,19 @@ export type RicochetConfig = {
   bounceDamagePercent: number;
 };
 
-export function getRicochetConfig(skillTree: SkillTreeState): RicochetConfig {
+/**
+ * Config de ricochete (UI / meta): ciclo 25s, janela 2s.
+ * Bounces = 2+lv, dano = 60% + 15%/lv.
+ */
+export function getRicochetConfig(
+  skillTree: SkillTreeState,
+  ricochetLevel = 0,
+): RicochetConfig {
+  const level = Math.max(0, Math.floor(ricochetLevel));
   return {
-    unlocked: isRicochetUnlocked(skillTree),
-    cooldownMs: RICOCHET_COOLDOWN_MS,
-    maxBounces: RICOCHET_MAX_BOUNCES,
-    bounceDamagePercent: RICOCHET_BOUNCE_DAMAGE_PERCENT,
+    unlocked: isRicochetUnlocked(skillTree) || level > 0,
+    cooldownMs: 25_000,
+    maxBounces: 2 + level,
+    bounceDamagePercent: 0.6 + level * 0.15,
   };
 }

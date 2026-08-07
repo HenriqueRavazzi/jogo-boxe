@@ -1,5 +1,5 @@
 /**
- * Seed de game_settings + difficulties no Neon.
+ * Seed de game_settings + difficulties + enemy_types no Neon.
  * Uso: npx tsx scripts/seed-game-config.ts
  * (ou npm run db:seed)
  */
@@ -7,7 +7,7 @@
 import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { difficulties, gameSettings } from "../db/schema";
+import { difficulties, enemyTypes, gameSettings } from "../db/schema";
 
 const DEFAULT_SETTINGS = {
   baseAttackSpeed: 1500,
@@ -44,6 +44,59 @@ const DIFFICULTY_ROWS = [
     enemyDamageMultiplier: 3.0,
     enemySpeedMultiplier: 3.0,
     goldDropMultiplier: 3.0,
+  },
+] as const;
+
+const ENEMY_TYPE_ROWS = [
+  {
+    name: "Normal",
+    isBoss: false,
+    hpBase: 30,
+    speed: 2,
+    damage: 1.0,
+    attackSpeed: 1000,
+    color: "#ff0000",
+    scale: 1,
+  },
+  {
+    name: "Dasher",
+    isBoss: false,
+    hpBase: 15,
+    speed: 4,
+    damage: 0.8,
+    attackSpeed: 800,
+    color: "#f97316",
+    scale: 0.75,
+  },
+  {
+    name: "Ranged",
+    isBoss: false,
+    hpBase: 25,
+    speed: 1.5,
+    damage: 1.5,
+    attackSpeed: 2000,
+    color: "#2dd4bf",
+    scale: 0.92,
+  },
+  {
+    name: "Boss 1 (O Titã)",
+    isBoss: true,
+    hpBase: 1000,
+    speed: 0.8,
+    damage: 3.0,
+    attackSpeed: 1500,
+    color: "#5b21b6",
+    scale: 2.5,
+  },
+  {
+    name: "Boss 2 (O Ceifador)",
+    isBoss: true,
+    hpBase: 3500,
+    speed: 1.1,
+    damage: 5.0,
+    attackSpeed: 1000,
+    color: "#a16207",
+    scale: 3.0,
   },
 ] as const;
 
@@ -85,6 +138,33 @@ async function seed() {
         })
         .where(eq(difficulties.name, row.name));
       console.log(`[seed] difficulties: atualizado "${row.name}"`);
+    }
+  }
+
+  for (const row of ENEMY_TYPE_ROWS) {
+    const found = await db
+      .select()
+      .from(enemyTypes)
+      .where(eq(enemyTypes.name, row.name))
+      .limit(1);
+
+    if (found.length === 0) {
+      await db.insert(enemyTypes).values(row);
+      console.log(`[seed] enemy_types: inserido "${row.name}"`);
+    } else {
+      await db
+        .update(enemyTypes)
+        .set({
+          isBoss: row.isBoss,
+          hpBase: row.hpBase,
+          speed: row.speed,
+          damage: row.damage,
+          attackSpeed: row.attackSpeed,
+          color: row.color,
+          scale: row.scale,
+        })
+        .where(eq(enemyTypes.name, row.name));
+      console.log(`[seed] enemy_types: atualizado "${row.name}"`);
     }
   }
 

@@ -1,5 +1,6 @@
 import type { Player } from "@/src/game/entities/Player";
 import type { Enemy } from "@/src/game/entities/Enemy";
+import { BURN_DURATION_MS } from "@/src/game/entities/Enemy";
 import {
   angleToward,
   getArmDistribution,
@@ -8,13 +9,17 @@ import {
   type ArmSide,
 } from "@/src/game/entities/Player";
 import type { QuestProgressEvent } from "@/lib/quests";
+import { getLifeStealRatio, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
 import {
-  getLifeStealRatio,
-  getRicochetConfig,
-  RICOCHET_LINK_RADIUS,
-  RICOCHET_RANGE_MULT,
-} from "@/lib/skillTree";
+  createActiveSkillPulseState,
+  isRicochetActive,
+  LIGHTNING_LINK_RADIUS,
+  runActiveSkills,
+  type ActiveSkillPulseState,
+} from "@/src/game/systems/ActiveSkillsSystem";
 import { useGameStore } from "@/store/useGameStore";
+import type { SkillsData } from "@/db/schema";
+import { DEFAULT_SKILLS_DATA } from "@/db/schema";
 
 export type MatchBuffsInput = {
   attackSpeed: number;
@@ -44,6 +49,19 @@ export type HitSplat = {
   text: string;
   age: number;
   color: string;
+  /** Escala de fonte (críticos > 1). */
+  scale?: number;
+};
+
+/** Projétil disparado por inimigo ranged. */
+export type EnemyProjectile = {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  damage: number;
+  radius: number;
 };
 
 export type CombatSystemInput = {
@@ -61,11 +79,20 @@ export type CombatSystemInput = {
   /** Game clock do último ricochete. */
   lastRicochetTime: number;
   now: number;
+  dt: number;
   contactDamage: number;
   knockbackImpulse?: number;
   punchDurationMs?: number;
   /** Facing atual (atan2) — mantido se não houver ataque. */
   playerRotation?: number;
+  /** Projéteis ainda em voo. */
+  projectiles?: EnemyProjectile[];
+  canvasWidth?: number;
+  canvasHeight?: number;
+  /** Skills especiais ativos nesta run (0 = inativo). */
+  matchSkills?: SkillsData;
+  /** Timers de pulso gelo/fogo. */
+  activeSkillPulse?: ActiveSkillPulseState;
 };
 
 export type CombatSystemResult = {
@@ -79,12 +106,16 @@ export type CombatSystemResult = {
   hitSplats: HitSplat[];
   kills: number;
   /** Coordenadas dos inimigos mortos neste frame (para loot). */
-  killSites: { x: number; y: number }[];
+  killSites: { x: number; y: number; enemyType: Enemy["type"] }[];
   contactHits: number;
   /** Eventos para progresso de quests in-game. */
   questEvents: QuestProgressEvent[];
   /** Facing atual do jogador (atan2); inalterado se não atacou neste frame. */
   playerRotation: number;
+  /** Projéteis após update + novos disparos. */
+  projectiles: EnemyProjectile[];
+  /** Estado atualizado dos pulsos gelo/fogo. */
+  activeSkillPulse: ActiveSkillPulseState;
 };
 
 const DEFAULT_KNOCKBACK = 5;
@@ -93,15 +124,18 @@ export const PUNCH_DURATION_MS = 150;
 const PUNCH_STAGGER_MS = 40;
 export const RICOCHET_SEGMENT_DURATION_MS = 120;
 export const RICOCHET_SEGMENT_STAGGER_MS = 55;
+export const RANGED_PROJECTILE_SPEED = 340;
+export const RANGED_PROJECTILE_RADIUS = 5;
 
 export const ELEMENTAL_PROC_CHANCE = 0.15;
+/** Fallback legado; duração real = 1000 + ice*500. */
 export const FREEZE_DURATION_MS = 2000;
 export const SHOCK_VISUAL_MS = 450;
 export const CHAIN_LIGHTNING_RADIUS = 130;
 export const CHAIN_LIGHTNING_TARGETS = 3;
 export const CHAIN_DAMAGE_MULT = 0.5;
 
-/** Cadeia: 1º = mais próximo do player; seguintes = mais próximo do último alvo. */
+/** Cadeia: saltos a partir de um origem; `used` evita alvos já atingidos. */
 function chainRicochet(
   living: Enemy[],
   originX: number,
@@ -109,9 +143,10 @@ function chainRicochet(
   maxBounces: number,
   firstRange: number,
   linkRadius: number,
+  usedIds: Set<string> = new Set(),
 ): Enemy[] {
   const chain: Enemy[] = [];
-  const used = new Set<string>();
+  const used = new Set(usedIds);
   let cx = originX;
   let cy = originY;
 
@@ -141,7 +176,7 @@ function chainRicochet(
 
 /**
  * Sistema de combate: colisão de contato + auto-ataque multi-alvo + knockback
- * + procs elementais (gelo / raio) da skill tree.
+ * + procs elementais (gelo / raio / fogo) da skill tree e Purple Diamonds.
  */
 export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const {
@@ -157,28 +192,44 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     lastPunchSide,
     lastRicochetTime,
     now,
+    dt,
     contactDamage,
     knockbackImpulse,
     punchDurationMs = PUNCH_DURATION_MS,
     playerRotation: inputRotation = -Math.PI / 2,
+    projectiles: inputProjectiles = [],
+    canvasWidth = 2000,
+    canvasHeight = 2000,
+    matchSkills: inputMatchSkills,
+    activeSkillPulse: inputPulse = createActiveSkillPulseState(),
   } = input;
 
   let playerRotation = inputRotation;
 
-  const skillTree = useGameStore.getState().skillTree;
-  const hasFreeze = Boolean(skillTree.node_frost_chance);
-  const hasShock = Boolean(skillTree.node_shock_chance);
-  const lifeStealRatio = getLifeStealRatio(skillTree);
-  const ricochet = getRicochetConfig(skillTree);
+  const gameState = useGameStore.getState();
+  const matchSkills = inputMatchSkills ?? { ...DEFAULT_SKILLS_DATA };
+  const skillLevels = gameState.skillLevels;
+  // Procs no soco: ativos se a skill foi escolhida na run
+  const hasFreeze = matchSkills.ice > 0;
+  const hasShock = matchSkills.lightning > 0;
+  const freezeDurationMs = 1000 + skillLevels.ice * 500;
+  const lightningTargets = 2 + skillLevels.lightning;
+  const shockSlowAmount = Math.min(0.85, 0.2 + skillLevels.lightning * 0.1);
+  const fireLevel = matchSkills.fire;
+  const lifeStealRatio = getLifeStealRatio(gameState.skillTree);
+  // Ricochete periódico: janela 2s / ciclo 25s (gerenciada em ActiveSkillsSystem)
+  const maxBounces = 2 + skillLevels.ricochet;
+  const bounceDamageMult = 0.6 + skillLevels.ricochet * 0.15;
   const knockbackPower =
     knockbackImpulse ??
-    useGameStore.getState().getKnockbackPower() ??
+    gameState.getKnockbackPower() ??
     DEFAULT_KNOCKBACK;
-  const difficulty = useGameStore.getState().getDifficultyMultipliers();
+  const difficulty = gameState.getDifficultyMultipliers();
   void contactDamage; // legado: dano melee vem de enemy.attackDamage
 
   let contactHits = 0;
-  const killSites: { x: number; y: number }[] = [];
+  let kills = 0;
+  const killSites: { x: number; y: number; enemyType: Enemy["type"] }[] = [];
   const questEvents: QuestProgressEvent[] = [];
 
   const pushKillQuests = (enemyType: Enemy["type"]) => {
@@ -190,9 +241,50 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   };
 
+  const pushKill = (enemy: Enemy) => {
+    kills += 1;
+    killSites.push({ x: enemy.x, y: enemy.y, enemyType: enemy.type });
+    pushKillQuests(enemy.type);
+  };
+
+  // Skills ativas periódicas (gelo / fogo / raio / ricochete)
+  const activeSkills = runActiveSkills({
+    enemies,
+    playerX: player.x,
+    playerY: player.y,
+    now,
+    baseDamage: baseDamage * matchBuffs.damageMultiplier,
+    matchSkills,
+    skillLevels,
+    pulseState: inputPulse,
+  });
+  const ricochetWindowActive = isRicochetActive(
+    activeSkills.pulseState,
+    now,
+  );
+  if (activeSkills.questFreeze > 0) {
+    questEvents.push({
+      type: "inflict_freeze",
+      amount: activeSkills.questFreeze,
+    });
+  }
+  if (activeSkills.questShock > 0) {
+    questEvents.push({
+      type: "inflict_shock",
+      amount: activeSkills.questShock,
+    });
+  }
+
+  // Mortes por burn / raio periódico (antes dos socos)
+  for (const enemy of enemies) {
+    if (!enemy.isDead) continue;
+    pushKill(enemy);
+  }
+
   // Melee: inimigos encostados formam horda e batem periodicamente (não morrem no contato)
   let meleeDamageDealt = 0;
   for (const enemy of enemies) {
+    if (enemy.isDead || enemy.type === "ranged") continue; // ranged só dispara projéteis
     if (enemy.hasStatus("freeze", now)) {
       enemy.isAttacking = false;
       continue;
@@ -233,13 +325,84 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     player.takeDamage(meleeDamageDealt);
   }
 
+  // Projéteis em voo: move + colisão com o jogador
+  const projectiles: EnemyProjectile[] = [];
+  const margin = 40;
+  for (const p of inputProjectiles) {
+    const nx = p.x + p.vx * dt;
+    const ny = p.y + p.vy * dt;
+    if (
+      nx < -margin ||
+      ny < -margin ||
+      nx > canvasWidth + margin ||
+      ny > canvasHeight + margin
+    ) {
+      continue;
+    }
+    const hitDist = Math.hypot(nx - player.x, ny - player.y);
+    if (hitDist <= player.radius + p.radius) {
+      player.takeDamage(p.damage);
+      contactHits += 1;
+      continue;
+    }
+    projectiles.push({ ...p, x: nx, y: ny });
+  }
+
+  // Ranged: dispara quando parado no alcance de ataque do jogador
+  const effectivePlayerRange = baseRange * matchBuffs.attackRange;
+  for (const enemy of enemies) {
+    if (enemy.type !== "ranged" || enemy.isDead) continue;
+    if (enemy.hasStatus("freeze", now)) continue;
+
+    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+    if (dist > effectivePlayerRange) continue;
+
+    const cooldown = enemy.attackCooldown || 2000;
+    if (now - enemy.lastAttackTime < cooldown) continue;
+
+    enemy.lastAttackTime = now;
+    enemy.isAttacking = true;
+
+    const dx = player.x - enemy.x;
+    const dy = player.y - enemy.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const damage =
+      enemy.projectileDamage > 0
+        ? enemy.projectileDamage
+        : Math.max(
+            0.5,
+            enemy.attackDamage * 1.5 * difficulty.enemyDamageMultiplier,
+          );
+
+    projectiles.push({
+      id: crypto.randomUUID(),
+      x: enemy.x,
+      y: enemy.y,
+      vx: (dx / len) * RANGED_PROJECTILE_SPEED,
+      vy: (dy / len) * RANGED_PROJECTILE_SPEED,
+      damage,
+      radius: RANGED_PROJECTILE_RADIUS,
+    });
+  }
+
   let nextAttackTime = lastAttackTime;
   let nextPunchSide = lastPunchSide;
-  let nextRicochetTime = lastRicochetTime;
   const newAttacks: ActiveAttack[] = [];
   const hitSplats: HitSplat[] = [];
-  let kills = 0;
   let living = enemies.filter((e) => !e.isDead);
+
+  let lightningDamageDealt = 0;
+  for (const hit of activeSkills.lightningHits) {
+    lightningDamageDealt += hit.damage;
+    hitSplats.push({
+      id: crypto.randomUUID(),
+      x: hit.x,
+      y: hit.y,
+      text: String(hit.damage),
+      age: 0,
+      color: "#fde047",
+    });
+  }
 
   const applyLifeSteal = (damageDealt: number) => {
     const healingAmount = damageDealt * lifeStealRatio;
@@ -259,6 +422,10 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   };
 
+  if (lightningDamageDealt > 0) {
+    applyLifeSteal(lightningDamageDealt);
+  }
+
   const effectiveCooldown = baseAttackSpeed / matchBuffs.attackSpeed;
   const canAttack = now >= lastAttackTime + effectiveCooldown;
 
@@ -275,9 +442,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
     if (inRange.length > 0) {
       nextAttackTime = now;
-      const damage = baseDamage * matchBuffs.damageMultiplier;
-      const displayDamage = Math.round(damage);
-      const isCrit = matchBuffs.damageMultiplier >= 1.4;
+      const punchBase = baseDamage * matchBuffs.damageMultiplier;
+      const critChance = useGameStore.getState().getCritChance();
+      const critMult = useGameStore.getState().getCritDamageMultiplier();
       /** Dano acumulado por id (primário + chain). */
       const damageById = new Map<string, number>();
 
@@ -334,20 +501,93 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           fromShoulder: true,
         });
 
+        const isCrit = Math.random() <= critChance;
+        const damage = isCrit ? punchBase * critMult : punchBase;
+        const displayDamage = Math.round(damage);
+
         hitSplats.push({
           id: crypto.randomUUID(),
           x: enemy.x,
           y: enemy.y,
-          text: String(displayDamage),
+          text: isCrit ? `${displayDamage}!` : String(displayDamage),
           age: 0,
-          color: isCrit ? "#fde047" : "#ffffff",
+          color: isCrit ? "#fb923c" : "#ffffff",
+          scale: isCrit ? 1.4 : 1,
         });
 
         addDamage(enemy.id, damage);
 
-        // Gelo: 15% se skill desbloqueada
+        // Ricochete ativo: cadeia a partir do alvo do soco
+        if (ricochetWindowActive && maxBounces > 1) {
+          const bounceDamage = punchBase * bounceDamageMult;
+          const displayBounce = Math.max(1, Math.round(bounceDamage));
+          const bounceChain = chainRicochet(
+            living,
+            enemy.x,
+            enemy.y,
+            maxBounces - 1,
+            RICOCHET_LINK_RADIUS,
+            RICOCHET_LINK_RADIUS,
+            new Set([enemy.id]),
+          );
+
+          let prevX = enemy.x;
+          let prevY = enemy.y;
+          for (let b = 0; b < bounceChain.length; b++) {
+            const target = bounceChain[b]!;
+            newAttacks.push({
+              id: crypto.randomUUID(),
+              startX: prevX,
+              startY: prevY,
+              targetX: target.x,
+              targetY: target.y,
+              startTime:
+                now + i * PUNCH_STAGGER_MS + (b + 1) * RICOCHET_SEGMENT_STAGGER_MS,
+              duration: RICOCHET_SEGMENT_DURATION_MS,
+              isRetracting: false,
+              side: punchSide,
+              armIndex,
+              kind: "ricochet",
+              fromShoulder: false,
+            });
+
+            hitSplats.push({
+              id: crypto.randomUUID(),
+              x: target.x,
+              y: target.y,
+              text: String(displayBounce),
+              age: 0,
+              color: "#fbbf24",
+            });
+
+            addDamage(target.id, bounceDamage);
+            target.applyKnockback(
+              target.x - prevX,
+              target.y - prevY,
+              knockbackPower * 0.85,
+            );
+            prevX = target.x;
+            prevY = target.y;
+          }
+        }
+
+        // Fogo no soco (se skill ativa na run) — mesmo DPS do pulso periódico
+        if (fireLevel > 0) {
+          const burnDps = punchBase * 0.2 * (1 + skillLevels.fire * 0.5);
+          enemy.applyBurn(burnDps, now, BURN_DURATION_MS);
+          hitSplats.push({
+            id: crypto.randomUUID(),
+            x: enemy.x + 10,
+            y: enemy.y - 10,
+            text: "BURN",
+            age: 0,
+            color: "#fb923c",
+          });
+        }
+
+        // Gelo: 15% se skill desbloqueada (duração escala com ice)
         if (hasFreeze && Math.random() < ELEMENTAL_PROC_CHANCE) {
-          enemy.applyStatus("freeze", now + FREEZE_DURATION_MS);
+          enemy.applyStatus("freeze", now + freezeDurationMs);
           questEvents.push({ type: "inflict_freeze", amount: 1 });
           hitSplats.push({
             id: crypto.randomUUID(),
@@ -359,9 +599,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           });
         }
 
-        // Raio: 15% — dano em cadeia nos 3 mais próximos
+        // Raio: 15% — cadeia + slow (targets/slow escalam com lightning)
         if (hasShock && Math.random() < ELEMENTAL_PROC_CHANCE) {
-          enemy.applyStatus("shock", now + SHOCK_VISUAL_MS);
+          enemy.applyShockSlow(shockSlowAmount, now);
           questEvents.push({ type: "inflict_shock", amount: 1 });
           hitSplats.push({
             id: crypto.randomUUID(),
@@ -379,12 +619,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
               enemy: e,
               dist: Math.hypot(e.x - enemy.x, e.y - enemy.y),
             }))
-            .filter(({ dist }) => dist <= CHAIN_LIGHTNING_RADIUS)
+            .filter(({ dist }) => dist <= LIGHTNING_LINK_RADIUS)
             .sort((a, b) => a.dist - b.dist)
-            .slice(0, CHAIN_LIGHTNING_TARGETS);
+            .slice(0, lightningTargets);
 
           for (const { enemy: chained } of chainTargets) {
-            chained.applyStatus("shock", now + SHOCK_VISUAL_MS);
+            chained.applyShockSlow(shockSlowAmount, now);
             questEvents.push({ type: "inflict_shock", amount: 1 });
             addDamage(chained.id, chainDamage);
             hitSplats.push({
@@ -412,9 +652,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         // HP removido de fato (não conta overkill)
         damageDealt += Math.min(dealt, Math.max(0, enemy.hp));
         if (enemy.takeDamage(dealt)) {
-          kills += 1;
-          killSites.push({ x: enemy.x, y: enemy.y });
-          pushKillQuests(enemy.type);
+          pushKill(enemy);
         } else {
           nextLiving.push(enemy);
         }
@@ -425,111 +663,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   }
 
-  // Ricochete: cadeia independente do CD de soco (CD próprio)
-  if (
-    ricochet.unlocked &&
-    !player.isDead &&
-    living.length > 0 &&
-    now >= nextRicochetTime + ricochet.cooldownMs
-  ) {
-    const extendedRange =
-      baseRange * matchBuffs.attackRange * RICOCHET_RANGE_MULT;
-    const chain = chainRicochet(
-      living,
-      player.x,
-      player.y,
-      ricochet.maxBounces,
-      extendedRange,
-      RICOCHET_LINK_RADIUS,
-    );
-
-    if (chain.length > 0) {
-      const bounceDamage =
-        baseDamage * matchBuffs.damageMultiplier * ricochet.bounceDamagePercent;
-      const displayBounce = Math.max(1, Math.round(bounceDamage));
-      let ricochetDamageDealt = 0;
-
-      const { leftArms, rightArms } = getArmDistribution(arms);
-      const ricoSide = pickNextPunchSide(nextPunchSide, leftArms, rightArms);
-      const armsOnSide = ricoSide === "left" ? leftArms : rightArms;
-      const armIndex = 0;
-      const rest = getArmRestPosition(
-        player.x,
-        player.y,
-        ricoSide,
-        armIndex,
-        Math.max(1, armsOnSide),
-        playerRotation,
-      );
-
-      const first = chain[0]!;
-      playerRotation = angleToward(player.x, player.y, first.x, first.y);
-      player.rotation = playerRotation;
-
-      let prevX = rest.x;
-      let prevY = rest.y;
-
-      for (let i = 0; i < chain.length; i++) {
-        const target = chain[i]!;
-        newAttacks.push({
-          id: crypto.randomUUID(),
-          startX: prevX,
-          startY: prevY,
-          targetX: target.x,
-          targetY: target.y,
-          startTime: now + i * RICOCHET_SEGMENT_STAGGER_MS,
-          duration: RICOCHET_SEGMENT_DURATION_MS,
-          isRetracting: false,
-          side: ricoSide,
-          armIndex,
-          kind: "ricochet",
-          fromShoulder: i === 0,
-        });
-
-        hitSplats.push({
-          id: crypto.randomUUID(),
-          x: target.x,
-          y: target.y,
-          text: String(displayBounce),
-          age: 0,
-          color: "#fbbf24",
-        });
-
-        ricochetDamageDealt += Math.min(bounceDamage, Math.max(0, target.hp));
-        const fromX = i === 0 ? player.x : chain[i - 1]!.x;
-        const fromY = i === 0 ? player.y : chain[i - 1]!.y;
-        target.applyKnockback(
-          target.x - fromX,
-          target.y - fromY,
-          knockbackPower * 0.85,
-        );
-
-        prevX = target.x;
-        prevY = target.y;
-      }
-
-      const nextLiving: Enemy[] = [];
-      for (const enemy of living) {
-        const hit = chain.some((c) => c.id === enemy.id);
-        if (!hit) {
-          nextLiving.push(enemy);
-          continue;
-        }
-        if (enemy.takeDamage(bounceDamage)) {
-          kills += 1;
-          killSites.push({ x: enemy.x, y: enemy.y });
-          pushKillQuests(enemy.type);
-        } else {
-          nextLiving.push(enemy);
-        }
-      }
-      living = nextLiving;
-      applyLifeSteal(ricochetDamageDealt);
-      nextRicochetTime = now;
-      nextPunchSide = ricoSide;
-    }
-  }
-
   living = living.filter((e) => !e.isDead);
 
   return {
@@ -537,7 +670,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     enemies: living,
     lastAttackTime: nextAttackTime,
     lastPunchSide: nextPunchSide,
-    lastRicochetTime: nextRicochetTime,
+    lastRicochetTime: lastRicochetTime,
     newAttacks,
     hitSplats,
     kills,
@@ -545,5 +678,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     contactHits,
     questEvents,
     playerRotation,
+    projectiles,
+    activeSkillPulse: activeSkills.pulseState,
   };
 }

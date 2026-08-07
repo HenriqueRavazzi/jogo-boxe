@@ -1,7 +1,7 @@
 "use client";
 
 import { Coins, Gem } from "lucide-react";
-import { SaveSlotMenu } from "@/components/SaveSlotMenu";
+import { SaveMenu } from "@/components/SaveMenu";
 import { UpgradePanel } from "@/components/UpgradePanel";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -10,21 +10,20 @@ type MainMenuProps = {
   isGameOver: boolean;
   onStart: () => void;
   onOpenTalents: () => void;
-  onSlotReady: () => void;
+  onSaveReady: () => void;
   /** Game Over → menu + sync (mesmo fluxo de Sair da Partida). */
   onReturnToMenu?: () => void;
 };
 
 /**
- * Menu principal: slots, START, upgrades (ouro) e acesso à skill tree (diamantes).
- * Não bloqueia a interação com os painéis.
+ * Menu principal: saves dinâmicos, START, upgrades e skill tree.
  */
 export function MainMenu({
   canPlay,
   isGameOver,
   onStart,
   onOpenTalents,
-  onSlotReady,
+  onSaveReady,
   onReturnToMenu,
 }: MainMenuProps) {
   const gold = useGameStore((s) => s.gold);
@@ -110,7 +109,7 @@ export function MainMenu({
           </div>
         )}
 
-        {!isGameOver && <SaveSlotMenu onSlotReady={onSlotReady} />}
+        {!isGameOver && <SaveMenu onSaveReady={onSaveReady} />}
 
         <div className="mt-auto flex flex-col gap-2 pt-2">
           <button

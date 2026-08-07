@@ -1,23 +1,34 @@
 import { DEFAULT_SKILL_TREE } from "@/lib/skillTree";
-import type { SaveData } from "@/db/schema";
+import {
+  DEFAULT_SKILLS_DATA,
+  DEFAULT_UNLOCKED_SKILLS,
+  type SaveData,
+  type SkillsData,
+  type UnlockedSkillsData,
+} from "@/db/schema";
 
-export const SAVE_SLOTS = [
-  { id: "save_slot_1", label: "Slot 1" },
-  { id: "save_slot_2", label: "Slot 2" },
-  { id: "save_slot_3", label: "Slot 3" },
-] as const;
-
-export type SaveSlotId = (typeof SAVE_SLOTS)[number]["id"];
-
-export function isSaveSlotId(value: string): value is SaveSlotId {
-  return SAVE_SLOTS.some((s) => s.id === value);
+function normalizeSkills(skills?: Partial<SkillsData> | null): SkillsData {
+  return {
+    ...DEFAULT_SKILLS_DATA,
+    ...(skills ?? {}),
+  };
 }
 
-/** Progresso inicial de um slot novo. */
+function normalizeUnlocked(
+  unlocked?: Partial<UnlockedSkillsData> | null,
+): UnlockedSkillsData {
+  return {
+    ...DEFAULT_UNLOCKED_SKILLS,
+    ...(unlocked ?? {}),
+  };
+}
+
+/** Progresso inicial de um save novo. */
 export function createDefaultSaveData(): SaveData {
   return {
     gold: 200,
     gems: 25,
+    purpleDiamonds: 0,
     maxHpLevel: 1,
     baseDamageLevel: 1,
     baseDamage: 10,
@@ -30,15 +41,36 @@ export function createDefaultSaveData(): SaveData {
     xpBonusLevel: 0,
     knockbackLevel: 0,
     baseKnockbackPower: 5,
+    critChanceLevel: 0,
+    critDamageLevel: 0,
     skillTree: { ...DEFAULT_SKILL_TREE },
+    skillLevels: { ...DEFAULT_SKILLS_DATA },
+    unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
   };
 }
 
 /** Hidrata saves antigos sem campos novos. */
-export function normalizeSaveData(data: SaveData): SaveData {
+export function normalizeSaveData(
+  data: SaveData & { skills?: SkillsData },
+): SaveData {
   const level = data.baseDamageLevel ?? 1;
   const baseDamage =
     data.baseDamage ?? Math.round(10 + (level - 1) * 5);
+
+  const skillLevels = normalizeSkills(
+    data.skillLevels ?? data.skills ?? DEFAULT_SKILLS_DATA,
+  );
+
+  const skillTree = {
+    ...createDefaultSaveData().skillTree,
+    ...data.skillTree,
+  };
+
+  const unlockedSkills = normalizeUnlocked(data.unlockedSkills);
+  if (skillTree.node_ricochet) unlockedSkills.ricochet = true;
+  if (skillTree.node_frost_chance) unlockedSkills.ice = true;
+  if (skillTree.node_shock_chance) unlockedSkills.lightning = true;
+
   return {
     ...createDefaultSaveData(),
     ...data,
@@ -47,6 +79,44 @@ export function normalizeSaveData(data: SaveData): SaveData {
     xpBonusLevel: data.xpBonusLevel ?? 0,
     knockbackLevel: data.knockbackLevel ?? 0,
     baseKnockbackPower: data.baseKnockbackPower ?? 5,
-    skillTree: { ...createDefaultSaveData().skillTree, ...data.skillTree },
+    critChanceLevel: data.critChanceLevel ?? 0,
+    critDamageLevel: data.critDamageLevel ?? 0,
+    purpleDiamonds: data.purpleDiamonds ?? 0,
+    skillTree,
+    skillLevels,
+    unlockedSkills,
   };
 }
+
+/** Junta colunas dedicadas + JSONB save_data em um SaveData completo. */
+export function mergeSaveRow(row: {
+  saveData: SaveData & { skills?: SkillsData };
+  purpleDiamonds?: number | null;
+  skillsData?: SkillsData | null;
+}): SaveData {
+  return normalizeSaveData({
+    ...row.saveData,
+    purpleDiamonds: row.purpleDiamonds ?? row.saveData.purpleDiamonds ?? 0,
+    skillLevels:
+      row.skillsData ??
+      row.saveData.skillLevels ??
+      row.saveData.skills ??
+      DEFAULT_SKILLS_DATA,
+  });
+}
+
+/** Validação leve de UUID (id do save). */
+export function isSaveId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+export type SaveListItem = {
+  id: string;
+  saveName: string;
+  gold: number;
+  gems: number;
+  purpleDiamonds: number;
+  updatedAt: string;
+};

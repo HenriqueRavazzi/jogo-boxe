@@ -27,13 +27,13 @@ export default function Home() {
   const startGame = useArenaStore((s) => s.startGame);
   const exitMatch = useArenaStore((s) => s.exitMatch);
   const togglePause = useArenaStore((s) => s.togglePause);
-  const activeSlotId = useGameStore((s) => s.activeSlotId);
+  const activeSaveId = useGameStore((s) => s.activeSaveId);
   const setGameConfigs = useGameStore((s) => s.setGameConfigs);
   const [showTalents, setShowTalents] = useState(false);
-  const [slotReady, setSlotReady] = useState(false);
+  const [saveReady, setSaveReady] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const canPlay = Boolean(activeSlotId) && slotReady;
+  const canPlay = Boolean(activeSaveId) && saveReady;
   const inMatch = gameState === "playing" || gameState === "level_up";
 
   // Carrega game_settings + difficulties do Neon
@@ -41,7 +41,11 @@ export default function Home() {
     let cancelled = false;
     void fetchGameConfigs().then((result) => {
       if (cancelled) return;
-      setGameConfigs(result.settings, result.difficulties);
+      setGameConfigs(
+        result.settings,
+        result.difficulties,
+        result.enemyTypes,
+      );
     });
     return () => {
       cancelled = true;
@@ -50,10 +54,10 @@ export default function Home() {
 
   // Sync com Neon ao voltar ao menu
   useEffect(() => {
-    if (gameState === "menu" && activeSlotId) {
+    if (gameState === "menu" && activeSaveId) {
       void syncWithDB();
     }
-  }, [gameState, activeSlotId]);
+  }, [gameState, activeSaveId]);
 
   // ESC pausa / despausa durante playing
   useEffect(() => {
@@ -149,7 +153,7 @@ export default function Home() {
           onOpenTalents={() => {
             void syncWithDB().finally(() => setShowTalents(true));
           }}
-          onSlotReady={() => setSlotReady(true)}
+          onSaveReady={() => setSaveReady(true)}
         />
       )}
 

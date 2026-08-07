@@ -18,6 +18,11 @@ import {
   createDropsFromKills,
   runLootSystem,
 } from "@/src/game/systems/LootSystem";
+import {
+  pulseVisualProgress,
+  isRicochetActive,
+  RICOCHET_ACTIVE_MS,
+} from "@/src/game/systems/ActiveSkillsSystem";
 import { runSpawner } from "@/src/game/systems/Spawner";
 import { useArenaStore, type ActiveAttack } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
@@ -178,11 +183,22 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           attackCooldown: e.attackCooldown ?? 1000,
           lastAttackTime: e.lastAttackTime ?? 0,
           isAttacking: e.isAttacking ?? false,
+          projectileDamage: e.projectileDamage ?? 0,
+          color: e.color ?? "",
           statusEffects: e.statusEffects ?? [],
         }),
       );
+      const playerAttackRange =
+        stats.attackRange * arena.matchBuffs.attackRange;
       for (const enemy of enemies) {
-        enemy.moveToward(player.x, player.y, dt, gameNow, PLAYER_RADIUS);
+        enemy.moveToward(
+          player.x,
+          player.y,
+          dt,
+          gameNow,
+          PLAYER_RADIUS,
+          playerAttackRange,
+        );
       }
 
       const combat = runCombatSystem({
@@ -198,8 +214,14 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         lastPunchSide: arena.lastPunchSide,
         lastRicochetTime: arena.lastRicochetTime,
         now: gameNow,
+        dt,
         contactDamage: CONTACT_DAMAGE,
         playerRotation: arena.playerRotation,
+        projectiles: arena.projectiles ?? [],
+        canvasWidth: canvas.clientWidth,
+        canvasHeight: canvas.clientHeight,
+        matchSkills: arena.matchSkills,
+        activeSkillPulse: arena.activeSkillPulse,
       });
 
       const livingEnemies = combat.enemies
@@ -227,12 +249,14 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         shakeFrames = Math.max(0, shakeFrames - gameSpeed);
       }
 
-      // Drops: N moedas espalhadas (renda × dificuldade) + diamante opcional no centro
+      // Drops: ouro + diamante (10%) + roxo (0.5% / boss garantido)
       const difficulty = game.getDifficultyMultipliers();
-      const newDrops = createDropsFromKills(combat.killSites, gameNow, {
+      const dropResult = createDropsFromKills(combat.killSites, gameNow, {
         incomeMultiplier: game.incomeMultiplier,
         goldDropMultiplier: difficulty.goldDropMultiplier,
+        bossesKilled: arena.bossesKilled,
       });
+      const newDrops = dropResult.drops;
       const dropsWithNew = [...arena.drops, ...newDrops];
 
       const loot = runLootSystem({
@@ -250,6 +274,9 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
       if (loot.collectedDiamonds > 0) {
         game.addGems(loot.collectedDiamonds);
+      }
+      if (loot.collectedPurpleDiamonds > 0) {
+        game.addPurpleDiamonds(loot.collectedPurpleDiamonds);
       }
 
       const defeatedThisFrame = combat.killSites.length;
@@ -282,6 +309,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           enemyDamageMultiplier: difficulty.enemyDamageMultiplier,
           enemySpeedMultiplier: difficulty.enemySpeedMultiplier,
         },
+        enemyTypes: game.enemyTypes,
       });
       spawnAccumulator = spawn.spawnAccumulatorMs;
 
@@ -294,6 +322,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
             ? [...livingEnemies, ...spawn.spawned]
             : livingEnemies,
         drops: loot.drops,
+        projectiles: combat.projectiles,
         currentHp: combat.player.hp,
         lastAttackTime: combat.lastAttackTime,
         lastPunchSide: combat.lastPunchSide,
@@ -303,6 +332,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         shakeFrames,
         timeAlive: nextTimeAlive,
         bossesSpawned: spawn.bossesSpawned,
+        bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
+        activeSkillPulse: combat.activeSkillPulse,
       });
 
       if (combat.player.hp <= 0) {
@@ -446,8 +477,17 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const drawScene = () => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      const { playerX, playerY, playerRotation, enemies, drops, activeAttacks, floatingTexts } =
-        useArenaStore.getState();
+      const {
+        playerX,
+        playerY,
+        playerRotation,
+        enemies,
+        drops,
+        projectiles,
+        activeAttacks,
+        floatingTexts,
+        activeSkillPulse,
+      } = useArenaStore.getState();
       const arms = useGameStore.getState().arms;
       const now = gameClockMs;
 
@@ -470,6 +510,72 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
+      // Ondas visuais de Gelo / Fogo (janela ativa 3s)
+      const iceT = pulseVisualProgress(activeSkillPulse.icePulseAt, now);
+      if (iceT > 0) {
+        const radius = 40 + iceT * Math.max(w, h) * 0.55;
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(125, 211, 252, ${0.75 * (1 - iceT)})`;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius * 0.72, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(186, 230, 253, ${0.4 * (1 - iceT)})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      const fireT = pulseVisualProgress(activeSkillPulse.firePulseAt, now);
+      if (fireT > 0) {
+        const radius = 36 + fireT * Math.max(w, h) * 0.5;
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(249, 115, 22, ${0.8 * (1 - fireT)})`;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius * 0.65, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(239, 68, 68, ${0.45 * (1 - fireT)})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      const zapT = pulseVisualProgress(activeSkillPulse.lightningPulseAt, now);
+      if (zapT > 0) {
+        const radius = 30 + zapT * Math.max(w, h) * 0.48;
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(250, 204, 21, ${0.85 * (1 - zapT)})`;
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius * 0.7, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(253, 224, 71, ${0.4 * (1 - zapT)})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      const ricoT = pulseVisualProgress(
+        activeSkillPulse.ricochetPulseAt,
+        now,
+        RICOCHET_ACTIVE_MS,
+      );
+      if (ricoT > 0 || isRicochetActive(activeSkillPulse, now)) {
+        const t =
+          ricoT > 0
+            ? ricoT
+            : Math.min(
+                1,
+                (now -
+                  (activeSkillPulse.ricochetActiveUntil - RICOCHET_ACTIVE_MS)) /
+                  RICOCHET_ACTIVE_MS,
+              );
+        const radius = 28 + t * Math.max(w, h) * 0.35;
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(251, 191, 36, ${0.7 * (1 - t * 0.5)})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+
       for (const enemy of enemies) {
         Enemy.fromData({
           ...enemy,
@@ -482,15 +588,35 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           attackCooldown: enemy.attackCooldown ?? 1000,
           lastAttackTime: enemy.lastAttackTime ?? 0,
           isAttacking: enemy.isAttacking ?? false,
+          projectileDamage: enemy.projectileDamage ?? 0,
+          color: enemy.color ?? "",
         }).draw(ctx, now);
+      }
+
+      for (const proj of projectiles ?? []) {
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, proj.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "#2dd4bf";
+        ctx.fill();
+        ctx.strokeStyle = "#99f6e4";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
       }
 
       for (const drop of drops) {
         ctx.beginPath();
         ctx.arc(drop.x, drop.y, DROP_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = drop.type === "gold" ? "#facc15" : "#7dd3fc";
+        if (drop.type === "gold") {
+          ctx.fillStyle = "#facc15";
+          ctx.strokeStyle = "#ca8a04";
+        } else if (drop.type === "purple_diamond") {
+          ctx.fillStyle = "#c084fc";
+          ctx.strokeStyle = "#a855f7";
+        } else {
+          ctx.fillStyle = "#7dd3fc";
+          ctx.strokeStyle = "#38bdf8";
+        }
         ctx.fill();
-        ctx.strokeStyle = drop.type === "gold" ? "#ca8a04" : "#38bdf8";
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
@@ -499,11 +625,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = "bold 16px system-ui, sans-serif";
       for (const ft of floatingTexts) {
         const alpha = 1 - ft.age / FLOATING_TEXT_MAX_AGE;
+        const scale = ft.scale ?? 1;
         ctx.globalAlpha = Math.max(0, alpha);
         ctx.fillStyle = ft.color;
+        ctx.font = `bold ${Math.round(16 * scale)}px system-ui, sans-serif`;
         ctx.fillText(ft.text, ft.x, ft.y);
       }
       ctx.globalAlpha = 1;

@@ -1,20 +1,29 @@
 /** Raridades e geração de cartas de upgrade in-match. */
 
+import type { SkillsData, UnlockedSkillsData } from "@/db/schema";
+
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
+export type SpecialSkillKey = "ricochet" | "ice" | "fire" | "lightning";
+
 /** Categoria da carta — usada para evitar duplicatas no pack de level-up. */
-export type UpgradeCategory = "damage" | "speed" | "range";
+export type UpgradeCategory =
+  | "damage"
+  | "speed"
+  | "range"
+  | SpecialSkillKey;
 
 export type UpgradeType =
   | "attackSpeed"
   | "attackRange"
-  | "damageMultiplier";
+  | "damageMultiplier"
+  | SpecialSkillKey;
 
 export type MatchUpgrade = {
   id: string;
   type: UpgradeType;
   category: UpgradeCategory;
-  /** Bônus percentual (0.1 = +10%). */
+  /** Bônus percentual (0.1 = +10%) ou +1 nível de skill especial. */
   value: number;
   rarity: Rarity;
   label: string;
@@ -45,7 +54,7 @@ const RARITY_BONUS: Record<Rarity, number> = {
   legendary: 0.25,
 };
 
-const UPGRADE_POOL: {
+const STAT_UPGRADE_POOL: {
   type: UpgradeType;
   category: UpgradeCategory;
   name: string;
@@ -71,7 +80,130 @@ const UPGRADE_POOL: {
   },
 ];
 
-const ALL_CATEGORIES: UpgradeCategory[] = UPGRADE_POOL.map((p) => p.category);
+const SPECIAL_SKILL_POOL: {
+  type: SpecialSkillKey;
+  category: SpecialSkillKey;
+  name: string;
+  short: string;
+}[] = [
+  {
+    type: "ricochet",
+    category: "ricochet",
+    name: "Ricochete",
+    short: "Soco ricocheteia entre inimigos",
+  },
+  {
+    type: "ice",
+    category: "ice",
+    name: "Gelo",
+    short: "Chance de congelar ao socar",
+  },
+  {
+    type: "fire",
+    category: "fire",
+    name: "Fogo",
+    short: "Aplica queimadura nos socos",
+  },
+  {
+    type: "lightning",
+    category: "lightning",
+    name: "Raio",
+    short: "Chance de raio em cadeia + slow",
+  },
+];
+
+export const SPECIAL_SKILL_KEYS: SpecialSkillKey[] = [
+  "ricochet",
+  "ice",
+  "fire",
+  "lightning",
+];
+
+export function isSpecialSkillType(type: UpgradeType): type is SpecialSkillKey {
+  return (SPECIAL_SKILL_KEYS as string[]).includes(type);
+}
+
+/**
+ * Teto in-run: 1 (após desbloqueio) + níveis meta com Diamantes Roxos.
+ */
+export function getMatchSkillMaxLevel(metaSkillLevel: number): number {
+  return 1 + Math.max(0, Math.floor(metaSkillLevel));
+}
+
+export function canOfferSpecialSkill(
+  key: SpecialSkillKey,
+  unlockedSkills: UnlockedSkillsData,
+  matchSkills: SkillsData,
+  skillLevels: SkillsData,
+): boolean {
+  if (!unlockedSkills[key]) return false;
+  const current = matchSkills[key] ?? 0;
+  const max = getMatchSkillMaxLevel(skillLevels[key] ?? 0);
+  return current < max;
+}
+
+export type GenerateUpgradeOptionsContext = {
+  unlockedSkills: UnlockedSkillsData;
+  matchSkills: SkillsData;
+  skillLevels: SkillsData;
+};
+
+/**
+ * Roleta por faixas cumulativas: Math.random() em [0, 1) vs pesos normalizados.
+ */
+function rollRarity(): Rarity {
+  const total = RARITY_TABLE.reduce((sum, r) => sum + r.weight, 0);
+  const roll = Math.random(); // 0 ≤ roll < 1
+  let cumulative = 0;
+
+  for (const entry of RARITY_TABLE) {
+    cumulative += entry.weight / total;
+    if (roll < cumulative) return entry.rarity;
+  }
+
+  return "legendary";
+}
+
+function createStatUpgrade(
+  category: "damage" | "speed" | "range",
+  rarity: Rarity,
+): MatchUpgrade {
+  const pool =
+    STAT_UPGRADE_POOL.find((p) => p.category === category) ??
+    STAT_UPGRADE_POOL[0]!;
+  const value = RARITY_BONUS[rarity];
+  const pct = Math.round(value * 100);
+
+  return {
+    id: crypto.randomUUID(),
+    type: pool.type,
+    category: pool.category,
+    value,
+    rarity,
+    label: `+${pct}% ${pool.name}`,
+    description: `+${pct}% ${pool.short}`,
+  };
+}
+
+function createSpecialUpgrade(
+  key: SpecialSkillKey,
+  rarity: Rarity,
+  nextLevel: number,
+): MatchUpgrade {
+  const pool = SPECIAL_SKILL_POOL.find((p) => p.type === key)!;
+  const isFirst = nextLevel <= 1;
+  return {
+    id: crypto.randomUUID(),
+    type: pool.type,
+    category: pool.category,
+    value: 1,
+    rarity,
+    label: isFirst ? pool.name : `${pool.name} Lv.${nextLevel}`,
+    description: isFirst
+      ? `Ativa: ${pool.short}`
+      : `+1 nível (${pool.short})`,
+  };
+}
 
 export const RARITY_LABEL: Record<Rarity, string> = {
   common: "Comum",
@@ -119,59 +251,71 @@ export const RARITY_STYLES: Record<
 };
 
 /**
- * Roleta por faixas cumulativas: Math.random() em [0, 1) vs pesos normalizados.
+ * Chance por slot de oferecer uma skill especial (desbloqueada e ainda upável).
  */
-function rollRarity(): Rarity {
-  const total = RARITY_TABLE.reduce((sum, r) => sum + r.weight, 0);
-  const roll = Math.random(); // 0 ≤ roll < 1
-  let cumulative = 0;
+export const SPECIAL_SKILL_CARD_CHANCE = 0.15;
 
-  for (const entry of RARITY_TABLE) {
-    cumulative += entry.weight / total;
-    if (roll < cumulative) return entry.rarity;
-  }
-
-  return "legendary";
-}
-
-function createUpgradeForCategory(
-  category: UpgradeCategory,
-  rarity: Rarity,
-): MatchUpgrade {
-  const pool =
-    UPGRADE_POOL.find((p) => p.category === category) ?? UPGRADE_POOL[0]!;
-  const value = RARITY_BONUS[rarity];
-  const pct = Math.round(value * 100);
-
-  return {
-    id: crypto.randomUUID(),
-    type: pool.type,
-    category: pool.category,
-    value,
-    rarity,
-    label: `+${pct}% ${pool.name}`,
-    description: `+${pct}% ${pool.short}`,
-  };
-}
+const STAT_CATEGORIES: Array<"damage" | "speed" | "range"> = [
+  "damage",
+  "speed",
+  "range",
+];
 
 /**
- * Gera N cartas com raridade ponderada e categorias distintas
- * (nunca duas cartas da mesma categoria no mesmo pack).
+ * Gera N cartas com raridade ponderada e categorias distintas.
+ * Por slot: 15% tenta skill especial elegível; senão, upgrade de status.
  */
-export function generateUpgradeOptions(count = 3): MatchUpgrade[] {
+export function generateUpgradeOptions(
+  count = 3,
+  ctx?: GenerateUpgradeOptionsContext,
+): MatchUpgrade[] {
+  const unlocked = ctx?.unlockedSkills;
+  const matchSkills = ctx?.matchSkills;
+  const skillLevels = ctx?.skillLevels;
+
+  const eligibleSpecials: SpecialSkillKey[] = [];
+  if (unlocked && matchSkills && skillLevels) {
+    for (const key of SPECIAL_SKILL_KEYS) {
+      if (canOfferSpecialSkill(key, unlocked, matchSkills, skillLevels)) {
+        eligibleSpecials.push(key);
+      }
+    }
+  }
+
   const selectedCards: MatchUpgrade[] = [];
-  let availableCategories = [...ALL_CATEGORIES];
+  let specialPool = [...eligibleSpecials];
+  let statPool = [...STAT_CATEGORIES];
 
-  while (selectedCards.length < count && availableCategories.length > 0) {
-    const categoryIndex = Math.floor(
-      Math.random() * availableCategories.length,
-    );
-    const category = availableCategories[categoryIndex]!;
-
+  while (selectedCards.length < count) {
     const rarity = rollRarity();
-    selectedCards.push(createUpgradeForCategory(category, rarity));
+    let picked: MatchUpgrade | null = null;
 
-    availableCategories = availableCategories.filter((c) => c !== category);
+    const canRollSpecial =
+      specialPool.length > 0 && Math.random() < SPECIAL_SKILL_CARD_CHANCE;
+
+    if (canRollSpecial) {
+      const idx = Math.floor(Math.random() * specialPool.length);
+      const key = specialPool[idx]!;
+      const nextLevel = (matchSkills?.[key] ?? 0) + 1;
+      picked = createSpecialUpgrade(key, rarity, nextLevel);
+      specialPool = specialPool.filter((k) => k !== key);
+    } else if (statPool.length > 0) {
+      const idx = Math.floor(Math.random() * statPool.length);
+      const category = statPool[idx]!;
+      picked = createStatUpgrade(category, rarity);
+      statPool = statPool.filter((c) => c !== category);
+    } else if (specialPool.length > 0) {
+      // Fallback: só restam skills especiais (stats esgotados)
+      const idx = Math.floor(Math.random() * specialPool.length);
+      const key = specialPool[idx]!;
+      const nextLevel = (matchSkills?.[key] ?? 0) + 1;
+      picked = createSpecialUpgrade(key, rarity, nextLevel);
+      specialPool = specialPool.filter((k) => k !== key);
+    } else {
+      break;
+    }
+
+    if (picked) selectedCards.push(picked);
   }
 
   return selectedCards;
