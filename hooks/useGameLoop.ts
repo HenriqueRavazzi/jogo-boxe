@@ -23,7 +23,6 @@ import { useGameStore } from "@/store/useGameStore";
 const PLAYER_RADIUS = 18;
 const BODY_RADIUS = 16;
 const HEAD_RADIUS = 11;
-const ENEMY_RADIUS = 12;
 const DROP_RADIUS = 6;
 const GLOVE_RADIUS = 8;
 const CONTACT_DAMAGE = 20;
@@ -159,18 +158,18 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       );
 
       const enemies = arena.enemies.map((e) =>
-        Enemy.fromData(
-          {
-            ...e,
-            vx: e.vx ?? 0,
-            vy: e.vy ?? 0,
-            contactDamage: e.contactDamage ?? CONTACT_DAMAGE,
-          },
-          ENEMY_RADIUS,
-        ),
+        Enemy.fromData({
+          ...e,
+          type: e.type ?? "normal",
+          radius: e.radius ?? 12,
+          vx: e.vx ?? 0,
+          vy: e.vy ?? 0,
+          contactDamage: e.contactDamage ?? CONTACT_DAMAGE,
+          statusEffects: e.statusEffects ?? [],
+        }),
       );
       for (const enemy of enemies) {
-        enemy.moveToward(player.x, player.y, dt);
+        enemy.moveToward(player.x, player.y, dt, gameNow);
       }
 
       const combat = runCombatSystem({
@@ -243,6 +242,10 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           .recordLootCollected(loot.collectedGold, loot.collectedDiamonds);
       }
 
+      if (combat.questEvents.length > 0) {
+        useArenaStore.getState().progressQuests(combat.questEvents);
+      }
+
       useArenaStore.setState({
         playerX: cx,
         playerY: cy,
@@ -265,20 +268,30 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         useArenaStore.getState().addXp(XP_PER_KILL * combat.kills);
       }
 
+      const hasBossAlive = livingEnemies.some((e) => e.type === "boss");
       const spawn = runSpawner({
         timeAlive: arena.timeAlive + dt,
         matchLevel: arena.matchLevel,
         canvasWidth: canvas.clientWidth,
         canvasHeight: canvas.clientHeight,
         currentEnemyCount: livingEnemies.length,
+        bossesSpawned: arena.bossesSpawned,
+        hasBossAlive,
         spawnAccumulatorMs: spawnAccumulator,
         dt,
       });
       spawnAccumulator = spawn.spawnAccumulatorMs;
 
-      if (spawn.spawned.length > 0) {
+      if (
+        spawn.bossesSpawned !== arena.bossesSpawned ||
+        spawn.spawned.length > 0
+      ) {
         useArenaStore.setState((s) => ({
-          enemies: [...s.enemies, ...spawn.spawned],
+          enemies:
+            spawn.spawned.length > 0
+              ? [...s.enemies, ...spawn.spawned]
+              : s.enemies,
+          bossesSpawned: spawn.bossesSpawned,
         }));
       }
     };
@@ -409,12 +422,15 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
 
       for (const enemy of enemies) {
-        const hpPercent = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
-        const red = Math.floor(255 * hpPercent);
-        ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y, ENEMY_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = `rgb(${red}, 0, 0)`;
-        ctx.fill();
+        Enemy.fromData({
+          ...enemy,
+          type: enemy.type ?? "normal",
+          radius: enemy.radius ?? 12,
+          statusEffects: enemy.statusEffects ?? [],
+          vx: enemy.vx ?? 0,
+          vy: enemy.vy ?? 0,
+          contactDamage: enemy.contactDamage ?? CONTACT_DAMAGE,
+        }).draw(ctx, now);
       }
 
       for (const drop of drops) {
@@ -481,10 +497,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const loop = (now: number) => {
       rafId.current = window.requestAnimationFrame(loop);
 
-      const state = useArenaStore.getState().gameState;
+      const arenaState = useArenaStore.getState();
+      const state = arenaState.gameState;
       const playing = state === "playing";
 
-      if (playing && !wasPlaying && useArenaStore.getState().timeAlive === 0) {
+      if (playing && !wasPlaying && arenaState.timeAlive === 0) {
         gameClockMs = 0;
         spawnAccumulator = 0;
       }
@@ -496,6 +513,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           .getState()
           .centerPlayer(canvas.clientWidth, canvas.clientHeight);
         draw();
+        return;
+      }
+
+      // Pause seguro: não avança física, tempo, spawn nem colisões
+      if (arenaState.isPaused) {
+        last = now;
         return;
       }
 

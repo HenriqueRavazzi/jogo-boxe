@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BossHealthBar } from "@/components/BossHealthBar";
 import { GameCanvas } from "@/components/GameCanvas";
 import { GameOverModal } from "@/components/GameOverModal";
 import { InGameStats } from "@/components/InGameStats";
 import { LevelUpModal } from "@/components/LevelUpModal";
 import { MainMenu } from "@/components/MainMenu";
+import { QuestsPanel } from "@/components/QuestsPanel";
 import { SkillTree } from "@/components/SkillTree";
 import { TopBar } from "@/components/TopBar";
 import { syncWithDB } from "@/lib/syncWithDB";
@@ -15,13 +17,15 @@ import { useGameStore } from "@/store/useGameStore";
 /**
  * Página principal
  * - menu: sidebar + upgrades + talents
- * - playing: canvas + TopBar + InGameStats
+ * - playing: canvas + TopBar + InGameStats (+ pause ESC)
  * - gameover: modal com runStats
  */
 export default function Home() {
   const gameState = useArenaStore((s) => s.gameState);
+  const isPaused = useArenaStore((s) => s.isPaused);
   const startGame = useArenaStore((s) => s.startGame);
   const exitMatch = useArenaStore((s) => s.exitMatch);
+  const togglePause = useArenaStore((s) => s.togglePause);
   const activeSlotId = useGameStore((s) => s.activeSlotId);
   const [showTalents, setShowTalents] = useState(false);
   const [slotReady, setSlotReady] = useState(false);
@@ -36,6 +40,18 @@ export default function Home() {
       void syncWithDB();
     }
   }, [gameState, activeSlotId]);
+
+  // ESC pausa / despausa durante playing
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (useArenaStore.getState().gameState !== "playing") return;
+      e.preventDefault();
+      togglePause();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [togglePause]);
 
   const handleExitMatch = async () => {
     if (busy) return;
@@ -70,7 +86,42 @@ export default function Home() {
 
       {/* Stats + sair da partida */}
       {inMatch && (
-        <InGameStats onExitMatch={() => void handleExitMatch()} />
+        <>
+          <BossHealthBar />
+          <InGameStats onExitMatch={() => void handleExitMatch()} />
+          <QuestsPanel />
+        </>
+      )}
+
+      {/* Overlay de pause (ESC) */}
+      {gameState === "playing" && isPaused && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="flex w-full max-w-sm flex-col items-center gap-6 px-6 text-center">
+            <h2 className="text-3xl font-black tracking-wide text-zinc-50 sm:text-4xl">
+              JOGO PAUSADO
+            </h2>
+            <p className="text-sm text-zinc-400">
+              Pressione ESC ou Continuar para retomar
+            </p>
+            <div className="flex w-full flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => togglePause()}
+                className="w-full rounded-xl bg-emerald-600 px-6 py-3.5 text-base font-bold text-white transition hover:bg-emerald-500"
+              >
+                Continuar
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleExitMatch()}
+                className="w-full rounded-xl border border-rose-500/60 bg-rose-950/50 px-6 py-3.5 text-base font-bold text-rose-200 transition hover:border-rose-400 hover:bg-rose-900/60 disabled:cursor-wait disabled:opacity-60"
+              >
+                {busy ? "Saindo..." : "Sair da Partida"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Menu principal (não no game over) — permanece montado sob a skill tree */}

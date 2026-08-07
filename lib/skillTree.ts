@@ -9,7 +9,9 @@ export type SkillNodeId =
   | "node_range_focus"
   | "node_spark_ignition"
   | "node_spark_burst"
-  | "node_spark_fury";
+  | "node_spark_fury"
+  | "node_frost_chance"
+  | "node_shock_chance";
 
 export type SkillTreeState = Record<SkillNodeId, boolean>;
 
@@ -20,7 +22,7 @@ export type SkillNodeDef = {
   cost: number;
   /** null = nó raiz (sem pré-requisito). */
   requires: SkillNodeId | null;
-  branch: "vitality" | "power" | "spark";
+  branch: "vitality" | "power" | "spark" | "elements";
   /** Posição vertical na branch (0 = raiz). */
   tier: number;
   accent: string;
@@ -36,6 +38,8 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_spark_ignition: false,
   node_spark_burst: false,
   node_spark_fury: false,
+  node_frost_chance: false,
+  node_shock_chance: false,
 };
 
 export const SKILL_NODES: SkillNodeDef[] = [
@@ -132,12 +136,34 @@ export const SKILL_NODES: SkillNodeDef[] = [
     tier: 2,
     accent: "sky",
   },
+  // Elements — procs em socos (diamantes)
+  {
+    id: "node_frost_chance",
+    name: "Chance de Gelo",
+    description: "15% de congelar o alvo por 2s",
+    cost: 10,
+    requires: null,
+    branch: "elements",
+    tier: 0,
+    accent: "cyan",
+  },
+  {
+    id: "node_shock_chance",
+    name: "Chance de Raio",
+    description: "15% de raio em cadeia (3 alvos, 50% dano)",
+    cost: 18,
+    requires: "node_frost_chance",
+    branch: "elements",
+    tier: 1,
+    accent: "yellow",
+  },
 ];
 
 export const SKILL_BRANCHES = [
   { id: "vitality" as const, title: "Vitality", color: "text-rose-300" },
   { id: "power" as const, title: "Power", color: "text-amber-300" },
   { id: "spark" as const, title: "Spark", color: "text-sky-300" },
+  { id: "elements" as const, title: "Elements", color: "text-cyan-300" },
 ];
 
 export function getSkillNode(id: SkillNodeId): SkillNodeDef {

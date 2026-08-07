@@ -18,18 +18,25 @@ const ACCENT_UNLOCKED: Record<string, string> = {
   rose: "border-rose-400 bg-rose-950 text-rose-100 shadow-rose-500/30",
   amber: "border-amber-400 bg-amber-950 text-amber-100 shadow-amber-500/30",
   sky: "border-sky-400 bg-sky-950 text-sky-100 shadow-sky-500/30",
+  cyan: "border-cyan-400 bg-cyan-950 text-cyan-100 shadow-cyan-500/30",
+  yellow: "border-yellow-400 bg-yellow-950 text-yellow-100 shadow-yellow-500/30",
 };
 
 const ACCENT_AVAILABLE: Record<string, string> = {
   rose: "border-rose-500/60 bg-zinc-900 text-rose-200 hover:border-rose-400",
   amber: "border-amber-500/60 bg-zinc-900 text-amber-200 hover:border-amber-400",
   sky: "border-sky-500/60 bg-zinc-900 text-sky-200 hover:border-sky-400",
+  cyan: "border-cyan-500/60 bg-zinc-900 text-cyan-200 hover:border-cyan-400",
+  yellow:
+    "border-yellow-500/60 bg-zinc-900 text-yellow-200 hover:border-yellow-400",
 };
 
 const LINE_UNLOCKED: Record<string, string> = {
   rose: "bg-rose-400",
   amber: "bg-amber-400",
   sky: "bg-sky-400",
+  cyan: "bg-cyan-400",
+  yellow: "bg-yellow-400",
 };
 
 /** Overlay da árvore de talents (custa diamantes). */
@@ -61,7 +68,7 @@ export function SkillTree({ onClose }: SkillTreeProps) {
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-      <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl">
+      <div className="flex max-h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl">
         <header className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
@@ -121,7 +128,7 @@ export function SkillTree({ onClose }: SkillTreeProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {SKILL_BRANCHES.map((branch) => {
               const nodes = SKILL_NODES.filter(
                 (n) => n.branch === branch.id,

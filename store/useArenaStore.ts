@@ -2,6 +2,13 @@
 
 import { create } from "zustand";
 import {
+  applyQuestProgress,
+  createRandomQuests,
+  createReplacementQuest,
+  type ActiveQuest,
+  type QuestProgressEvent,
+} from "@/lib/quests";
+import {
   generateUpgradeOptions,
   type MatchUpgrade,
   type UpgradeType,
@@ -14,6 +21,15 @@ import {
 import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import { useGameStore } from "@/store/useGameStore";
 
+export type { ActiveQuest, QuestProgressEvent } from "@/lib/quests";
+
+export type EnemyType = "normal" | "dasher" | "boss";
+
+export type EnemyStatusEffect = {
+  type: "freeze" | "shock";
+  expiresAt: number;
+};
+
 export type Enemy = {
   id: string;
   x: number;
@@ -24,6 +40,9 @@ export type Enemy = {
   vx: number;
   vy: number;
   contactDamage: number;
+  type: EnemyType;
+  radius: number;
+  statusEffects: EnemyStatusEffect[];
 };
 
 export type ActiveAttack = {
@@ -107,13 +126,27 @@ export type ArenaStoreState = {
   gameSpeed: number;
   /** Estatísticas da run atual. */
   runStats: RunStats;
+  /** Quantos bosses já foram invocados nesta run (ciclos de 180s). */
+  bossesSpawned: number;
+  /** Missões ativas da partida atual. */
+  activeQuests: ActiveQuest[];
+  /** Partida pausada (ESC) — trava física/tempo. */
+  isPaused: boolean;
   startGame: () => void;
   setGameOver: () => void;
   /** Volta ao menu mantendo o progresso persistente (claim & exit). */
   exitMatch: () => void;
+  togglePause: () => void;
   toggleGameSpeed: () => void;
   recordEnemyDefeats: (count: number) => void;
   recordLootCollected: (gold: number, diamonds: number) => void;
+  /** Incrementa progresso das quests a partir de eventos de combate. */
+  progressQuests: (events: QuestProgressEvent[]) => void;
+  /**
+   * Coleta recompensa de uma quest concluída e gera outra no lugar.
+   * Retorna diamantes ganhos, ou null se inválida.
+   */
+  claimQuest: (questId: string) => number | null;
   addXp: (amount: number) => void;
   selectUpgrade: (upgradeType: UpgradeType, value: number) => void;
   setPlayerPosition: (x: number, y: number) => void;
@@ -209,6 +242,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   levelUpOptions: [],
   gameSpeed: 1,
   runStats: { ...EMPTY_RUN_STATS },
+  bossesSpawned: 0,
+  activeQuests: [],
+  isPaused: false,
 
   startGame: () => {
     const stats = useGameStore.getState().getEffectiveStats();
@@ -234,6 +270,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       levelUpOptions: [],
       gameSpeed: 1,
       runStats: { ...EMPTY_RUN_STATS },
+      bossesSpawned: 0,
+      activeQuests: createRandomQuests(2),
+      isPaused: false,
       playerX: playerX || w / 2,
       playerY: playerY || h / 2,
     });
@@ -250,6 +289,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       floatingTexts: [],
       shakeFrames: 0,
       levelUpOptions: [],
+      bossesSpawned: 0,
+      activeQuests: [],
+      isPaused: false,
     }),
 
   /** Claim & exit: limpa a arena e volta ao menu (ouro/gems já estão no useGameStore). */
@@ -267,12 +309,21 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
+      bossesSpawned: 0,
+      activeQuests: [],
+      isPaused: false,
       matchBuffs: { ...DEFAULT_BUFFS },
       levelUpOptions: [],
       gameSpeed: 1,
       runStats: { ...EMPTY_RUN_STATS },
       currentHp: useGameStore.getState().getEffectiveStats().maxHp,
     }),
+
+  togglePause: () => {
+    const { gameState, isPaused } = get();
+    if (gameState !== "playing") return;
+    set({ isPaused: !isPaused });
+  },
 
   toggleGameSpeed: () =>
     set((s) => ({ gameSpeed: s.gameSpeed === 1 ? 2 : 1 })),
@@ -296,6 +347,25 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         diamondsCollected: s.runStats.diamondsCollected + diamonds,
       },
     }));
+  },
+
+  progressQuests: (events) => {
+    if (!events.length) return;
+    set((s) => ({
+      activeQuests: applyQuestProgress(s.activeQuests, events),
+    }));
+  },
+
+  claimQuest: (questId) => {
+    const quest = get().activeQuests.find((q) => q.id === questId);
+    if (!quest || !quest.completed) return null;
+
+    const reward = quest.rewardDiamonds;
+    const remaining = get().activeQuests.filter((q) => q.id !== questId);
+    const replacement = createReplacementQuest(remaining);
+
+    set({ activeQuests: [...remaining, replacement] });
+    return reward;
   },
 
   addFloatingTexts: (texts) =>
@@ -412,6 +482,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       vx: 0,
       vy: 0,
       contactDamage: CONTACT_DAMAGE,
+      type: "normal",
+      radius: 12,
+      statusEffects: [],
     };
     set((s) => ({ enemies: [...s.enemies, enemy] }));
   },

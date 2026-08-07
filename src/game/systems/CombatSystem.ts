@@ -6,6 +6,8 @@ import {
   pickNextPunchSide,
   type ArmSide,
 } from "@/src/game/entities/Player";
+import type { QuestProgressEvent } from "@/lib/quests";
+import { useGameStore } from "@/store/useGameStore";
 
 export type MatchBuffsInput = {
   attackSpeed: number;
@@ -65,6 +67,8 @@ export type CombatSystemResult = {
   /** Coordenadas dos inimigos mortos neste frame (para loot). */
   killSites: { x: number; y: number }[];
   contactHits: number;
+  /** Eventos para progresso de quests in-game. */
+  questEvents: QuestProgressEvent[];
 };
 
 const DEFAULT_KNOCKBACK = 14;
@@ -72,9 +76,16 @@ export const PUNCH_DURATION_MS = 150;
 /** Atraso leve entre socos no mesmo tick (ms de game clock). */
 const PUNCH_STAGGER_MS = 40;
 
+export const ELEMENTAL_PROC_CHANCE = 0.15;
+export const FREEZE_DURATION_MS = 2000;
+export const SHOCK_VISUAL_MS = 450;
+export const CHAIN_LIGHTNING_RADIUS = 130;
+export const CHAIN_LIGHTNING_TARGETS = 3;
+export const CHAIN_DAMAGE_MULT = 0.5;
+
 /**
- * Sistema de combate: colisão de contato + auto-ataque multi-alvo + knockback.
- * Socos alternam L/R via lastPunchSide; 1 alvo = 1 braço (não dispara todos).
+ * Sistema de combate: colisão de contato + auto-ataque multi-alvo + knockback
+ * + procs elementais (gelo / raio) da skill tree.
  */
 export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const {
@@ -94,9 +105,23 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     punchDurationMs = PUNCH_DURATION_MS,
   } = input;
 
+  const skillTree = useGameStore.getState().skillTree;
+  const hasFreeze = Boolean(skillTree.node_frost_chance);
+  const hasShock = Boolean(skillTree.node_shock_chance);
+
   let contactHits = 0;
   const afterContact: Enemy[] = [];
   const killSites: { x: number; y: number }[] = [];
+  const questEvents: QuestProgressEvent[] = [];
+
+  const pushKillQuests = (enemyType: Enemy["type"]) => {
+    questEvents.push({ type: "kill_enemies", amount: 1 });
+    if (enemyType === "boss") {
+      questEvents.push({ type: "kill_boss", amount: 1 });
+    } else if (enemyType === "dasher") {
+      questEvents.push({ type: "kill_dashers", amount: 1 });
+    }
+  };
 
   let contactDamageDealt = 0;
   for (const enemy of enemies) {
@@ -105,6 +130,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       contactHits += 1;
       contactDamageDealt += enemy.contactDamage || contactDamage;
       killSites.push({ x: enemy.x, y: enemy.y });
+      pushKillQuests(enemy.type);
       continue;
     }
     afterContact.push(enemy);
@@ -126,7 +152,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   if (canAttack && living.length > 0 && !player.isDead) {
     const effectiveRange = baseRange * matchBuffs.attackRange;
-    // Até `arms` alvos distintos — 1 inimigo consome só 1 braço neste tick
     const inRange = living
       .map((enemy) => ({
         enemy,
@@ -141,7 +166,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       const damage = baseDamage * matchBuffs.damageMultiplier;
       const displayDamage = Math.round(damage);
       const isCrit = matchBuffs.damageMultiplier >= 1.4;
-      const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
+      /** Dano acumulado por id (primário + chain). */
+      const damageById = new Map<string, number>();
+
+      const addDamage = (id: string, amount: number) => {
+        damageById.set(id, (damageById.get(id) ?? 0) + amount);
+      };
 
       const { leftArms, rightArms } = getArmDistribution(arms);
       const sideUseCount: Record<ArmSide, number> = { left: 0, right: 0 };
@@ -189,19 +219,76 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           age: 0,
           color: isCrit ? "#fde047" : "#ffffff",
         });
+
+        addDamage(enemy.id, damage);
+
+        // Gelo: 15% se skill desbloqueada
+        if (hasFreeze && Math.random() < ELEMENTAL_PROC_CHANCE) {
+          enemy.applyStatus("freeze", now + FREEZE_DURATION_MS);
+          questEvents.push({ type: "inflict_freeze", amount: 1 });
+          hitSplats.push({
+            id: crypto.randomUUID(),
+            x: enemy.x + 8,
+            y: enemy.y - 14,
+            text: "ICE",
+            age: 0,
+            color: "#7dd3fc",
+          });
+        }
+
+        // Raio: 15% — dano em cadeia nos 3 mais próximos
+        if (hasShock && Math.random() < ELEMENTAL_PROC_CHANCE) {
+          enemy.applyStatus("shock", now + SHOCK_VISUAL_MS);
+          questEvents.push({ type: "inflict_shock", amount: 1 });
+          hitSplats.push({
+            id: crypto.randomUUID(),
+            x: enemy.x - 8,
+            y: enemy.y - 18,
+            text: "ZAP",
+            age: 0,
+            color: "#facc15",
+          });
+
+          const chainDamage = damage * CHAIN_DAMAGE_MULT;
+          const chainTargets = living
+            .filter((e) => e.id !== enemy.id)
+            .map((e) => ({
+              enemy: e,
+              dist: Math.hypot(e.x - enemy.x, e.y - enemy.y),
+            }))
+            .filter(({ dist }) => dist <= CHAIN_LIGHTNING_RADIUS)
+            .sort((a, b) => a.dist - b.dist)
+            .slice(0, CHAIN_LIGHTNING_TARGETS);
+
+          for (const { enemy: chained } of chainTargets) {
+            chained.applyStatus("shock", now + SHOCK_VISUAL_MS);
+            questEvents.push({ type: "inflict_shock", amount: 1 });
+            addDamage(chained.id, chainDamage);
+            hitSplats.push({
+              id: crypto.randomUUID(),
+              x: chained.x,
+              y: chained.y,
+              text: String(Math.round(chainDamage)),
+              age: 0,
+              color: "#fde047",
+            });
+          }
+        }
       });
 
       nextPunchSide = punchSide;
 
       const nextLiving: Enemy[] = [];
       for (const enemy of living) {
-        if (!hitIds.has(enemy.id)) {
+        const dealt = damageById.get(enemy.id);
+        if (dealt == null || dealt <= 0) {
           nextLiving.push(enemy);
           continue;
         }
-        if (enemy.takeDamage(damage)) {
+        if (enemy.takeDamage(dealt)) {
           kills += 1;
           killSites.push({ x: enemy.x, y: enemy.y });
+          pushKillQuests(enemy.type);
         } else {
           nextLiving.push(enemy);
         }
@@ -222,5 +309,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     kills,
     killSites,
     contactHits,
+    questEvents,
   };
 }
