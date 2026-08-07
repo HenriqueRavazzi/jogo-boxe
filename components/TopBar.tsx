@@ -21,7 +21,7 @@ export function TopBar() {
   );
 
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4">
+    <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-4 p-4">
       <div className="pointer-events-auto flex items-center gap-3 rounded-lg bg-black/55 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur-sm">
         <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
           <Coins className="h-4 w-4 text-amber-400" aria-hidden />

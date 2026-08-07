@@ -8,6 +8,12 @@ import {
   type ArmSide,
 } from "@/src/game/entities/Player";
 import type { QuestProgressEvent } from "@/lib/quests";
+import {
+  getLifeStealRatio,
+  getRicochetConfig,
+  RICOCHET_LINK_RADIUS,
+  RICOCHET_RANGE_MULT,
+} from "@/lib/skillTree";
 import { useGameStore } from "@/store/useGameStore";
 
 export type MatchBuffsInput = {
@@ -27,6 +33,8 @@ export type ActiveAttack = {
   isRetracting: boolean;
   side: ArmSide;
   armIndex: number;
+  kind?: "punch" | "ricochet";
+  fromShoulder?: boolean;
 };
 
 export type HitSplat = {
@@ -50,6 +58,8 @@ export type CombatSystemInput = {
   lastAttackTime: number;
   /** Último lado que socou — próximo tick alterna a partir daqui. */
   lastPunchSide: ArmSide;
+  /** Game clock do último ricochete. */
+  lastRicochetTime: number;
   now: number;
   contactDamage: number;
   knockbackImpulse?: number;
@@ -64,6 +74,7 @@ export type CombatSystemResult = {
   enemies: Enemy[];
   lastAttackTime: number;
   lastPunchSide: ArmSide;
+  lastRicochetTime: number;
   newAttacks: ActiveAttack[];
   hitSplats: HitSplat[];
   kills: number;
@@ -80,6 +91,8 @@ const DEFAULT_KNOCKBACK = 14;
 export const PUNCH_DURATION_MS = 150;
 /** Atraso leve entre socos no mesmo tick (ms de game clock). */
 const PUNCH_STAGGER_MS = 40;
+export const RICOCHET_SEGMENT_DURATION_MS = 120;
+export const RICOCHET_SEGMENT_STAGGER_MS = 55;
 
 export const ELEMENTAL_PROC_CHANCE = 0.15;
 export const FREEZE_DURATION_MS = 2000;
@@ -87,6 +100,44 @@ export const SHOCK_VISUAL_MS = 450;
 export const CHAIN_LIGHTNING_RADIUS = 130;
 export const CHAIN_LIGHTNING_TARGETS = 3;
 export const CHAIN_DAMAGE_MULT = 0.5;
+
+/** Cadeia: 1º = mais próximo do player; seguintes = mais próximo do último alvo. */
+function chainRicochet(
+  living: Enemy[],
+  originX: number,
+  originY: number,
+  maxBounces: number,
+  firstRange: number,
+  linkRadius: number,
+): Enemy[] {
+  const chain: Enemy[] = [];
+  const used = new Set<string>();
+  let cx = originX;
+  let cy = originY;
+
+  for (let i = 0; i < maxBounces; i++) {
+    const maxDist = i === 0 ? firstRange : linkRadius;
+    let best: Enemy | null = null;
+    let bestDist = Infinity;
+
+    for (const enemy of living) {
+      if (used.has(enemy.id) || enemy.isDead) continue;
+      const dist = Math.hypot(enemy.x - cx, enemy.y - cy);
+      if (dist <= maxDist && dist < bestDist) {
+        best = enemy;
+        bestDist = dist;
+      }
+    }
+
+    if (!best) break;
+    chain.push(best);
+    used.add(best.id);
+    cx = best.x;
+    cy = best.y;
+  }
+
+  return chain;
+}
 
 /**
  * Sistema de combate: colisão de contato + auto-ataque multi-alvo + knockback
@@ -104,6 +155,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     matchBuffs,
     lastAttackTime,
     lastPunchSide,
+    lastRicochetTime,
     now,
     contactDamage,
     knockbackImpulse = DEFAULT_KNOCKBACK,
@@ -116,6 +168,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const skillTree = useGameStore.getState().skillTree;
   const hasFreeze = Boolean(skillTree.node_frost_chance);
   const hasShock = Boolean(skillTree.node_shock_chance);
+  const lifeStealRatio = getLifeStealRatio(skillTree);
+  const ricochet = getRicochetConfig(skillTree);
   const difficulty = useGameStore.getState().getDifficultyMultipliers();
   void contactDamage; // legado: dano melee vem de enemy.attackDamage
 
@@ -170,10 +224,29 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   let nextAttackTime = lastAttackTime;
   let nextPunchSide = lastPunchSide;
+  let nextRicochetTime = lastRicochetTime;
   const newAttacks: ActiveAttack[] = [];
   const hitSplats: HitSplat[] = [];
   let kills = 0;
   let living = enemies.filter((e) => !e.isDead);
+
+  const applyLifeSteal = (damageDealt: number) => {
+    const healingAmount = damageDealt * lifeStealRatio;
+    if (healingAmount <= 0 || player.isDead) return;
+    const hpBefore = player.hp;
+    player.heal(healingAmount);
+    const healed = player.hp - hpBefore;
+    if (healed > 0) {
+      hitSplats.push({
+        id: crypto.randomUUID(),
+        x: player.x,
+        y: player.y - player.radius - 8,
+        text: `+${Math.max(1, Math.round(healed))}`,
+        age: 0,
+        color: "#4ade80",
+      });
+    }
+  };
 
   const effectiveCooldown = baseAttackSpeed / matchBuffs.attackSpeed;
   const canAttack = now >= lastAttackTime + effectiveCooldown;
@@ -248,6 +321,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           isRetracting: false,
           side: punchSide,
           armIndex,
+          kind: "punch",
+          fromShoulder: true,
         });
 
         hitSplats.push({
@@ -318,12 +393,15 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       nextPunchSide = punchSide;
 
       const nextLiving: Enemy[] = [];
+      let damageDealt = 0;
       for (const enemy of living) {
         const dealt = damageById.get(enemy.id);
         if (dealt == null || dealt <= 0) {
           nextLiving.push(enemy);
           continue;
         }
+        // HP removido de fato (não conta overkill)
+        damageDealt += Math.min(dealt, Math.max(0, enemy.hp));
         if (enemy.takeDamage(dealt)) {
           kills += 1;
           killSites.push({ x: enemy.x, y: enemy.y });
@@ -333,6 +411,111 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         }
       }
       living = nextLiving;
+
+      applyLifeSteal(damageDealt);
+    }
+  }
+
+  // Ricochete: cadeia independente do CD de soco (CD próprio)
+  if (
+    ricochet.unlocked &&
+    !player.isDead &&
+    living.length > 0 &&
+    now >= nextRicochetTime + ricochet.cooldownMs
+  ) {
+    const extendedRange =
+      baseRange * matchBuffs.attackRange * RICOCHET_RANGE_MULT;
+    const chain = chainRicochet(
+      living,
+      player.x,
+      player.y,
+      ricochet.maxBounces,
+      extendedRange,
+      RICOCHET_LINK_RADIUS,
+    );
+
+    if (chain.length > 0) {
+      const bounceDamage =
+        baseDamage * matchBuffs.damageMultiplier * ricochet.bounceDamagePercent;
+      const displayBounce = Math.max(1, Math.round(bounceDamage));
+      let ricochetDamageDealt = 0;
+
+      const { leftArms, rightArms } = getArmDistribution(arms);
+      const ricoSide = pickNextPunchSide(nextPunchSide, leftArms, rightArms);
+      const armsOnSide = ricoSide === "left" ? leftArms : rightArms;
+      const armIndex = 0;
+      const rest = getArmRestPosition(
+        player.x,
+        player.y,
+        ricoSide,
+        armIndex,
+        Math.max(1, armsOnSide),
+        playerRotation,
+      );
+
+      const first = chain[0]!;
+      playerRotation = angleToward(player.x, player.y, first.x, first.y);
+      player.rotation = playerRotation;
+
+      let prevX = rest.x;
+      let prevY = rest.y;
+
+      for (let i = 0; i < chain.length; i++) {
+        const target = chain[i]!;
+        newAttacks.push({
+          id: crypto.randomUUID(),
+          startX: prevX,
+          startY: prevY,
+          targetX: target.x,
+          targetY: target.y,
+          startTime: now + i * RICOCHET_SEGMENT_STAGGER_MS,
+          duration: RICOCHET_SEGMENT_DURATION_MS,
+          isRetracting: false,
+          side: ricoSide,
+          armIndex,
+          kind: "ricochet",
+          fromShoulder: i === 0,
+        });
+
+        hitSplats.push({
+          id: crypto.randomUUID(),
+          x: target.x,
+          y: target.y,
+          text: String(displayBounce),
+          age: 0,
+          color: "#fbbf24",
+        });
+
+        ricochetDamageDealt += Math.min(bounceDamage, Math.max(0, target.hp));
+        target.applyKnockback(
+          target.x - (i === 0 ? player.x : chain[i - 1]!.x),
+          target.y - (i === 0 ? player.y : chain[i - 1]!.y),
+          knockbackImpulse * 0.85,
+        );
+
+        prevX = target.x;
+        prevY = target.y;
+      }
+
+      const nextLiving: Enemy[] = [];
+      for (const enemy of living) {
+        const hit = chain.some((c) => c.id === enemy.id);
+        if (!hit) {
+          nextLiving.push(enemy);
+          continue;
+        }
+        if (enemy.takeDamage(bounceDamage)) {
+          kills += 1;
+          killSites.push({ x: enemy.x, y: enemy.y });
+          pushKillQuests(enemy.type);
+        } else {
+          nextLiving.push(enemy);
+        }
+      }
+      living = nextLiving;
+      applyLifeSteal(ricochetDamageDealt);
+      nextRicochetTime = now;
+      nextPunchSide = ricoSide;
     }
   }
 
@@ -343,6 +526,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     enemies: living,
     lastAttackTime: nextAttackTime,
     lastPunchSide: nextPunchSide,
+    lastRicochetTime: nextRicochetTime,
     newAttacks,
     hitSplats,
     kills,

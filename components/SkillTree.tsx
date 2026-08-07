@@ -20,6 +20,10 @@ const ACCENT_UNLOCKED: Record<string, string> = {
   sky: "border-sky-400 bg-sky-950 text-sky-100 shadow-sky-500/30",
   cyan: "border-cyan-400 bg-cyan-950 text-cyan-100 shadow-cyan-500/30",
   yellow: "border-yellow-400 bg-yellow-950 text-yellow-100 shadow-yellow-500/30",
+  emerald:
+    "border-emerald-400 bg-emerald-950 text-emerald-100 shadow-emerald-500/30",
+  silver:
+    "border-slate-300 bg-slate-800 text-slate-50 shadow-slate-400/30",
 };
 
 const ACCENT_AVAILABLE: Record<string, string> = {
@@ -29,6 +33,10 @@ const ACCENT_AVAILABLE: Record<string, string> = {
   cyan: "border-cyan-500/60 bg-zinc-900 text-cyan-200 hover:border-cyan-400",
   yellow:
     "border-yellow-500/60 bg-zinc-900 text-yellow-200 hover:border-yellow-400",
+  emerald:
+    "border-emerald-500/60 bg-zinc-900 text-emerald-200 hover:border-emerald-400",
+  silver:
+    "border-slate-400/60 bg-zinc-900 text-slate-200 hover:border-slate-300",
 };
 
 const LINE_UNLOCKED: Record<string, string> = {
@@ -37,6 +45,8 @@ const LINE_UNLOCKED: Record<string, string> = {
   sky: "bg-sky-400",
   cyan: "bg-cyan-400",
   yellow: "bg-yellow-400",
+  emerald: "bg-emerald-400",
+  silver: "bg-slate-300",
 };
 
 /** Overlay da árvore de talents (custa diamantes). */

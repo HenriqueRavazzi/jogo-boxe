@@ -13,8 +13,8 @@ export function BossHealthBar() {
   const pct = Math.max(0, Math.min(100, (boss.hp / boss.maxHp) * 100));
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-16 z-20 flex justify-center px-4">
-      <div className="w-full max-w-xl">
+    <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center px-4 sm:top-3">
+      <div className="w-full max-w-md sm:max-w-xl">
         <div className="mb-1 flex items-end justify-between gap-3 text-xs tracking-wide text-violet-200/90">
           <span className="font-semibold uppercase text-violet-100">Boss</span>
           <span className="tabular-nums text-violet-100/80">

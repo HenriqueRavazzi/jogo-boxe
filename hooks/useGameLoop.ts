@@ -196,6 +196,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         matchBuffs: arena.matchBuffs,
         lastAttackTime: arena.lastAttackTime,
         lastPunchSide: arena.lastPunchSide,
+        lastRicochetTime: arena.lastRicochetTime,
         now: gameNow,
         contactDamage: CONTACT_DAMAGE,
         playerRotation: arena.playerRotation,
@@ -296,6 +297,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         currentHp: combat.player.hp,
         lastAttackTime: combat.lastAttackTime,
         lastPunchSide: combat.lastPunchSide,
+        lastRicochetTime: combat.lastRicochetTime,
         activeAttacks,
         floatingTexts,
         shakeFrames,
@@ -312,12 +314,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
     };
 
-    const drawGlove = (x: number, y: number) => {
+    const drawGlove = (x: number, y: number, ricochet = false) => {
       ctx.beginPath();
       ctx.arc(x, y, GLOVE_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = "#dc2626";
+      ctx.fillStyle = ricochet ? "#fbbf24" : "#dc2626";
       ctx.fill();
-      ctx.strokeStyle = "#7f1d1d";
+      ctx.strokeStyle = ricochet ? "#fef3c7" : "#7f1d1d";
       ctx.lineWidth = 1.5;
       ctx.stroke();
     };
@@ -357,7 +359,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       ctx.stroke();
 
       const { leftArms, rightArms } = getArmDistribution(arms);
-      const busy = new Set(punching.map((a) => `${a.side}:${a.armIndex}`));
+      const busy = new Set(
+        punching
+          .filter((a) => a.kind !== "ricochet" || a.fromShoulder !== false)
+          .map((a) => `${a.side}:${a.armIndex}`),
+      );
 
       for (const arm of getArmPunchOrder(arms)) {
         if (busy.has(`${arm.side}:${arm.armIndex}`)) continue;
@@ -394,27 +400,46 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
       ctx.restore();
 
-      // Socos ativos: interpolação em coordenadas globais
+      // Socos / segmentos de ricochete em coordenadas globais
       for (const attack of punching) {
         const pos = glovePosition(attack, now);
-        const shoulder = shoulderOf(x, y, attack.side, facing);
+        const isRicochet = attack.kind === "ricochet";
+        const fromShoulder = isRicochet
+          ? attack.fromShoulder === true
+          : attack.fromShoulder !== false;
+        const origin = fromShoulder
+          ? shoulderOf(x, y, attack.side, facing)
+          : { x: attack.startX, y: attack.startY };
+
+        const outer = isRicochet ? "#94a3b8" : "#1e3a5f";
+        const inner = isRicochet ? "#fbbf24" : "#f0c4a0";
 
         ctx.beginPath();
-        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.moveTo(origin.x, origin.y);
         ctx.lineTo(pos.x, pos.y);
-        ctx.strokeStyle = "#1e3a5f";
-        ctx.lineWidth = 6;
+        ctx.strokeStyle = outer;
+        ctx.lineWidth = isRicochet ? 5 : 6;
         ctx.lineCap = "round";
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.moveTo(origin.x, origin.y);
         ctx.lineTo(pos.x, pos.y);
-        ctx.strokeStyle = "#f0c4a0";
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = inner;
+        ctx.lineWidth = isRicochet ? 2.5 : 3;
         ctx.stroke();
 
-        drawGlove(pos.x, pos.y);
+        // Rastro prateado extra no ricochete
+        if (isRicochet) {
+          ctx.beginPath();
+          ctx.moveTo(origin.x, origin.y);
+          ctx.lineTo(pos.x, pos.y);
+          ctx.strokeStyle = "rgba(248, 250, 252, 0.55)";
+          ctx.lineWidth = 1.25;
+          ctx.stroke();
+        }
+
+        drawGlove(pos.x, pos.y, isRicochet);
       }
     };
 

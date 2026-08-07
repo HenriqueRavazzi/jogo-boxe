@@ -4,9 +4,13 @@ export type SkillNodeId =
   | "node_hp_1"
   | "node_hp_2"
   | "node_iron_guard"
+  | "node_life_steal_1"
+  | "node_life_steal_2"
+  | "node_life_steal_3"
   | "node_dmg_1"
   | "node_dmg_2"
   | "node_range_focus"
+  | "node_ricochet"
   | "node_spark_ignition"
   | "node_spark_burst"
   | "node_spark_fury"
@@ -28,13 +32,31 @@ export type SkillNodeDef = {
   accent: string;
 };
 
+/** +1% de roubo de vida por nível (nó desbloqueado). */
+export const LIFE_STEAL_PERCENT_PER_LEVEL = 1;
+
+/** Cooldown da skill de ricochete (ms). */
+export const RICOCHET_COOLDOWN_MS = 8000;
+/** Máximo de alvos na cadeia. */
+export const RICOCHET_MAX_BOUNCES = 4;
+/** Fração do dano do soco aplicada em cada bounce. */
+export const RICOCHET_BOUNCE_DAMAGE_PERCENT = 0.75;
+/** Multiplicador de alcance para o 1º alvo do ricochete. */
+export const RICOCHET_RANGE_MULT = 1.45;
+/** Raio máximo entre saltos consecutivos. */
+export const RICOCHET_LINK_RADIUS = 200;
+
 export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_hp_1: false,
   node_hp_2: false,
   node_iron_guard: false,
+  node_life_steal_1: false,
+  node_life_steal_2: false,
+  node_life_steal_3: false,
   node_dmg_1: false,
   node_dmg_2: false,
   node_range_focus: false,
+  node_ricochet: false,
   node_spark_ignition: false,
   node_spark_burst: false,
   node_spark_fury: false,
@@ -74,6 +96,36 @@ export const SKILL_NODES: SkillNodeDef[] = [
     tier: 2,
     accent: "rose",
   },
+  {
+    id: "node_life_steal_1",
+    name: "Blood Siphon",
+    description: "+1% Life Steal",
+    cost: 12,
+    requires: "node_iron_guard",
+    branch: "vitality",
+    tier: 3,
+    accent: "emerald",
+  },
+  {
+    id: "node_life_steal_2",
+    name: "Crimson Drain",
+    description: "+1% Life Steal",
+    cost: 20,
+    requires: "node_life_steal_1",
+    branch: "vitality",
+    tier: 4,
+    accent: "emerald",
+  },
+  {
+    id: "node_life_steal_3",
+    name: "Vampire Fist",
+    description: "+1% Life Steal",
+    cost: 30,
+    requires: "node_life_steal_2",
+    branch: "vitality",
+    tier: 5,
+    accent: "emerald",
+  },
   // Power
   {
     id: "node_dmg_1",
@@ -104,6 +156,16 @@ export const SKILL_NODES: SkillNodeDef[] = [
     branch: "power",
     tier: 2,
     accent: "amber",
+  },
+  {
+    id: "node_ricochet",
+    name: "Ricochet Punch",
+    description: "Soco ricocheteia em até 4 alvos (75% dano, CD 8s)",
+    cost: 28,
+    requires: "node_range_focus",
+    branch: "power",
+    tier: 3,
+    accent: "silver",
   },
   // Spark
   {
@@ -180,4 +242,38 @@ export function canUnlockSkill(
   if (node.requires && !skillTree[node.requires]) return false;
   if (gems < node.cost) return false;
   return true;
+}
+
+/** Nível de life steal (0–3) a partir dos nós desbloqueados. */
+export function getLifeStealLevel(skillTree: SkillTreeState): number {
+  let level = 0;
+  if (skillTree.node_life_steal_1) level += 1;
+  if (skillTree.node_life_steal_2) level += 1;
+  if (skillTree.node_life_steal_3) level += 1;
+  return level;
+}
+
+/** Fração do dano convertido em cura (ex.: nível 2 → 0.02). */
+export function getLifeStealRatio(skillTree: SkillTreeState): number {
+  return getLifeStealLevel(skillTree) * (LIFE_STEAL_PERCENT_PER_LEVEL / 100);
+}
+
+export function isRicochetUnlocked(skillTree: SkillTreeState): boolean {
+  return Boolean(skillTree.node_ricochet);
+}
+
+export type RicochetConfig = {
+  unlocked: boolean;
+  cooldownMs: number;
+  maxBounces: number;
+  bounceDamagePercent: number;
+};
+
+export function getRicochetConfig(skillTree: SkillTreeState): RicochetConfig {
+  return {
+    unlocked: isRicochetUnlocked(skillTree),
+    cooldownMs: RICOCHET_COOLDOWN_MS,
+    maxBounces: RICOCHET_MAX_BOUNCES,
+    bounceDamagePercent: RICOCHET_BOUNCE_DAMAGE_PERCENT,
+  };
 }

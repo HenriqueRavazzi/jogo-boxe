@@ -18,6 +18,8 @@ import {
 import {
   DEFAULT_SKILL_TREE,
   canUnlockSkill,
+  getLifeStealLevel,
+  getRicochetConfig,
   type SkillNodeId,
   type SkillTreeState,
 } from "@/lib/skillTree";
@@ -37,6 +39,15 @@ export type EffectiveStats = {
   attackCooldownMs: number;
   xpMultiplier: number;
   arms: number;
+  /** Nível de life steal (cada nível = +1% do dano causado). */
+  lifeStealLevel: number;
+  /** Fração de cura sobre dano (0.01 = 1%). */
+  lifeStealPercent: number;
+  /** Skill de ricochete (meta-progresso). */
+  ricochetUnlocked: boolean;
+  ricochetCooldown: number;
+  maxBounces: number;
+  bounceDamagePercent: number;
   skillBonus: {
     hp: number;
     damage: number;
@@ -387,6 +398,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const skillDmg = skillDamageBonus(tree);
     const skillRange = skillRangeBonus(tree);
     const skillCd = skillCooldownReduction(tree);
+    const lifeStealLevel = getLifeStealLevel(tree);
+    const ricochet = getRicochetConfig(tree);
 
     const goldHp = cfg.baseHp + (s.maxHpLevel - 1) * HP_PER_LEVEL;
     const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
@@ -408,6 +421,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ),
       xpMultiplier: xpMultiplierAt(s.xpBonusLevel),
       arms: s.arms,
+      lifeStealLevel,
+      lifeStealPercent: lifeStealLevel * 0.01,
+      ricochetUnlocked: ricochet.unlocked,
+      ricochetCooldown: ricochet.cooldownMs,
+      maxBounces: ricochet.maxBounces,
+      bounceDamagePercent: ricochet.bounceDamagePercent,
       skillBonus: {
         hp: skillHp,
         damage: skillDmg,

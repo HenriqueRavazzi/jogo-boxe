@@ -1,7 +1,13 @@
-/** Spawner com dificuldade progressiva, tipos e bosses. */
+/** Spawner com dificuldade progressiva, tipos e bosses escalonados. */
 
-import { Enemy, type EnemyData, type EnemyType } from "@/src/game/entities/Enemy";
-import { DEFAULT_ATTACK_DAMAGE, DEFAULT_ATTACK_COOLDOWN_MS } from "@/src/game/entities/Enemy";
+import {
+  DEFAULT_ATTACK_COOLDOWN_MS,
+  DEFAULT_ATTACK_DAMAGE,
+  Enemy,
+  ENEMY_RADIUS,
+  type EnemyData,
+  type EnemyType,
+} from "@/src/game/entities/Enemy";
 
 export const BASE_ENEMY_HP = 30;
 const BASE_SPEED = 55;
@@ -9,13 +15,20 @@ const BASE_SPEED = 55;
 export const ENEMY_HP_CYCLE_SECONDS = 15;
 /** +10% composto por ciclo de 15s. */
 export const ENEMY_HP_GROWTH_PER_CYCLE = 1.1;
-/** Boss a cada 3 minutos. */
-export const BOSS_INTERVAL_SECONDS = 180;
+/** Boss a cada 4 minutos. */
+export const BOSS_INTERVAL_SECONDS = 240;
+/** Escala de HP do boss por aparição (1º = ^0, 2º = ^1, …). */
+export const BOSS_HP_GROWTH = 1.8;
+/** Escala de dano melee do boss por aparição. */
+export const BOSS_DAMAGE_GROWTH = 1.4;
+/** +px de raio por boss já derrotado/invocado. */
+export const BOSS_SIZE_PER_COUNT = 5;
 /** 20% das spawns normais são dashers. */
 export const DASHER_CHANCE = 0.2;
 
 const BASE_SPAWN_INTERVAL_MS = 2000;
-const MIN_SPAWN_INTERVAL_MS = 450;
+/** Teto mínimo de segurança (ms) para não floodar o browser. */
+const MIN_SPAWN_INTERVAL_MS = 300;
 /** Cap de segurança para não travar a UI. */
 export const MAX_ENEMIES = 80;
 
@@ -32,7 +45,7 @@ export type SpawnerInput = {
   canvasWidth: number;
   canvasHeight: number;
   currentEnemyCount: number;
-  /** Quantos bosses já foram invocados nesta run. */
+  /** Quantos bosses já foram invocados nesta run (bossCount). */
   bossesSpawned: number;
   /** Se já existe um boss vivo, pausa spawn normal. */
   hasBossAlive: boolean;
@@ -107,28 +120,27 @@ export function getScaledEnemyStats(
   };
 }
 
+/**
+ * Intervalo entre spawns comuns: começa em 2s e cai com o tempo.
+ * floor mínimo 300ms para não travar o navegador.
+ */
 export function getSpawnIntervalMs(timeAlive: number): number {
-  const t = timeAlive / 45;
-  const interval =
-    BASE_SPAWN_INTERVAL_MS -
-    (BASE_SPAWN_INTERVAL_MS - MIN_SPAWN_INTERVAL_MS) * (1 - Math.exp(-t));
-  return Math.max(MIN_SPAWN_INTERVAL_MS, interval);
+  return Math.max(MIN_SPAWN_INTERVAL_MS, BASE_SPAWN_INTERVAL_MS - timeAlive * 5);
 }
 
-function rollRegularType(): EnemyType {
+function rollRegularType(): Exclude<EnemyType, "boss"> {
   return Math.random() < DASHER_CHANCE ? "dasher" : "normal";
 }
 
 /**
- * Cria inimigo com snapshot absoluto de HP (após modificadores de tipo).
- * Garante hp === maxHp === valor calculado no instante do spawn.
+ * Cria inimigo comum/dasher com snapshot absoluto de HP.
  */
 function spawnEnemySnapshot(
   canvasWidth: number,
   canvasHeight: number,
   timeAlive: number,
   matchLevel: number,
-  type: EnemyType,
+  type: Exclude<EnemyType, "boss">,
   difficulty?: DifficultySpawnMultipliers,
 ): EnemyData {
   const stats = getScaledEnemyStats(timeAlive, matchLevel, difficulty);
@@ -139,15 +151,47 @@ function spawnEnemySnapshot(
     attackCooldown: stats.attackCooldown,
     type,
   });
-  // Snapshot absoluto pós-tipo (dasher/boss já aplicados em spawnAtEdge)
   enemy.maxHp = enemy.hp;
   return enemy.toData();
 }
 
 /**
+ * Boss escalonado pelo bossCount (0 = primeiro).
+ * HP × 1.8^n · dano × 1.4^n · tamanho + n*5.
+ */
+function spawnBossSnapshot(
+  canvasWidth: number,
+  canvasHeight: number,
+  timeAlive: number,
+  matchLevel: number,
+  bossCount: number,
+  difficulty?: DifficultySpawnMultipliers,
+): EnemyData {
+  const stats = getScaledEnemyStats(timeAlive, matchLevel, difficulty);
+  const enemy = Enemy.spawnAtEdge(canvasWidth, canvasHeight, {
+    hp: stats.hp,
+    speed: stats.speed,
+    attackDamage: stats.attackDamage,
+    attackCooldown: stats.attackCooldown,
+    type: "boss",
+  });
+
+  // spawnAtEdge já aplicou ×20 HP e ×2 dano base de boss
+  const hpScale = Math.pow(BOSS_HP_GROWTH, bossCount);
+  const dmgScale = Math.pow(BOSS_DAMAGE_GROWTH, bossCount);
+  const finalHp = Math.max(1, Math.floor(enemy.hp * hpScale));
+
+  enemy.hp = finalHp;
+  enemy.maxHp = finalHp;
+  enemy.attackDamage = Number((enemy.attackDamage * dmgScale).toFixed(2));
+  enemy.radius = ENEMY_RADIUS.boss + bossCount * BOSS_SIZE_PER_COUNT;
+
+  return enemy.toData();
+}
+
+/**
  * Spawner: 80% normal / 20% dasher.
- * A cada 180s invoca 1 boss e pausa spawns até ele morrer.
- * HP usa timeAlive em segundos no momento exato da instanciação.
+ * A cada 240s invoca 1 boss (mais forte a cada aparição) e pausa grunts até ele morrer.
  */
 export function runSpawner(input: SpawnerInput): SpawnerResult {
   const {
@@ -175,15 +219,16 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     timeAliveInSeconds / BOSS_INTERVAL_SECONDS,
   );
 
-  // Momento de boss: pausa normal e spawna 1 boss por ciclo
+  // Momento de boss: pausa normal e spawna 1 boss por ciclo de 4 min
   if (expectedBosses > bossesSpawned && !hasBossAlive && count < MAX_ENEMIES) {
+    const bossCount = bossesSpawned; // 0 = 1º boss, 1 = 2º, …
     spawned.push(
-      spawnEnemySnapshot(
+      spawnBossSnapshot(
         canvasWidth,
         canvasHeight,
         timeAliveInSeconds,
         matchLevel,
-        "boss",
+        bossCount,
         difficulty,
       ),
     );
@@ -192,7 +237,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     return { spawned, spawnAccumulatorMs, spawnIntervalMs, bossesSpawned };
   }
 
-  // Enquanto o boss estiver vivo, não spawna grunts
+  // Enquanto o boss estiver vivo (ou aguardando slot), não spawna grunts
   if (hasBossAlive || expectedBosses > bossesSpawned) {
     spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
     return { spawned, spawnAccumulatorMs, spawnIntervalMs, bossesSpawned };

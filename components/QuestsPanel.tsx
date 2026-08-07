@@ -31,7 +31,7 @@ export function QuestsPanel() {
   if (activeQuests.length === 0) return null;
 
   return (
-    <div className="pointer-events-none absolute right-4 top-20 z-20 w-56">
+    <div className="pointer-events-none absolute right-4 top-36 z-20 w-56 max-h-[calc(100dvh-10rem)] overflow-y-auto">
       <div className="pointer-events-auto overflow-hidden rounded-xl border border-white/10 bg-black/65 shadow-lg backdrop-blur-md">
         <button
           type="button"

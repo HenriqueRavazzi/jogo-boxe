@@ -49,7 +49,7 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   ];
 
   return (
-    <div className="pointer-events-none absolute left-4 top-20 z-10 flex w-44 flex-col gap-2">
+    <div className="pointer-events-none absolute left-4 top-20 z-20 flex w-44 flex-col gap-2">
       <div className="pointer-events-auto flex gap-2">
         <button
           type="button"

@@ -120,6 +120,13 @@ export class Player {
     return this.hp;
   }
 
+  /** Cura sem ultrapassar maxHp; retorna o HP restante. */
+  heal(amount: number): number {
+    if (amount <= 0 || this.isDead) return this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+    return this.hp;
+  }
+
   get isDead(): boolean {
     return this.hp <= 0;
   }

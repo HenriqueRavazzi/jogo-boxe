@@ -59,6 +59,13 @@ export type ActiveAttack = {
   isRetracting: boolean;
   side: "left" | "right";
   armIndex: number;
+  /** Punch normal vs segmento de ricochete. */
+  kind?: "punch" | "ricochet";
+  /**
+   * true = linha ombro→luva; false = segmento encadeado (alvo→alvo).
+   * Default true para punches.
+   */
+  fromShoulder?: boolean;
 };
 
 export type FloatingText = {
@@ -117,6 +124,8 @@ export type ArenaStoreState = {
   lastAttackTime: number;
   /** Último lado que socou (próximo ataque alterna). */
   lastPunchSide: "left" | "right";
+  /** Timestamp (game clock) do último ricochete. */
+  lastRicochetTime: number;
   activeAttacks: ActiveAttack[];
   floatingTexts: FloatingText[];
   shakeFrames: number;
@@ -131,7 +140,7 @@ export type ArenaStoreState = {
   gameSpeed: number;
   /** Estatísticas da run atual. */
   runStats: RunStats;
-  /** Quantos bosses já foram invocados nesta run (ciclos de 180s). */
+  /** Quantos bosses já foram invocados nesta run (ciclos de 240s / 4 min). */
   bossesSpawned: number;
   /** Missões ativas da partida atual. */
   activeQuests: ActiveQuest[];
@@ -237,6 +246,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   drops: [],
   lastAttackTime: 0,
   lastPunchSide: "right",
+  lastRicochetTime: 0,
   activeAttacks: [],
   floatingTexts: [],
   shakeFrames: 0,
@@ -265,6 +275,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       drops: [],
       lastAttackTime: 0,
       lastPunchSide: "right",
+      lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
@@ -292,6 +303,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       drops: [],
       lastAttackTime: 0,
       lastPunchSide: "right",
+      lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
@@ -309,6 +321,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       drops: [],
       lastAttackTime: 0,
       lastPunchSide: "right",
+      lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
@@ -682,6 +695,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       drops: [],
       lastAttackTime: 0,
       lastPunchSide: "right",
+      lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
