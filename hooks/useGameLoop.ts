@@ -5,6 +5,8 @@ import type { RefObject } from "react";
 import { useArenaStore } from "@/store/useArenaStore";
 
 const PLAYER_RADIUS = 18;
+const ENEMY_RADIUS = 12;
+const SPAWN_INTERVAL_MS = 2000;
 
 /**
  * Loop principal do jogo via requestAnimationFrame.
@@ -42,9 +44,20 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     resize();
     window.addEventListener("resize", resize);
 
-    /** Atualiza entidades (movimento, colisão, spawn — a expandir). */
-    const update = (_dt: number) => {
-      // Placeholder: lógica de movimento entra aqui no próximo passo
+    let spawnAccumulator = 0;
+
+    /** Atualiza entidades: movimento dos inimigos + spawner temporal. */
+    const update = (dt: number) => {
+      const { playerX, playerY, updateEnemies, spawnEnemy } =
+        useArenaStore.getState();
+
+      updateEnemies(playerX, playerY, dt);
+
+      spawnAccumulator += dt * 1000;
+      if (spawnAccumulator >= SPAWN_INTERVAL_MS) {
+        spawnAccumulator -= SPAWN_INTERVAL_MS;
+        spawnEnemy(canvas.clientWidth, canvas.clientHeight);
+      }
     };
 
     /** Limpa o canvas e desenha o frame atual. */
@@ -74,10 +87,10 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
-      // Inimigos (círculos vermelhos)
+      // Inimigos (círculos vermelhos, menores que o jogador)
       for (const enemy of enemies) {
         ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y, 12, 0, Math.PI * 2);
+        ctx.arc(enemy.x, enemy.y, ENEMY_RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = "#e11d48";
         ctx.fill();
       }
@@ -95,7 +108,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     let last = performance.now();
 
     const loop = (now: number) => {
-      const dt = (now - last) / 1000;
+      const dt = Math.min((now - last) / 1000, 0.05); // evita saltos após tab inactive
       last = now;
       update(dt);
       draw();
