@@ -39,7 +39,10 @@ export type Enemy = {
   speed: number;
   vx: number;
   vy: number;
-  contactDamage: number;
+  attackDamage: number;
+  attackCooldown: number;
+  lastAttackTime: number;
+  isAttacking: boolean;
   type: EnemyType;
   radius: number;
   statusEffects: EnemyStatusEffect[];
@@ -474,8 +477,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     const { x, y } = randomEdgePosition(canvasWidth, canvasHeight);
     const timeAlive = get().timeAlive;
     const cycles = Math.floor(timeAlive / 15);
-    const currentEnemyMaxHp = Math.round(
-      DEFAULT_ENEMY_HP * Math.pow(1.05, cycles),
+    const hpMul =
+      useGameStore.getState().getDifficultyMultipliers().enemyHpMultiplier ||
+      1;
+    const currentEnemyMaxHp = Math.max(
+      1,
+      Math.floor(DEFAULT_ENEMY_HP * Math.pow(1.1, cycles) * hpMul),
     );
     const enemy: Enemy = {
       id: crypto.randomUUID(),
@@ -486,7 +493,10 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       speed: DEFAULT_ENEMY_SPEED,
       vx: 0,
       vy: 0,
-      contactDamage: CONTACT_DAMAGE,
+      attackDamage: 1.2 * hpMul,
+      attackCooldown: 1000,
+      lastAttackTime: 0,
+      isAttacking: false,
       type: "normal",
       radius: 12,
       statusEffects: [],
@@ -499,37 +509,47 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     playerY,
     dt = 1 / 60,
     playerRadius = 18,
-    enemyRadius = 12,
+    _enemyRadius = 12,
   ) => {
-    const collideDist = playerRadius + enemyRadius;
     let contactHits = 0;
+    const now = Date.now();
 
-    const nextEnemies = get()
-      .enemies.map((enemy) => {
-        const dx = playerX - enemy.x;
-        const dy = playerY - enemy.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const step = enemy.speed * dt;
+    const nextEnemies = get().enemies.map((enemy) => {
+      const dx = playerX - enemy.x;
+      const dy = playerY - enemy.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const touchDist = playerRadius + (enemy.radius ?? 12);
+
+      if (dist <= touchDist) {
+        const cooldown = enemy.attackCooldown || 1000;
+        const last = enemy.lastAttackTime || 0;
+        let lastAttackTime = last;
+        let isAttacking = true;
+        if (now - last >= cooldown) {
+          contactHits += 1;
+          get().takeDamage(enemy.attackDamage || 1.2);
+          lastAttackTime = now;
+        }
         return {
           ...enemy,
-          x: enemy.x + (dx / dist) * step,
-          y: enemy.y + (dy / dist) * step,
+          vx: 0,
+          vy: 0,
+          isAttacking,
+          lastAttackTime,
         };
-      })
-      .filter((enemy) => {
-        const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
-        if (dist < collideDist) {
-          contactHits += 1;
-          return false;
-        }
-        return true;
-      });
+      }
+
+      const step = enemy.speed * dt;
+      return {
+        ...enemy,
+        x: enemy.x + (dx / dist) * step,
+        y: enemy.y + (dy / dist) * step,
+        isAttacking: false,
+      };
+    });
 
     set({ enemies: nextEnemies });
-
-    if (contactHits > 0) {
-      get().takeDamage(CONTACT_DAMAGE * contactHits);
-    }
+    void contactHits;
   },
 
   processCombat: (baseDamage, _attackRange, _attackCooldown) => {

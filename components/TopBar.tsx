@@ -60,7 +60,7 @@ export function TopBar() {
               HP
             </span>
             <span className="tabular-nums">
-              {currentHp}/{maxHp}
+              {Math.ceil(currentHp)}/{maxHp}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded bg-zinc-800">

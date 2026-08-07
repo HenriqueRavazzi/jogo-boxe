@@ -144,10 +144,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const arena = useArenaStore.getState();
       const game = useGameStore.getState();
       const gameSpeed = arena.gameSpeed === 2 ? 2 : 1;
-      // Física, spawn, timeAlive e timers usam dt escalado
+      // Física, spawn, timeAlive e timers usam dt em segundos (escalado)
       const dt = realDt * gameSpeed;
       gameClockMs += realDt * 1000 * gameSpeed;
       const gameNow = gameClockMs;
+      /** Segundos vivos — valor único usado no spawn e na store neste frame. */
+      const nextTimeAlive = arena.timeAlive + dt;
 
       // Centro estrito a cada frame (clientWidth/Height = CSS px do canvas)
       const cx = canvas.clientWidth / 2;
@@ -172,12 +174,15 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           radius: e.radius ?? 12,
           vx: e.vx ?? 0,
           vy: e.vy ?? 0,
-          contactDamage: e.contactDamage ?? CONTACT_DAMAGE,
+          attackDamage: e.attackDamage ?? 1.2,
+          attackCooldown: e.attackCooldown ?? 1000,
+          lastAttackTime: e.lastAttackTime ?? 0,
+          isAttacking: e.isAttacking ?? false,
           statusEffects: e.statusEffects ?? [],
         }),
       );
       for (const enemy of enemies) {
-        enemy.moveToward(player.x, player.y, dt, gameNow);
+        enemy.moveToward(player.x, player.y, dt, gameNow, PLAYER_RADIUS);
       }
 
       const combat = runCombatSystem({
@@ -258,32 +263,9 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         useArenaStore.getState().progressQuests(combat.questEvents);
       }
 
-      useArenaStore.setState({
-        playerX: cx,
-        playerY: cy,
-        playerRotation: combat.playerRotation,
-        enemies: livingEnemies,
-        drops: loot.drops,
-        currentHp: combat.player.hp,
-        lastAttackTime: combat.lastAttackTime,
-        lastPunchSide: combat.lastPunchSide,
-        activeAttacks,
-        floatingTexts,
-        shakeFrames,
-        timeAlive: arena.timeAlive + dt,
-      });
-
-      if (combat.player.hp <= 0) {
-        useArenaStore.getState().setGameOver();
-      }
-
-      if (combat.kills > 0) {
-        useArenaStore.getState().addXp(XP_PER_KILL * combat.kills);
-      }
-
       const hasBossAlive = livingEnemies.some((e) => e.type === "boss");
       const spawn = runSpawner({
-        timeAlive: arena.timeAlive + dt,
+        timeAlive: nextTimeAlive,
         matchLevel: arena.matchLevel,
         canvasWidth: canvas.clientWidth,
         canvasHeight: canvas.clientHeight,
@@ -300,17 +282,31 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       });
       spawnAccumulator = spawn.spawnAccumulatorMs;
 
-      if (
-        spawn.bossesSpawned !== arena.bossesSpawned ||
-        spawn.spawned.length > 0
-      ) {
-        useArenaStore.setState((s) => ({
-          enemies:
-            spawn.spawned.length > 0
-              ? [...s.enemies, ...spawn.spawned]
-              : s.enemies,
-          bossesSpawned: spawn.bossesSpawned,
-        }));
+      useArenaStore.setState({
+        playerX: cx,
+        playerY: cy,
+        playerRotation: combat.playerRotation,
+        enemies:
+          spawn.spawned.length > 0
+            ? [...livingEnemies, ...spawn.spawned]
+            : livingEnemies,
+        drops: loot.drops,
+        currentHp: combat.player.hp,
+        lastAttackTime: combat.lastAttackTime,
+        lastPunchSide: combat.lastPunchSide,
+        activeAttacks,
+        floatingTexts,
+        shakeFrames,
+        timeAlive: nextTimeAlive,
+        bossesSpawned: spawn.bossesSpawned,
+      });
+
+      if (combat.player.hp <= 0) {
+        useArenaStore.getState().setGameOver();
+      }
+
+      if (combat.kills > 0) {
+        useArenaStore.getState().addXp(XP_PER_KILL * combat.kills);
       }
     };
 
@@ -455,7 +451,10 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           statusEffects: enemy.statusEffects ?? [],
           vx: enemy.vx ?? 0,
           vy: enemy.vy ?? 0,
-          contactDamage: enemy.contactDamage ?? CONTACT_DAMAGE,
+          attackDamage: enemy.attackDamage ?? 1.2,
+          attackCooldown: enemy.attackCooldown ?? 1000,
+          lastAttackTime: enemy.lastAttackTime ?? 0,
+          isAttacking: enemy.isAttacking ?? false,
         }).draw(ctx, now);
       }
 

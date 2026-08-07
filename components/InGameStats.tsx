@@ -37,7 +37,7 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const xpPct = Math.round((stats.xpMultiplier - 1) * 100);
 
   const rows: { label: string; value: string }[] = [
-    { label: "HP", value: `${currentHp}/${stats.maxHp}` },
+    { label: "HP", value: `${Math.ceil(currentHp)}/${stats.maxHp}` },
     { label: "Dano", value: String(damage) },
     { label: "Braços", value: String(stats.arms) },
     { label: "Velocidade", value: `${cooldown}ms` },

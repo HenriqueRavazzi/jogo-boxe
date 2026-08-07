@@ -117,13 +117,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const hasFreeze = Boolean(skillTree.node_frost_chance);
   const hasShock = Boolean(skillTree.node_shock_chance);
   const difficulty = useGameStore.getState().getDifficultyMultipliers();
-  /** Fallback de contato se o inimigo não trouxer damage (já escalado no spawn). */
-  const scaledContactFallback = Math.round(
-    contactDamage * difficulty.enemyDamageMultiplier,
-  );
+  void contactDamage; // legado: dano melee vem de enemy.attackDamage
 
   let contactHits = 0;
-  const afterContact: Enemy[] = [];
   const killSites: { x: number; y: number }[] = [];
   const questEvents: QuestProgressEvent[] = [];
 
@@ -136,21 +132,40 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   };
 
-  let contactDamageDealt = 0;
+  // Melee: inimigos encostados formam horda e batem periodicamente (não morrem no contato)
+  let meleeDamageDealt = 0;
   for (const enemy of enemies) {
-    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
-    if (dist < player.radius + enemy.radius) {
-      contactHits += 1;
-      contactDamageDealt += enemy.contactDamage || scaledContactFallback;
-      killSites.push({ x: enemy.x, y: enemy.y });
-      pushKillQuests(enemy.type);
+    if (enemy.hasStatus("freeze", now)) {
+      enemy.isAttacking = false;
       continue;
     }
-    afterContact.push(enemy);
+
+    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+    const touchDist = player.radius + enemy.radius;
+
+    if (dist <= touchDist) {
+      enemy.isAttacking = true;
+      enemy.vx = 0;
+      enemy.vy = 0;
+
+      const cooldown = enemy.attackCooldown || 1000;
+      const damage =
+        enemy.attackDamage > 0
+          ? enemy.attackDamage
+          : Math.max(0.5, 1.2 * difficulty.enemyDamageMultiplier);
+
+      if (now - enemy.lastAttackTime >= cooldown) {
+        meleeDamageDealt += damage;
+        enemy.lastAttackTime = now;
+        contactHits += 1;
+      }
+    } else {
+      enemy.isAttacking = false;
+    }
   }
 
-  if (contactHits > 0) {
-    player.takeDamage(contactDamageDealt);
+  if (meleeDamageDealt > 0) {
+    player.takeDamage(meleeDamageDealt);
   }
 
   let nextAttackTime = lastAttackTime;
@@ -158,7 +173,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const newAttacks: ActiveAttack[] = [];
   const hitSplats: HitSplat[] = [];
   let kills = 0;
-  let living = afterContact;
+  let living = enemies.filter((e) => !e.isDead);
 
   const effectiveCooldown = baseAttackSpeed / matchBuffs.attackSpeed;
   const canAttack = now >= lastAttackTime + effectiveCooldown;
