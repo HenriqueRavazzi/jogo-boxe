@@ -18,6 +18,10 @@ export type GameStoreState = {
   getDamageUpgradeCost: () => number;
   getMaxHp: () => number;
   getBaseDamage: () => number;
+  /** Alcance do auto-ataque em pixels. */
+  getAttackRange: () => number;
+  /** Cooldown entre golpes em milissegundos. */
+  getAttackCooldown: () => number;
 };
 
 const HP_BASE = 100;
@@ -25,6 +29,8 @@ const HP_PER_LEVEL = 25;
 const DAMAGE_BASE = 10;
 const DAMAGE_PER_LEVEL = 5;
 const UPGRADE_COST_BASE = 50;
+const ATTACK_RANGE = 110;
+const ATTACK_COOLDOWN_MS = 400;
 
 export const useGameStore = create<GameStoreState>()(
   persist(
@@ -48,6 +54,10 @@ export const useGameStore = create<GameStoreState>()(
 
       getBaseDamage: () =>
         DAMAGE_BASE + (get().baseDamageLevel - 1) * DAMAGE_PER_LEVEL,
+
+      getAttackRange: () => ATTACK_RANGE,
+
+      getAttackCooldown: () => ATTACK_COOLDOWN_MS,
 
       upgradeHP: () => {
         const cost = get().getHpUpgradeCost();

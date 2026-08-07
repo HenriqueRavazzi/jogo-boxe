@@ -3,10 +3,13 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { useArenaStore } from "@/store/useArenaStore";
+import { useGameStore } from "@/store/useGameStore";
 
 const PLAYER_RADIUS = 18;
 const ENEMY_RADIUS = 12;
 const SPAWN_INTERVAL_MS = 2000;
+/** Quanto tempo a linha do golpe permanece visível. */
+const ATTACK_FLASH_MS = 120;
 
 /**
  * Loop principal do jogo via requestAnimationFrame.
@@ -46,12 +49,16 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
     let spawnAccumulator = 0;
 
-    /** Atualiza entidades: movimento dos inimigos + spawner temporal. */
+    /** Atualiza entidades: movimento, spawn e auto-ataque. */
     const update = (dt: number) => {
-      const { playerX, playerY, updateEnemies, spawnEnemy } =
+      const { playerX, playerY, updateEnemies, spawnEnemy, processCombat } =
         useArenaStore.getState();
+      const { getBaseDamage, getAttackRange, getAttackCooldown } =
+        useGameStore.getState();
 
       updateEnemies(playerX, playerY, dt);
+
+      processCombat(getBaseDamage(), getAttackRange(), getAttackCooldown());
 
       spawnAccumulator += dt * 1000;
       if (spawnAccumulator >= SPAWN_INTERVAL_MS) {
@@ -64,7 +71,15 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const draw = () => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      const { playerX, playerY, enemies } = useArenaStore.getState();
+      const {
+        playerX,
+        playerY,
+        enemies,
+        lastAttackTime,
+        lastAttackTargetX,
+        lastAttackTargetY,
+      } = useArenaStore.getState();
+      const now = performance.now();
 
       // Fundo da arena
       ctx.fillStyle = "#0f1419";
@@ -84,6 +99,21 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Feedback do golpe: linha do jogador até o alvo recente
+      if (
+        lastAttackTargetX != null &&
+        lastAttackTargetY != null &&
+        now - lastAttackTime < ATTACK_FLASH_MS
+      ) {
+        ctx.beginPath();
+        ctx.moveTo(playerX, playerY);
+        ctx.lineTo(lastAttackTargetX, lastAttackTargetY);
+        ctx.strokeStyle = "#fde047";
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
         ctx.stroke();
       }
 

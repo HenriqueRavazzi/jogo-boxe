@@ -17,6 +17,10 @@ export type ArenaStoreState = {
   playerX: number;
   playerY: number;
   enemies: Enemy[];
+  lastAttackTime: number;
+  /** Alvo do último auto-ataque (feedback visual no canvas). */
+  lastAttackTargetX: number | null;
+  lastAttackTargetY: number | null;
   setPlayerPosition: (x: number, y: number) => void;
   setCurrentHp: (hp: number) => void;
   damagePlayer: (amount: number) => void;
@@ -25,6 +29,11 @@ export type ArenaStoreState = {
   removeEnemy: (id: string) => void;
   spawnEnemy: (canvasWidth: number, canvasHeight: number) => void;
   updateEnemies: (playerX: number, playerY: number, dt?: number) => void;
+  processCombat: (
+    baseDamage: number,
+    attackRange: number,
+    attackCooldown: number,
+  ) => boolean;
   resetArena: (maxHp: number, centerX: number, centerY: number) => void;
 };
 
@@ -48,11 +57,14 @@ function randomEdgePosition(canvasWidth: number, canvasHeight: number) {
   }
 }
 
-export const useArenaStore = create<ArenaStoreState>((set) => ({
+export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   currentHp: 100,
   playerX: 0,
   playerY: 0,
   enemies: [],
+  lastAttackTime: 0,
+  lastAttackTargetX: null,
+  lastAttackTargetY: null,
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),
 
@@ -98,11 +110,58 @@ export const useArenaStore = create<ArenaStoreState>((set) => ({
     }));
   },
 
+  /**
+   * Auto-ataca o inimigo mais próximo dentro do alcance, respeitando o cooldown.
+   * @returns true se um golpe foi aplicado neste frame
+   */
+  processCombat: (baseDamage, attackRange, attackCooldown) => {
+    const now = performance.now();
+    const { playerX, playerY, enemies, lastAttackTime } = get();
+
+    if (enemies.length === 0) return false;
+    if (now < lastAttackTime + attackCooldown) return false;
+
+    let nearest: Enemy | null = null;
+    let nearestDist = Infinity;
+
+    for (const enemy of enemies) {
+      const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = enemy;
+      }
+    }
+
+    if (!nearest || nearestDist > attackRange) return false;
+
+    const nextHp = nearest.hp - baseDamage;
+    const targetId = nearest.id;
+    const targetX = nearest.x;
+    const targetY = nearest.y;
+
+    set({
+      lastAttackTime: now,
+      lastAttackTargetX: targetX,
+      lastAttackTargetY: targetY,
+      enemies:
+        nextHp <= 0
+          ? enemies.filter((e) => e.id !== targetId)
+          : enemies.map((e) =>
+              e.id === targetId ? { ...e, hp: nextHp } : e,
+            ),
+    });
+
+    return true;
+  },
+
   resetArena: (maxHp, centerX, centerY) =>
     set({
       currentHp: maxHp,
       playerX: centerX,
       playerY: centerY,
       enemies: [],
+      lastAttackTime: 0,
+      lastAttackTargetX: null,
+      lastAttackTargetY: null,
     }),
 }));
