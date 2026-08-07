@@ -7,6 +7,7 @@ import {
   Gauge,
   Hand,
   HeartPulse,
+  Move,
   Swords,
 } from "lucide-react";
 import {
@@ -23,6 +24,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const baseDamageLevel = useGameStore((s) => s.baseDamageLevel);
   const attackSpeedLevel = useGameStore((s) => s.attackSpeedLevel);
   const rangeLevel = useGameStore((s) => s.rangeLevel);
+  const knockbackLevel = useGameStore((s) => s.knockbackLevel);
   const arms = useGameStore((s) => s.arms);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
   const gold = useGameStore((s) => s.gold);
@@ -35,12 +37,15 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const getRangeUpgradeCost = useGameStore((s) => s.getRangeUpgradeCost);
   const getIncomeUpgradeCost = useGameStore((s) => s.getIncomeUpgradeCost);
   const getArmsUpgradeCost = useGameStore((s) => s.getArmsUpgradeCost);
+  const getKnockbackUpgradeCost = useGameStore((s) => s.getKnockbackUpgradeCost);
+  const getKnockbackPower = useGameStore((s) => s.getKnockbackPower);
   const upgradeHP = useGameStore((s) => s.upgradeHP);
   const upgradeDamage = useGameStore((s) => s.upgradeDamage);
   const upgradeAttackSpeed = useGameStore((s) => s.upgradeAttackSpeed);
   const upgradeRange = useGameStore((s) => s.upgradeRange);
   const upgradeIncome = useGameStore((s) => s.upgradeIncome);
   const upgradeArms = useGameStore((s) => s.upgradeArms);
+  const upgradeKnockback = useGameStore((s) => s.upgradeKnockback);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const getBaseDamage = useGameStore((s) => s.getBaseDamage);
   const getUpgradeCooldownAt = useGameStore((s) => s.getUpgradeCooldownAt);
@@ -52,6 +57,8 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const rangeCost = getRangeUpgradeCost();
   const incomeCost = getIncomeUpgradeCost();
   const armsCost = getArmsUpgradeCost();
+  const knockbackCost = getKnockbackUpgradeCost();
+  const knockbackPower = getKnockbackPower();
 
   const currentCd = getUpgradeCooldownAt(attackSpeedLevel);
   const nextCd = getUpgradeCooldownAt(
@@ -130,6 +137,14 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         canAfford={!rangeAtMax && gold >= rangeCost}
         atMax={rangeAtMax}
         onUpgrade={upgradeRange}
+      />
+      <UpgradeCard
+        icon={<Move className="h-5 w-5 text-violet-400" />}
+        title={`Knockback: ${knockbackPower}`}
+        subtitle={`Nível ${knockbackLevel} · empurrão +2/nível`}
+        cost={knockbackCost}
+        canAfford={gold >= knockbackCost}
+        onUpgrade={upgradeKnockback}
       />
       <UpgradeCard
         icon={<Coins className="h-5 w-5 text-yellow-400" />}

@@ -28,6 +28,8 @@ export function createDefaultSaveData(): SaveData {
     armsNextCost: 80,
     incomeMultiplier: 1,
     xpBonusLevel: 0,
+    knockbackLevel: 0,
+    baseKnockbackPower: 5,
     skillTree: { ...DEFAULT_SKILL_TREE },
   };
 }
@@ -43,6 +45,8 @@ export function normalizeSaveData(data: SaveData): SaveData {
     baseDamage,
     armsNextCost: data.armsNextCost ?? 80,
     xpBonusLevel: data.xpBonusLevel ?? 0,
+    knockbackLevel: data.knockbackLevel ?? 0,
+    baseKnockbackPower: data.baseKnockbackPower ?? 5,
     skillTree: { ...createDefaultSaveData().skillTree, ...data.skillTree },
   };
 }

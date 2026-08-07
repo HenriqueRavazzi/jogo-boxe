@@ -7,7 +7,9 @@ const DEFAULT_SPEED = 55;
 export const DEFAULT_ATTACK_DAMAGE = 1.2;
 /** Intervalo entre golpes melee (ms de game clock). */
 export const DEFAULT_ATTACK_COOLDOWN_MS = 1000;
-const FRICTION = 0.8;
+const FRICTION = 0.85;
+/** Velocidade mínima de knockback para interromper o swarm. */
+const KNOCKBACK_BREAK_SWARM = 0.4;
 
 export type EnemyType = "normal" | "dasher" | "boss";
 export type StatusEffectType = "freeze" | "shock";
@@ -149,6 +151,7 @@ export class Enemy {
 
   /**
    * Chase + knockback. Congelado ou em melee (encostado): não avança.
+   * Knockback ativo força saída do swarm e aplica atrito.
    */
   moveToward(
     playerX: number,
@@ -170,9 +173,25 @@ export class Enemy {
     const dy = playerY - this.y;
     const dist = Math.hypot(dx, dy) || 1;
     const touchDist = this.radius + playerRadius;
+    const knockbackSpeed = Math.hypot(this.vx, this.vy);
 
-    // Encostou: para e marca melee (dano é processado no CombatSystem)
+    const applyFrictionStep = () => {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vx *= FRICTION;
+      this.vy *= FRICTION;
+      if (Math.abs(this.vx) < 0.05) this.vx = 0;
+      if (Math.abs(this.vy) < 0.05) this.vy = 0;
+    };
+
+    // Encostou: swarm — mas knockback empurra para fora e cancela ataque
     if (dist <= touchDist) {
+      if (knockbackSpeed > KNOCKBACK_BREAK_SWARM) {
+        this.isAttacking = false;
+        applyFrictionStep();
+        return;
+      }
+
       this.isAttacking = true;
       this.vx = 0;
       this.vy = 0;
@@ -191,20 +210,16 @@ export class Enemy {
     this.x += (dx / dist) * step;
     this.y += (dy / dist) * step;
 
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vx *= FRICTION;
-    this.vy *= FRICTION;
-
-    if (Math.abs(this.vx) < 0.05) this.vx = 0;
-    if (Math.abs(this.vy) < 0.05) this.vy = 0;
+    applyFrictionStep();
   }
 
+  /** Impulso de repulsão; cancela swarm (isAttacking). */
   applyKnockback(dirX: number, dirY: number, impulse: number): void {
     const len = Math.hypot(dirX, dirY) || 1;
     const scale = this.type === "boss" ? 0.35 : this.type === "dasher" ? 1.2 : 1;
-    this.vx += (dirX / len) * impulse * scale;
-    this.vy += (dirY / len) * impulse * scale;
+    const power = impulse * scale;
+    this.vx = (dirX / len) * power;
+    this.vy = (dirY / len) * power;
     this.isAttacking = false;
   }
 

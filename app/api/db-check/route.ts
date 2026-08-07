@@ -86,6 +86,8 @@ export async function GET() {
       "armsNextCost",
       "incomeMultiplier",
       "xpBonusLevel",
+      "knockbackLevel",
+      "baseKnockbackPower",
       "skillTree",
     ];
 

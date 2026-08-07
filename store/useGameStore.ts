@@ -48,6 +48,8 @@ export type EffectiveStats = {
   ricochetCooldown: number;
   maxBounces: number;
   bounceDamagePercent: number;
+  /** Poder total de knockback dos socos. */
+  knockbackPower: number;
   skillBonus: {
     hp: number;
     damage: number;
@@ -76,6 +78,10 @@ export type GameStoreState = {
   incomeMultiplier: number;
   /** Nível de bônus de XP (+10% por nível). */
   xpBonusLevel: number;
+  /** Nível do upgrade de knockback (ouro). */
+  knockbackLevel: number;
+  /** Poder base de empurrão dos socos. */
+  baseKnockbackPower: number;
   skillTree: SkillTreeState;
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
@@ -103,6 +109,8 @@ export type GameStoreState = {
   upgradeRange: () => boolean;
   upgradeIncome: () => boolean;
   upgradeArms: () => boolean;
+  /** Upgrade de knockback com ouro. */
+  upgradeKnockback: () => boolean;
   /** Upgrade de XP com diamantes. */
   upgradeXpBonus: () => boolean;
   getHpUpgradeCost: () => number;
@@ -111,8 +119,11 @@ export type GameStoreState = {
   getRangeUpgradeCost: () => number;
   getIncomeUpgradeCost: () => number;
   getArmsUpgradeCost: () => number;
+  getKnockbackUpgradeCost: () => number;
   getXpBonusUpgradeCost: () => number;
   getXpMultiplier: () => number;
+  /** Poder total de empurrão: base + nível × 2. */
+  getKnockbackPower: () => number;
   /** Atributos finais (ouro + skills) usados na partida e na UI. */
   getEffectiveStats: () => EffectiveStats;
   getMaxHp: () => number;
@@ -141,9 +152,32 @@ const MAX_STAT_LEVEL = 6;
 const BONUS_PER_LEVEL = MAX_STAT_BONUS / MAX_STAT_LEVEL; // 0.02
 const ATTACK_SPEED_COST_BASE = 60;
 const RANGE_COST_BASE = 60;
+const KNOCKBACK_COST_BASE = 55;
+const KNOCKBACK_COST_GROWTH = 1.35;
+const KNOCKBACK_POWER_PER_LEVEL = 2;
 /** Custo base em diamantes do 1º nível de bônus de XP. */
 const XP_BONUS_COST_BASE = 5;
 const XP_BONUS_COST_GROWTH = 1.5;
+
+/** Poder de knockback: base + nível × 2. */
+export function getKnockbackPowerAt(
+  baseKnockbackPower: number,
+  knockbackLevel: number,
+): number {
+  return (
+    Math.max(0, baseKnockbackPower) +
+    Math.max(0, knockbackLevel) * KNOCKBACK_POWER_PER_LEVEL
+  );
+}
+
+export function getKnockbackCostAt(level: number): number {
+  return Math.max(
+    1,
+    Math.floor(
+      KNOCKBACK_COST_BASE * Math.pow(KNOCKBACK_COST_GROWTH, Math.max(0, level)),
+    ),
+  );
+}
 
 /** Multiplicador de XP: nível 0 = 1.0, nível 1 = 1.1, … (+10% por nível). */
 export function getXpMultiplier(level: number): number {
@@ -250,6 +284,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   armsNextCost: defaults.armsNextCost,
   incomeMultiplier: defaults.incomeMultiplier,
   xpBonusLevel: defaults.xpBonusLevel,
+  knockbackLevel: defaults.knockbackLevel,
+  baseKnockbackPower: defaults.baseKnockbackPower,
   skillTree: { ...DEFAULT_SKILL_TREE },
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
@@ -272,6 +308,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       armsNextCost: n.armsNextCost,
       incomeMultiplier: n.incomeMultiplier,
       xpBonusLevel: n.xpBonusLevel,
+      knockbackLevel: n.knockbackLevel,
+      baseKnockbackPower: n.baseKnockbackPower,
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
     });
   },
@@ -298,6 +336,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       armsNextCost: s.armsNextCost,
       incomeMultiplier: s.incomeMultiplier,
       xpBonusLevel: s.xpBonusLevel,
+      knockbackLevel: s.knockbackLevel,
+      baseKnockbackPower: s.baseKnockbackPower,
       skillTree: { ...s.skillTree },
     };
   },
@@ -382,6 +422,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getArmsUpgradeCost: () => get().armsNextCost,
 
+  getKnockbackUpgradeCost: () => getKnockbackCostAt(get().knockbackLevel),
+
+  getKnockbackPower: () =>
+    getKnockbackPowerAt(get().baseKnockbackPower, get().knockbackLevel),
+
   getXpBonusUpgradeCost: () => xpBonusCostAt(get().xpBonusLevel),
 
   getXpMultiplier: () => xpMultiplierAt(get().xpBonusLevel),
@@ -427,6 +472,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ricochetCooldown: ricochet.cooldownMs,
       maxBounces: ricochet.maxBounces,
       bounceDamagePercent: ricochet.bounceDamagePercent,
+      knockbackPower: getKnockbackPowerAt(
+        s.baseKnockbackPower,
+        s.knockbackLevel,
+      ),
       skillBonus: {
         hp: skillHp,
         damage: skillDmg,
@@ -537,6 +586,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         armsNextCost: nextCost,
       };
     });
+    return true;
+  },
+
+  upgradeKnockback: () => {
+    const cost = get().getKnockbackUpgradeCost();
+    if (get().gold < cost) return false;
+    set((s) => ({
+      gold: s.gold - cost,
+      knockbackLevel: s.knockbackLevel + 1,
+    }));
     return true;
   },
 

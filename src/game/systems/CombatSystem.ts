@@ -87,7 +87,7 @@ export type CombatSystemResult = {
   playerRotation: number;
 };
 
-const DEFAULT_KNOCKBACK = 14;
+const DEFAULT_KNOCKBACK = 5;
 export const PUNCH_DURATION_MS = 150;
 /** Atraso leve entre socos no mesmo tick (ms de game clock). */
 const PUNCH_STAGGER_MS = 40;
@@ -158,7 +158,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     lastRicochetTime,
     now,
     contactDamage,
-    knockbackImpulse = DEFAULT_KNOCKBACK,
+    knockbackImpulse,
     punchDurationMs = PUNCH_DURATION_MS,
     playerRotation: inputRotation = -Math.PI / 2,
   } = input;
@@ -170,6 +170,10 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const hasShock = Boolean(skillTree.node_shock_chance);
   const lifeStealRatio = getLifeStealRatio(skillTree);
   const ricochet = getRicochetConfig(skillTree);
+  const knockbackPower =
+    knockbackImpulse ??
+    useGameStore.getState().getKnockbackPower() ??
+    DEFAULT_KNOCKBACK;
   const difficulty = useGameStore.getState().getDifficultyMultipliers();
   void contactDamage; // legado: dano melee vem de enemy.attackDamage
 
@@ -196,8 +200,15 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
     const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
     const touchDist = player.radius + enemy.radius;
+    const knockbackSpeed = Math.hypot(enemy.vx, enemy.vy);
 
     if (dist <= touchDist) {
+      // Knockback ativo: força saída do swarm e não zera o impulso
+      if (knockbackSpeed > 0.4) {
+        enemy.isAttacking = false;
+        continue;
+      }
+
       enemy.isAttacking = true;
       enemy.vx = 0;
       enemy.vy = 0;
@@ -289,11 +300,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       let punchSide = lastPunchSide;
 
       inRange.forEach(({ enemy }, i) => {
-        enemy.applyKnockback(
-          enemy.x - player.x,
-          enemy.y - player.y,
-          knockbackImpulse,
-        );
+        const dx = enemy.x - player.x;
+        const dy = enemy.y - player.y;
+        enemy.applyKnockback(dx, dy, knockbackPower);
 
         punchSide = pickNextPunchSide(punchSide, leftArms, rightArms);
         const armsOnSide = punchSide === "left" ? leftArms : rightArms;
@@ -487,10 +496,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         });
 
         ricochetDamageDealt += Math.min(bounceDamage, Math.max(0, target.hp));
+        const fromX = i === 0 ? player.x : chain[i - 1]!.x;
+        const fromY = i === 0 ? player.y : chain[i - 1]!.y;
         target.applyKnockback(
-          target.x - (i === 0 ? player.x : chain[i - 1]!.x),
-          target.y - (i === 0 ? player.y : chain[i - 1]!.y),
-          knockbackImpulse * 0.85,
+          target.x - fromX,
+          target.y - fromY,
+          knockbackPower * 0.85,
         );
 
         prevX = target.x;
