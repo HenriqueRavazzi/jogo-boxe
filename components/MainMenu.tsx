@@ -1,7 +1,9 @@
 "use client";
 
+import { Coins, Gem } from "lucide-react";
 import { SaveSlotMenu } from "@/components/SaveSlotMenu";
 import { UpgradePanel } from "@/components/UpgradePanel";
+import { useGameStore } from "@/store/useGameStore";
 
 type MainMenuProps = {
   canPlay: boolean;
@@ -22,6 +24,9 @@ export function MainMenu({
   onOpenTalents,
   onSlotReady,
 }: MainMenuProps) {
+  const gold = useGameStore((s) => s.gold);
+  const gems = useGameStore((s) => s.gems);
+
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex">
       {/* Sidebar esquerda */}
@@ -33,6 +38,32 @@ export function MainMenu({
           <h1 className="mt-1 text-3xl font-black tracking-tight text-zinc-50">
             Joguin Boxe
           </h1>
+        </div>
+
+        {/* Recursos do slot ativo */}
+        <div className="flex flex-wrap gap-2">
+          <div className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+            <Coins className="h-4 w-4 shrink-0 text-amber-300" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-amber-200/70">
+                Ouro
+              </p>
+              <p className="truncate text-sm font-bold tabular-nums text-amber-200">
+                {gold.toLocaleString("pt-BR")}
+              </p>
+            </div>
+          </div>
+          <div className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2">
+            <Gem className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-cyan-200/70">
+                Diamantes
+              </p>
+              <p className="truncate text-sm font-bold tabular-nums text-cyan-200">
+                {gems.toLocaleString("pt-BR")}
+              </p>
+            </div>
+          </div>
         </div>
 
         {!isGameOver && <SaveSlotMenu onSlotReady={onSlotReady} />}

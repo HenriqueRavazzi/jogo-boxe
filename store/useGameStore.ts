@@ -2,13 +2,20 @@
 
 import { create } from "zustand";
 import type { SaveData } from "@/db/schema";
-import { createDefaultSaveData, type SaveSlotId } from "@/lib/saveSlots";
+import { createDefaultSaveData, normalizeSaveData, type SaveSlotId } from "@/lib/saveSlots";
 import {
   DEFAULT_SKILL_TREE,
   canUnlockSkill,
   type SkillNodeId,
   type SkillTreeState,
 } from "@/lib/skillTree";
+
+export {
+  getArmDistribution,
+  getArmPunchOrder,
+  getArmRestPosition,
+} from "@/src/game/entities/Player";
+export type { ArmDistribution, ArmSide } from "@/src/game/entities/Player";
 
 /** Estado persistente — espelha o JSONB `save_data` no banco (por slot). */
 export type GameStoreState = {
@@ -17,13 +24,19 @@ export type GameStoreState = {
   gems: number;
   maxHpLevel: number;
   baseDamageLevel: number;
+  /** Dano base absoluto (inteiro). */
+  baseDamage: number;
   /** Nível do upgrade de attack speed (0–6, +2% redução de CD por nível). */
   attackSpeedLevel: number;
   /** Nível do upgrade de range (0–6, +2% alcance por nível). */
   rangeLevel: number;
   arms: number;
   armTier: number;
+  /** Próximo custo do upgrade de braços (×1.4 a cada compra). */
+  armsNextCost: number;
   incomeMultiplier: number;
+  /** Nível de bônus de XP (+10% por nível). */
+  xpBonusLevel: number;
   skillTree: SkillTreeState;
   hydrateFromSave: (slotId: SaveSlotId, data: SaveData) => void;
   clearActiveSlot: () => void;
@@ -37,12 +50,16 @@ export type GameStoreState = {
   upgradeRange: () => boolean;
   upgradeIncome: () => boolean;
   upgradeArms: () => boolean;
+  /** Upgrade de XP com diamantes. */
+  upgradeXpBonus: () => boolean;
   getHpUpgradeCost: () => number;
   getDamageUpgradeCost: () => number;
   getAttackSpeedUpgradeCost: () => number;
   getRangeUpgradeCost: () => number;
   getIncomeUpgradeCost: () => number;
   getArmsUpgradeCost: () => number;
+  getXpBonusUpgradeCost: () => number;
+  getXpMultiplier: () => number;
   getMaxHp: () => number;
   getBaseDamage: () => number;
   getAttackRange: () => number;
@@ -55,12 +72,12 @@ export type GameStoreState = {
 
 const HP_BASE = 100;
 const HP_PER_LEVEL = 25;
-const DAMAGE_BASE = 10;
 const DAMAGE_PER_LEVEL = 5;
 const UPGRADE_COST_BASE = 50;
 const INCOME_COST_BASE = 75;
 const INCOME_STEP = 0.2;
-const ARMS_COST_BASE = 80;
+const ARMS_COST_GROWTH = 1.4;
+const ARMS_PRESTIGE_DAMAGE = 1.15;
 const ARMS_MAX = 6;
 const ARMS_MIN = 2;
 
@@ -72,6 +89,27 @@ const MAX_STAT_LEVEL = 6;
 const BONUS_PER_LEVEL = MAX_STAT_BONUS / MAX_STAT_LEVEL; // 0.02
 const ATTACK_SPEED_COST_BASE = 60;
 const RANGE_COST_BASE = 60;
+/** Custo base em diamantes do 1º nível de bônus de XP. */
+const XP_BONUS_COST_BASE = 5;
+const XP_BONUS_COST_GROWTH = 1.5;
+
+/** Multiplicador de XP: nível 0 = 1.0, nível 1 = 1.1, … (+10% por nível). */
+export function getXpMultiplier(level: number): number {
+  return 1 + Math.max(0, level) * 0.1;
+}
+
+export function getXpBonusCostAt(level: number): number {
+  return Math.max(
+    1,
+    Math.floor(
+      XP_BONUS_COST_BASE * Math.pow(XP_BONUS_COST_GROWTH, Math.max(0, level)),
+    ),
+  );
+}
+
+/** Referência estável para o getter da store (evita shadowing). */
+const xpMultiplierAt = getXpMultiplier;
+const xpBonusCostAt = getXpBonusCostAt;
 
 function skillHpBonus(tree: SkillTreeState): number {
   let bonus = 0;
@@ -128,27 +166,35 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   gems: defaults.gems,
   maxHpLevel: defaults.maxHpLevel,
   baseDamageLevel: defaults.baseDamageLevel,
+  baseDamage: defaults.baseDamage,
   attackSpeedLevel: defaults.attackSpeedLevel,
   rangeLevel: defaults.rangeLevel,
   arms: defaults.arms,
   armTier: defaults.armTier,
+  armsNextCost: defaults.armsNextCost,
   incomeMultiplier: defaults.incomeMultiplier,
+  xpBonusLevel: defaults.xpBonusLevel,
   skillTree: { ...DEFAULT_SKILL_TREE },
 
-  hydrateFromSave: (slotId, data) =>
+  hydrateFromSave: (slotId, data) => {
+    const n = normalizeSaveData(data);
     set({
       activeSlotId: slotId,
-      gold: data.gold,
-      gems: data.gems,
-      maxHpLevel: data.maxHpLevel,
-      baseDamageLevel: data.baseDamageLevel,
-      attackSpeedLevel: data.attackSpeedLevel ?? 0,
-      rangeLevel: data.rangeLevel ?? 0,
-      arms: data.arms,
-      armTier: data.armTier,
-      incomeMultiplier: data.incomeMultiplier,
-      skillTree: { ...DEFAULT_SKILL_TREE, ...data.skillTree },
-    }),
+      gold: n.gold,
+      gems: n.gems,
+      maxHpLevel: n.maxHpLevel,
+      baseDamageLevel: n.baseDamageLevel,
+      baseDamage: n.baseDamage,
+      attackSpeedLevel: n.attackSpeedLevel ?? 0,
+      rangeLevel: n.rangeLevel ?? 0,
+      arms: n.arms,
+      armTier: n.armTier,
+      armsNextCost: n.armsNextCost,
+      incomeMultiplier: n.incomeMultiplier,
+      xpBonusLevel: n.xpBonusLevel ?? 0,
+      skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
+    });
+  },
 
   clearActiveSlot: () =>
     set({
@@ -164,11 +210,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gems: s.gems,
       maxHpLevel: s.maxHpLevel,
       baseDamageLevel: s.baseDamageLevel,
+      baseDamage: s.baseDamage,
       attackSpeedLevel: s.attackSpeedLevel,
       rangeLevel: s.rangeLevel,
       arms: s.arms,
       armTier: s.armTier,
+      armsNextCost: s.armsNextCost,
       incomeMultiplier: s.incomeMultiplier,
+      xpBonusLevel: s.xpBonusLevel,
       skillTree: { ...s.skillTree },
     };
   },
@@ -208,22 +257,20 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return incomeLevel * INCOME_COST_BASE;
   },
 
-  getArmsUpgradeCost: () => {
-    const { arms, armTier } = get();
-    const progressInCycle = arms === ARMS_MAX ? 4 : arms - ARMS_MIN;
-    const purchasesDone = (armTier - 1) * 5 + progressInCycle;
-    return (purchasesDone + 1) * ARMS_COST_BASE;
-  },
+  getArmsUpgradeCost: () => get().armsNextCost,
+
+  getXpBonusUpgradeCost: () => xpBonusCostAt(get().xpBonusLevel),
+
+  getXpMultiplier: () => xpMultiplierAt(get().xpBonusLevel),
 
   getMaxHp: () =>
     HP_BASE +
     (get().maxHpLevel - 1) * HP_PER_LEVEL +
     skillHpBonus(get().skillTree),
 
+  /** Dano absoluto: baseDamage persistido + bônus da skill tree. */
   getBaseDamage: () =>
-    DAMAGE_BASE +
-    (get().baseDamageLevel - 1) * DAMAGE_PER_LEVEL +
-    skillDamageBonus(get().skillTree),
+    Math.round(get().baseDamage + skillDamageBonus(get().skillTree)),
 
   getUpgradeCooldownAt: (level) => cooldownAtLevel(level),
 
@@ -258,6 +305,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((s) => ({
       gold: s.gold - cost,
       baseDamageLevel: s.baseDamageLevel + 1,
+      baseDamage: Math.round(s.baseDamage + DAMAGE_PER_LEVEL),
     }));
     return true;
   },
@@ -294,20 +342,45 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return true;
   },
 
+  /**
+   * Ciclo de braços (prestige):
+   * - arms < 6 → +1 braço
+   * - arms === 6 → volta a 2 e baseDamage × 1.15 (arredondado)
+   * Em ambos: próximo custo × 1.4
+   */
   upgradeArms: () => {
     const cost = get().getArmsUpgradeCost();
     if (get().gold < cost) return false;
 
+    const nextCost = Math.floor(cost * ARMS_COST_GROWTH);
+
     set((s) => {
       if (s.arms < ARMS_MAX) {
-        return { gold: s.gold - cost, arms: s.arms + 1 };
+        return {
+          gold: s.gold - cost,
+          arms: s.arms + 1,
+          armsNextCost: nextCost,
+        };
       }
       return {
         gold: s.gold - cost,
         arms: ARMS_MIN,
         armTier: s.armTier + 1,
+        baseDamage: Math.round(s.baseDamage * ARMS_PRESTIGE_DAMAGE),
+        armsNextCost: nextCost,
       };
     });
+    return true;
+  },
+
+  /** Compra nível de bônus de XP com diamantes. */
+  upgradeXpBonus: () => {
+    const cost = get().getXpBonusUpgradeCost();
+    if (get().gems < cost) return false;
+    set((s) => ({
+      gems: s.gems - cost,
+      xpBonusLevel: s.xpBonusLevel + 1,
+    }));
     return true;
   },
 }));

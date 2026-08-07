@@ -1,6 +1,6 @@
 "use client";
 
-import { Gem, Lock, Unlock } from "lucide-react";
+import { Gem, Lock, Sparkles, Unlock } from "lucide-react";
 import {
   SKILL_BRANCHES,
   SKILL_NODES,
@@ -8,7 +8,7 @@ import {
   type SkillNodeDef,
 } from "@/lib/skillTree";
 import { syncWithDB } from "@/lib/syncWithDB";
-import { useGameStore } from "@/store/useGameStore";
+import { getXpMultiplier, useGameStore } from "@/store/useGameStore";
 
 type SkillTreeProps = {
   onClose: () => void;
@@ -36,10 +36,24 @@ const LINE_UNLOCKED: Record<string, string> = {
 export function SkillTree({ onClose }: SkillTreeProps) {
   const gems = useGameStore((s) => s.gems);
   const skillTree = useGameStore((s) => s.skillTree);
+  const xpBonusLevel = useGameStore((s) => s.xpBonusLevel);
   const unlockSkill = useGameStore((s) => s.unlockSkill);
+  const upgradeXpBonus = useGameStore((s) => s.upgradeXpBonus);
+  const getXpBonusUpgradeCost = useGameStore((s) => s.getXpBonusUpgradeCost);
+
+  const xpCost = getXpBonusUpgradeCost();
+  const xpBonusPct = Math.round(xpBonusLevel * 10);
+  const canBuyXp = gems >= xpCost;
 
   const handleUnlock = async (nodeId: SkillNodeDef["id"], cost: number) => {
     const ok = unlockSkill(nodeId, cost);
+    if (ok) {
+      await syncWithDB();
+    }
+  };
+
+  const handleXpUpgrade = async () => {
+    const ok = upgradeXpBonus();
     if (ok) {
       await syncWithDB();
     }
@@ -73,6 +87,40 @@ export function SkillTree({ onClose }: SkillTreeProps) {
         </header>
 
         <div className="overflow-y-auto p-5">
+          <div className="mb-8 rounded-2xl border border-violet-500/40 bg-violet-950/40 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/20 text-violet-300">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-violet-100">
+                    Aumento de XP
+                  </p>
+                  <p className="text-xs text-violet-200/80">
+                    Nível {xpBonusLevel} · bônus atual{" "}
+                    <span className="font-semibold text-violet-200">
+                      +{xpBonusPct}% XP
+                    </span>{" "}
+                    (×{getXpMultiplier(xpBonusLevel).toFixed(1)})
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Cada nível: +10% de ganho de XP na partida
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={!canBuyXp}
+                onClick={() => void handleXpUpgrade()}
+                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                <Gem className="h-4 w-4" />
+                {xpCost.toLocaleString("pt-BR")} Diamantes
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             {SKILL_BRANCHES.map((branch) => {
               const nodes = SKILL_NODES.filter(

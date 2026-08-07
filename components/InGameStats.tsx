@@ -1,17 +1,19 @@
 "use client";
 
+import { LogOut } from "lucide-react";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
 /** Painel lateral de stats em tempo real durante a partida. */
-export function InGameStats() {
+export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const currentHp = useArenaStore((s) => s.currentHp);
   const matchLevel = useArenaStore((s) => s.matchLevel);
   const timeAlive = useArenaStore((s) => s.timeAlive);
   const matchBuffs = useArenaStore((s) => s.matchBuffs);
+  const gameSpeed = useArenaStore((s) => s.gameSpeed);
+  const toggleGameSpeed = useArenaStore((s) => s.toggleGameSpeed);
 
   const arms = useGameStore((s) => s.arms);
-  const armTier = useGameStore((s) => s.armTier);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const getBaseDamage = useGameStore((s) => s.getBaseDamage);
@@ -19,9 +21,7 @@ export function InGameStats() {
   const getAttackCooldown = useGameStore((s) => s.getAttackCooldown);
 
   const maxHp = getMaxHp();
-  const damage = Math.round(
-    getBaseDamage() * armTier * matchBuffs.damageMultiplier,
-  );
+  const damage = Math.round(getBaseDamage() * matchBuffs.damageMultiplier);
   const range = Math.round(getAttackRange() * matchBuffs.attackRange);
   const cooldown = Math.round(
     getAttackCooldown() / matchBuffs.attackSpeed,
@@ -29,7 +29,7 @@ export function InGameStats() {
 
   const rows: { label: string; value: string }[] = [
     { label: "HP", value: `${currentHp}/${maxHp}` },
-    { label: "Dano", value: `${damage} (T${armTier})` },
+    { label: "Dano", value: String(damage) },
     { label: "Braços", value: String(arms) },
     { label: "Velocidade", value: `${cooldown}ms` },
     { label: "Alcance", value: String(range) },
@@ -39,23 +39,49 @@ export function InGameStats() {
   ];
 
   return (
-    <aside className="pointer-events-none absolute left-4 top-1/2 z-10 w-44 -translate-y-1/2 rounded-xl border border-white/10 bg-black/60 p-3 text-zinc-100 shadow-lg backdrop-blur-md">
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
-        Stats
-      </p>
-      <ul className="space-y-1.5">
-        {rows.map((row) => (
-          <li
-            key={row.label}
-            className="flex items-center justify-between gap-2 text-xs"
-          >
-            <span className="text-zinc-400">{row.label}</span>
-            <span className="font-semibold tabular-nums text-zinc-50">
-              {row.value}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </aside>
+    <div className="pointer-events-none absolute left-4 top-20 z-10 flex w-44 flex-col gap-2">
+      <div className="pointer-events-auto flex gap-2">
+        <button
+          type="button"
+          onClick={onExitMatch}
+          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-500/50 bg-black/60 px-2 py-2 text-xs font-semibold text-rose-300 shadow-lg backdrop-blur-md transition hover:border-rose-400 hover:bg-rose-950/50 hover:text-rose-200"
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          Sair
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleGameSpeed()}
+          className={`inline-flex w-14 shrink-0 items-center justify-center rounded-xl border px-2 py-2 text-xs font-black shadow-lg backdrop-blur-md transition ${
+            gameSpeed === 2
+              ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-200 hover:bg-emerald-500/35"
+              : "border-white/20 bg-black/60 text-zinc-300 hover:border-white/40 hover:text-zinc-100"
+          }`}
+          aria-label={`Velocidade ${gameSpeed}x`}
+          title="Alternar velocidade da partida"
+        >
+          {gameSpeed}x
+        </button>
+      </div>
+
+      <aside className="rounded-xl border border-white/10 bg-black/60 p-3 text-zinc-100 shadow-lg backdrop-blur-md">
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+          Stats
+        </p>
+        <ul className="space-y-1.5">
+          {rows.map((row) => (
+            <li
+              key={row.label}
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              <span className="text-zinc-400">{row.label}</span>
+              <span className="font-semibold tabular-nums text-zinc-50">
+                {row.value}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </aside>
+    </div>
   );
 }

@@ -1,5 +1,11 @@
 import type { Player } from "@/src/game/entities/Player";
 import type { Enemy } from "@/src/game/entities/Enemy";
+import {
+  getArmDistribution,
+  getArmPunchOrder,
+  getArmRestPosition,
+  type ArmSide,
+} from "@/src/game/entities/Player";
 
 export type MatchBuffsInput = {
   attackSpeed: number;
@@ -8,9 +14,16 @@ export type MatchBuffsInput = {
 };
 
 export type ActiveAttack = {
+  id: string;
   targetX: number;
   targetY: number;
-  timestamp: number;
+  startX: number;
+  startY: number;
+  startTime: number;
+  duration: number;
+  isRetracting: boolean;
+  side: ArmSide;
+  armIndex: number;
 };
 
 export type HitSplat = {
@@ -35,6 +48,7 @@ export type CombatSystemInput = {
   now: number;
   contactDamage: number;
   knockbackImpulse?: number;
+  punchDurationMs?: number;
 };
 
 export type CombatSystemResult = {
@@ -51,16 +65,18 @@ export type CombatSystemResult = {
 };
 
 const DEFAULT_KNOCKBACK = 14;
+export const PUNCH_DURATION_MS = 150;
 
 /**
  * Sistema de combate: colisão de contato + auto-ataque multi-alvo + knockback.
+ * Cada hit é atribuído a um braço (esquerda/direita) com animação de extensão.
  */
 export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const {
     player,
     enemies,
     arms,
-    armTier,
+    armTier: _armTier,
     baseDamage,
     baseRange,
     baseAttackSpeed,
@@ -69,13 +85,13 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     now,
     contactDamage,
     knockbackImpulse = DEFAULT_KNOCKBACK,
+    punchDurationMs = PUNCH_DURATION_MS,
   } = input;
 
   let contactHits = 0;
   const afterContact: Enemy[] = [];
   const killSites: { x: number; y: number }[] = [];
 
-  // Colisão: inimigo encosta no jogador → explode e causa dano escalado
   let contactDamageDealt = 0;
   for (const enemy of enemies) {
     const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
@@ -114,23 +130,43 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
     if (inRange.length > 0) {
       nextAttackTime = now;
-      const damage = baseDamage * armTier * matchBuffs.damageMultiplier;
+      const damage = baseDamage * matchBuffs.damageMultiplier;
       const displayDamage = Math.round(damage);
-      const isCrit = armTier >= 2 || matchBuffs.damageMultiplier >= 1.4;
+      const isCrit = matchBuffs.damageMultiplier >= 1.4;
       const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
 
-      for (const { enemy } of inRange) {
-        // Direção do soco: jogador → inimigo
+      const { leftArms, rightArms } = getArmDistribution(arms);
+      const punchOrder = getArmPunchOrder(arms);
+      const wallClock = now;
+
+      inRange.forEach(({ enemy }, i) => {
         enemy.applyKnockback(
           enemy.x - player.x,
           enemy.y - player.y,
           knockbackImpulse,
         );
 
+        const arm = punchOrder[i] ?? punchOrder[punchOrder.length - 1]!;
+        const armsOnSide = arm.side === "left" ? leftArms : rightArms;
+        const rest = getArmRestPosition(
+          player.x,
+          player.y,
+          arm.side,
+          arm.armIndex,
+          armsOnSide,
+        );
+
         newAttacks.push({
+          id: crypto.randomUUID(),
           targetX: enemy.x,
           targetY: enemy.y,
-          timestamp: now,
+          startX: rest.x,
+          startY: rest.y,
+          startTime: wallClock,
+          duration: punchDurationMs,
+          isRetracting: false,
+          side: arm.side,
+          armIndex: arm.armIndex,
         });
 
         hitSplats.push({
@@ -141,7 +177,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           age: 0,
           color: isCrit ? "#fde047" : "#ffffff",
         });
-      }
+      });
 
       const nextLiving: Enemy[] = [];
       for (const enemy of living) {
@@ -160,7 +196,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   }
 
-  // GC: remove mortos (garantia final)
   living = living.filter((e) => !e.isDead);
 
   return {

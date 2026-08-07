@@ -78,11 +78,14 @@ export async function GET() {
       "gems",
       "maxHpLevel",
       "baseDamageLevel",
+      "baseDamage",
       "attackSpeedLevel",
       "rangeLevel",
       "arms",
       "armTier",
+      "armsNextCost",
       "incomeMultiplier",
+      "xpBonusLevel",
       "skillTree",
     ];
 

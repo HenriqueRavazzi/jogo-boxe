@@ -3,23 +3,100 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { Enemy } from "@/src/game/entities/Enemy";
-import { Player } from "@/src/game/entities/Player";
-import { runCombatSystem } from "@/src/game/systems/CombatSystem";
+import {
+  Player,
+  getArmDistribution,
+  getArmPunchOrder,
+  getArmRestPosition,
+} from "@/src/game/entities/Player";
+import {
+  runCombatSystem,
+} from "@/src/game/systems/CombatSystem";
 import {
   createDropsFromKills,
   runLootSystem,
 } from "@/src/game/systems/LootSystem";
 import { runSpawner } from "@/src/game/systems/Spawner";
-import { useArenaStore } from "@/store/useArenaStore";
+import { useArenaStore, type ActiveAttack } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
 const PLAYER_RADIUS = 18;
+const BODY_RADIUS = 16;
+const HEAD_RADIUS = 11;
 const ENEMY_RADIUS = 12;
 const DROP_RADIUS = 6;
-const ATTACK_FLASH_MS = 150;
+const GLOVE_RADIUS = 8;
 const CONTACT_DAMAGE = 20;
 const XP_PER_KILL = 25;
 const FLOATING_TEXT_MAX_AGE = 60;
+
+/** Interpolação linear: start → end. */
+const lerp = (start: number, end: number, t: number): number =>
+  start * (1 - t) + end * t;
+
+/** Easing: aceleração forte no início, freia no fim do soco. */
+const easeOutCubic = (t: number): number => {
+  const p = Math.min(1, Math.max(0, t));
+  return 1 - Math.pow(1 - p, 3);
+};
+
+/** Avança extensão → retração e remove socos finalizados. */
+function tickActiveAttacks(
+  attacks: ActiveAttack[],
+  now: number,
+): ActiveAttack[] {
+  const next: ActiveAttack[] = [];
+  for (const a of attacks) {
+    let progress = (now - a.startTime) / a.duration;
+
+    if (!a.isRetracting && progress > 1) {
+      next.push({ ...a, isRetracting: true, startTime: now });
+      continue;
+    }
+
+    if (a.isRetracting) {
+      progress = (now - a.startTime) / a.duration;
+      if (progress > 1) continue; // retração acabou → remove
+    }
+
+    next.push(a);
+  }
+  return next;
+}
+
+/** Posição da luva com lerp + easeOutCubic (extensão ou retração). */
+function glovePosition(
+  attack: ActiveAttack,
+  now: number,
+): { x: number; y: number } {
+  const raw = (now - attack.startTime) / attack.duration;
+  const t = easeOutCubic(Math.min(1, Math.max(0, raw)));
+
+  if (attack.isRetracting) {
+    // Volta do inimigo para o repouso
+    return {
+      x: lerp(attack.targetX, attack.startX, t),
+      y: lerp(attack.targetY, attack.startY, t),
+    };
+  }
+
+  return {
+    x: lerp(attack.startX, attack.targetX, t),
+    y: lerp(attack.startY, attack.targetY, t),
+  };
+}
+
+function shoulderOf(
+  playerX: number,
+  playerY: number,
+  side: "left" | "right",
+): { x: number; y: number } {
+  return {
+    x: side === "left" ? playerX - BODY_RADIUS * 0.7 : playerX + BODY_RADIUS * 0.7,
+    y: playerY - 2,
+  };
+}
+
 
 /**
  * Orquestrador do game loop: lê Zustand, delega a entities/systems, escreve de volta.
@@ -54,10 +131,17 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     window.addEventListener("resize", resize);
 
     let spawnAccumulator = 0;
+    /** Relógio da partida (ms) — avança com gameSpeed. */
+    let gameClockMs = 0;
 
-    const update = (dt: number) => {
+    const update = (realDt: number) => {
       const arena = useArenaStore.getState();
       const game = useGameStore.getState();
+      const gameSpeed = arena.gameSpeed === 2 ? 2 : 1;
+      // Física, spawn, timeAlive e timers usam dt escalado
+      const dt = realDt * gameSpeed;
+      gameClockMs += realDt * 1000 * gameSpeed;
+      const gameNow = gameClockMs;
 
       // Centro estrito a cada frame (clientWidth/Height = CSS px do canvas)
       const cx = canvas.clientWidth / 2;
@@ -97,25 +181,24 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         baseAttackSpeed: game.getAttackCooldown(),
         matchBuffs: arena.matchBuffs,
         lastAttackTime: arena.lastAttackTime,
-        now: performance.now(),
+        now: gameNow,
         contactDamage: CONTACT_DAMAGE,
       });
 
-      const now = performance.now();
       const livingEnemies = combat.enemies
         .filter((e) => !e.isDead)
         .map((e) => e.toData());
 
-      const activeAttacks = [
-        ...arena.activeAttacks,
-        ...combat.newAttacks,
-      ].filter((a) => now - a.timestamp < ATTACK_FLASH_MS);
+      const activeAttacks = tickActiveAttacks(
+        [...arena.activeAttacks, ...combat.newAttacks],
+        gameNow,
+      );
 
       const floatingTexts = [
         ...arena.floatingTexts.map((t) => ({
           ...t,
-          age: t.age + 1,
-          y: t.y - 0.8,
+          age: t.age + gameSpeed,
+          y: t.y - 0.8 * gameSpeed,
         })),
         ...combat.hitSplats,
       ].filter((t) => t.age < FLOATING_TEXT_MAX_AGE);
@@ -124,11 +207,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       if (combat.contactHits > 0) {
         shakeFrames = 10;
       } else if (shakeFrames > 0) {
-        shakeFrames -= 1;
+        shakeFrames = Math.max(0, shakeFrames - gameSpeed);
       }
 
       // Drops nas coordenadas exatas da morte (sem ouro instantâneo)
-      const newDrops = createDropsFromKills(combat.killSites);
+      const newDrops = createDropsFromKills(combat.killSites, gameNow);
       const dropsWithNew = [...arena.drops, ...newDrops];
 
       const loot = runLootSystem({
@@ -137,6 +220,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         playerY: cy,
         playerRadius: PLAYER_RADIUS,
         dt,
+        now: gameNow,
       });
 
       if (loot.collectedGold > 0) {
@@ -185,33 +269,102 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
     };
 
-    const drawBoxer = (x: number, y: number) => {
-      ctx.fillStyle = "#1e3a5f";
+    const drawGlove = (x: number, y: number) => {
       ctx.beginPath();
-      ctx.roundRect(x - 12, y - 4, 24, 28, 6);
+      ctx.arc(x, y, GLOVE_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = "#dc2626";
       ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(x, y - 14, 11, 0, Math.PI * 2);
-      ctx.fillStyle = "#f0c4a0";
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(x, y - 18, 10, Math.PI, 0);
-      ctx.fillStyle = "#0ea5e9";
-      ctx.fill();
-
-      ctx.fillStyle = "#e11d48";
-      ctx.beginPath();
-      ctx.arc(x - 16, y + 6, 7, 0, Math.PI * 2);
-      ctx.arc(x + 16, y + 6, 7, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = "#e0f2fe";
+      ctx.strokeStyle = "#7f1d1d";
       ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(x, y - 14, 11, 0, Math.PI * 2);
       ctx.stroke();
+    };
+
+    const drawBoxer = (
+      x: number,
+      y: number,
+      arms: number,
+      punching: ActiveAttack[],
+      now: number,
+    ) => {
+      // —— Corpo: círculo azul escuro ——
+      ctx.beginPath();
+      ctx.arc(x, y, BODY_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = "#1e3a5f";
+      ctx.fill();
+
+      // —— Cabeça: círculo azul claro sobreposto ——
+      const headY = y - BODY_RADIUS * 0.85;
+      ctx.beginPath();
+      ctx.arc(x, headY, HEAD_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = "#7dd3fc";
+      ctx.fill();
+
+      // —— Faixa branca na cabeça (headband) ——
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(x - HEAD_RADIUS + 1, headY - 4, HEAD_RADIUS * 2 - 2, 5);
+      ctx.beginPath();
+      ctx.arc(x, headY - 1.5, HEAD_RADIUS - 1, Math.PI, 0);
+      ctx.strokeStyle = "#f8fafc";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      const { leftArms, rightArms } = getArmDistribution(arms);
+      const busy = new Set(punching.map((a) => `${a.side}:${a.armIndex}`));
+
+      // —— Luvas em repouso (bolinhas vermelhas empilhadas L/R) ——
+      for (const arm of getArmPunchOrder(arms)) {
+        if (busy.has(`${arm.side}:${arm.armIndex}`)) continue;
+        const armsOnSide = arm.side === "left" ? leftArms : rightArms;
+        const rest = getArmRestPosition(
+          x,
+          y,
+          arm.side,
+          arm.armIndex,
+          armsOnSide,
+        );
+        const shoulder = shoulderOf(x, y, arm.side);
+
+        ctx.beginPath();
+        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.lineTo(rest.x, rest.y);
+        ctx.strokeStyle = "#1e3a5f";
+        ctx.lineWidth = 5;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        // Camada de “pele” por cima da manga
+        ctx.beginPath();
+        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.lineTo(rest.x, rest.y);
+        ctx.strokeStyle = "#f0c4a0";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        drawGlove(rest.x, rest.y);
+      }
+
+      // —— Socos ativos: braço esticando + luva com lerp/easing ——
+      for (const attack of punching) {
+        const pos = glovePosition(attack, now);
+        const shoulder = shoulderOf(x, y, attack.side);
+
+        ctx.beginPath();
+        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.strokeStyle = "#1e3a5f";
+        ctx.lineWidth = 6;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.strokeStyle = "#f0c4a0";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        drawGlove(pos.x, pos.y);
+      }
     };
 
     const drawScene = () => {
@@ -219,7 +372,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const h = canvas.clientHeight;
       const { playerX, playerY, enemies, drops, activeAttacks, floatingTexts } =
         useArenaStore.getState();
-      const now = performance.now();
+      const arms = useGameStore.getState().arms;
+      const now = gameClockMs;
 
       ctx.fillStyle = "#0f1419";
       ctx.fillRect(0, 0, w, h);
@@ -240,23 +394,6 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
-      for (const attack of activeAttacks) {
-        if (now - attack.timestamp >= ATTACK_FLASH_MS) continue;
-        const fade = 1 - (now - attack.timestamp) / ATTACK_FLASH_MS;
-        ctx.beginPath();
-        ctx.moveTo(playerX, playerY);
-        ctx.lineTo(attack.targetX, attack.targetY);
-        ctx.strokeStyle = `rgba(253, 224, 71, ${0.45 + fade * 0.55})`;
-        ctx.lineWidth = 5 + fade * 3;
-        ctx.lineCap = "round";
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(attack.targetX, attack.targetY, 6, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(225, 29, 72, ${0.5 + fade * 0.5})`;
-        ctx.fill();
-      }
-
       for (const enemy of enemies) {
         const hpPercent = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
         const red = Math.floor(255 * hpPercent);
@@ -266,19 +403,17 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.fill();
       }
 
-      // Drops: ouro amarelo / diamante azul claro
       for (const drop of drops) {
         ctx.beginPath();
         ctx.arc(drop.x, drop.y, DROP_RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = drop.type === "gold" ? "#facc15" : "#7dd3fc";
         ctx.fill();
-        ctx.strokeStyle =
-          drop.type === "gold" ? "#ca8a04" : "#38bdf8";
+        ctx.strokeStyle = drop.type === "gold" ? "#ca8a04" : "#38bdf8";
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
 
-      drawBoxer(playerX, playerY);
+      drawBoxer(playerX, playerY, arms, activeAttacks, now);
 
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -311,13 +446,22 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     };
 
     let last = performance.now();
+    let wasPlaying = false;
 
     const loop = (now: number) => {
       rafId.current = window.requestAnimationFrame(loop);
 
-      if (useArenaStore.getState().gameState !== "playing") {
+      const state = useArenaStore.getState().gameState;
+      const playing = state === "playing";
+
+      if (playing && !wasPlaying && useArenaStore.getState().timeAlive === 0) {
+        gameClockMs = 0;
+        spawnAccumulator = 0;
+      }
+      wasPlaying = playing;
+
+      if (!playing) {
         last = now;
-        // Mantém player centralizado mesmo no menu/pause visual
         useArenaStore
           .getState()
           .centerPlayer(canvas.clientWidth, canvas.clientHeight);
@@ -325,9 +469,9 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         return;
       }
 
-      const dt = Math.min((now - last) / 1000, 0.05);
+      const realDt = Math.min((now - last) / 1000, 0.05);
       last = now;
-      update(dt);
+      update(realDt);
       draw();
     };
 

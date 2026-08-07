@@ -19,12 +19,15 @@ import { useGameStore } from "@/store/useGameStore";
 export default function Home() {
   const gameState = useArenaStore((s) => s.gameState);
   const startGame = useArenaStore((s) => s.startGame);
+  const exitMatch = useArenaStore((s) => s.exitMatch);
   const activeSlotId = useGameStore((s) => s.activeSlotId);
   const [showTalents, setShowTalents] = useState(false);
   const [slotReady, setSlotReady] = useState(false);
+  const [exiting, setExiting] = useState(false);
 
   const canPlay = Boolean(activeSlotId) && slotReady;
   const showMenu = gameState === "menu" || gameState === "gameover";
+  const inMatch = gameState === "playing" || gameState === "level_up";
 
   // Sync com Neon ao voltar ao menu
   useEffect(() => {
@@ -32,6 +35,17 @@ export default function Home() {
       void syncWithDB();
     }
   }, [gameState, activeSlotId]);
+
+  const handleExitMatch = async () => {
+    if (exiting) return;
+    setExiting(true);
+    try {
+      exitMatch();
+      await syncWithDB();
+    } finally {
+      setExiting(false);
+    }
+  };
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-zinc-950">
@@ -42,10 +56,12 @@ export default function Home() {
         <TopBar />
       </div>
 
-      {/* Stats só durante a partida */}
-      {gameState === "playing" && <InGameStats />}
+      {/* Stats + sair da partida */}
+      {inMatch && (
+        <InGameStats onExitMatch={() => void handleExitMatch()} />
+      )}
 
-      {/* Menu principal (não cobre tela inteira com Start gigante) */}
+      {/* Menu principal */}
       {showMenu && !showTalents && (
         <MainMenu
           canPlay={canPlay}

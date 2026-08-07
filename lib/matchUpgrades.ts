@@ -17,21 +17,28 @@ export type MatchUpgrade = {
   description: string;
 };
 
+/**
+ * Pesos da roleta (somam 100):
+ * Comum 50% · Incomum 28% · Raro 15% · Épico 6% · Lendário 1%
+ */
 const RARITY_TABLE: { rarity: Rarity; weight: number }[] = [
-  { rarity: "common", weight: 80 },
-  { rarity: "uncommon", weight: 15 },
-  { rarity: "rare", weight: 4 },
-  { rarity: "epic", weight: 0.9 },
-  { rarity: "legendary", weight: 0.1 },
+  { rarity: "common", weight: 50 },
+  { rarity: "uncommon", weight: 28 },
+  { rarity: "rare", weight: 15 },
+  { rarity: "epic", weight: 6 },
+  { rarity: "legendary", weight: 1 },
 ];
 
-/** Magnitude do buff por raridade. */
+/**
+ * Magnitude do buff por raridade (diferença de poder clara).
+ * Ex.: Attack Speed comum +5%, épico +15%, lendário +25%.
+ */
 const RARITY_BONUS: Record<Rarity, number> = {
-  common: 0.1,
-  uncommon: 0.15,
-  rare: 0.25,
-  epic: 0.4,
-  legendary: 0.75,
+  common: 0.05,
+  uncommon: 0.08,
+  rare: 0.12,
+  epic: 0.15,
+  legendary: 0.25,
 };
 
 const UPGRADE_POOL: {
@@ -89,14 +96,20 @@ export const RARITY_STYLES: Record<
   },
 };
 
+/**
+ * Roleta por faixas cumulativas: Math.random() em [0, 1) vs pesos normalizados.
+ */
 function rollRarity(): Rarity {
   const total = RARITY_TABLE.reduce((sum, r) => sum + r.weight, 0);
-  let roll = Math.random() * total;
+  const roll = Math.random(); // 0 ≤ roll < 1
+  let cumulative = 0;
+
   for (const entry of RARITY_TABLE) {
-    roll -= entry.weight;
-    if (roll <= 0) return entry.rarity;
+    cumulative += entry.weight / total;
+    if (roll < cumulative) return entry.rarity;
   }
-  return "common";
+
+  return "legendary";
 }
 
 function createUpgrade(rarity: Rarity): MatchUpgrade {

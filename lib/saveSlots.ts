@@ -20,11 +20,29 @@ export function createDefaultSaveData(): SaveData {
     gems: 25,
     maxHpLevel: 1,
     baseDamageLevel: 1,
+    baseDamage: 10,
     attackSpeedLevel: 0,
     rangeLevel: 0,
     arms: 2,
     armTier: 1,
+    armsNextCost: 80,
     incomeMultiplier: 1,
+    xpBonusLevel: 0,
     skillTree: { ...DEFAULT_SKILL_TREE },
+  };
+}
+
+/** Hidrata saves antigos sem campos novos. */
+export function normalizeSaveData(data: SaveData): SaveData {
+  const level = data.baseDamageLevel ?? 1;
+  const baseDamage =
+    data.baseDamage ?? Math.round(10 + (level - 1) * 5);
+  return {
+    ...createDefaultSaveData(),
+    ...data,
+    baseDamage,
+    armsNextCost: data.armsNextCost ?? 80,
+    xpBonusLevel: data.xpBonusLevel ?? 0,
+    skillTree: { ...createDefaultSaveData().skillTree, ...data.skillTree },
   };
 }

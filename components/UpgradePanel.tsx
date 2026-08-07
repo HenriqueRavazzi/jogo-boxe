@@ -18,7 +18,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const attackSpeedLevel = useGameStore((s) => s.attackSpeedLevel);
   const rangeLevel = useGameStore((s) => s.rangeLevel);
   const arms = useGameStore((s) => s.arms);
-  const armTier = useGameStore((s) => s.armTier);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
   const gold = useGameStore((s) => s.gold);
 
@@ -76,8 +75,8 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       />
       <UpgradeCard
         icon={<Swords className="h-5 w-5 text-amber-400" />}
-        title={`Dano: Nível ${baseDamageLevel}`}
-        subtitle={`Dano base: ${getBaseDamage()}`}
+        title={`Dano: ${getBaseDamage()}`}
+        subtitle={`Nível ${baseDamageLevel} · valor absoluto`}
         cost={damageCost}
         canAfford={gold >= damageCost}
         onUpgrade={upgradeDamage}
@@ -124,8 +123,15 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       />
       <UpgradeCard
         icon={<Hand className="h-5 w-5 text-sky-400" />}
-        title={`Braços: ${arms} (Tier ${armTier})`}
-        subtitle={arms < 6 ? "Próximo: +1 braço" : "Próximo: sobe Tier"}
+        title={`Braços: ${arms}`}
+        subtitle={
+          arms < 6
+            ? "Próximo: +1 braço"
+            : "Próximo: +15% Dano Base (Reseta Braços)"
+        }
+        subtitleClassName={
+          arms === 6 ? "font-semibold text-amber-300" : undefined
+        }
         cost={armsCost}
         canAfford={gold >= armsCost}
         onUpgrade={upgradeArms}
@@ -148,6 +154,7 @@ type UpgradeCardProps = {
   icon: ReactNode;
   title: string;
   subtitle: string;
+  subtitleClassName?: string;
   cost: number;
   canAfford: boolean;
   onUpgrade: () => boolean;
@@ -157,6 +164,7 @@ function UpgradeCard({
   icon,
   title,
   subtitle,
+  subtitleClassName,
   cost,
   canAfford,
   onUpgrade,
@@ -168,7 +176,11 @@ function UpgradeCard({
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-zinc-50">{title}</p>
-        <p className="truncate text-xs text-zinc-400">{subtitle}</p>
+        <p
+          className={`truncate text-xs ${subtitleClassName ?? "text-zinc-400"}`}
+        >
+          {subtitle}
+        </p>
         <p className="mt-0.5 text-xs text-amber-300/90">
           Custo: {cost.toLocaleString("pt-BR")} Ouro
         </p>

@@ -6,6 +6,12 @@ import {
   type MatchUpgrade,
   type UpgradeType,
 } from "@/lib/matchUpgrades";
+import {
+  getArmDistribution,
+  getArmPunchOrder,
+  getArmRestPosition,
+} from "@/src/game/entities/Player";
+import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import { useGameStore } from "@/store/useGameStore";
 
 export type Enemy = {
@@ -21,9 +27,16 @@ export type Enemy = {
 };
 
 export type ActiveAttack = {
+  id: string;
   targetX: number;
   targetY: number;
-  timestamp: number;
+  startX: number;
+  startY: number;
+  startTime: number;
+  duration: number;
+  isRetracting: boolean;
+  side: "left" | "right";
+  armIndex: number;
 };
 
 export type FloatingText = {
@@ -76,8 +89,13 @@ export type ArenaStoreState = {
   matchLevel: number;
   matchBuffs: MatchBuffs;
   levelUpOptions: MatchUpgrade[];
+  /** Multiplicador de velocidade da partida (1 ou 2). */
+  gameSpeed: number;
   startGame: () => void;
   setGameOver: () => void;
+  /** Volta ao menu mantendo o progresso persistente (claim & exit). */
+  exitMatch: () => void;
+  toggleGameSpeed: () => void;
   addXp: (amount: number) => void;
   selectUpgrade: (upgradeType: UpgradeType, value: number) => void;
   setPlayerPosition: (x: number, y: number) => void;
@@ -170,6 +188,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   matchLevel: 1,
   matchBuffs: { ...DEFAULT_BUFFS },
   levelUpOptions: [],
+  gameSpeed: 1,
 
   startGame: () => {
     const maxHp = useGameStore.getState().getMaxHp();
@@ -192,6 +211,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
       levelUpOptions: [],
+      gameSpeed: 1,
       playerX: playerX || w / 2,
       playerY: playerY || h / 2,
     });
@@ -209,6 +229,29 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       levelUpOptions: [],
     }),
 
+  /** Claim & exit: limpa a arena e volta ao menu (ouro/gems já estão no useGameStore). */
+  exitMatch: () =>
+    set({
+      gameState: "menu",
+      enemies: [],
+      drops: [],
+      lastAttackTime: 0,
+      activeAttacks: [],
+      floatingTexts: [],
+      shakeFrames: 0,
+      timeAlive: 0,
+      currentXp: 0,
+      xpToNextLevel: BASE_XP_TO_LEVEL,
+      matchLevel: 1,
+      matchBuffs: { ...DEFAULT_BUFFS },
+      levelUpOptions: [],
+      gameSpeed: 1,
+      currentHp: useGameStore.getState().getMaxHp(),
+    }),
+
+  toggleGameSpeed: () =>
+    set((s) => ({ gameSpeed: s.gameSpeed === 1 ? 2 : 1 })),
+
   addFloatingTexts: (texts) =>
     set((s) => ({ floatingTexts: [...s.floatingTexts, ...texts] })),
 
@@ -221,18 +264,22 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
   triggerShake: (frames = 10) => set({ shakeFrames: frames }),
 
-  addXp: (amount) => {
+  addXp: (baseAmount) => {
     const state = get();
     if (state.gameState !== "playing" && state.gameState !== "level_up") {
       return;
     }
+
+    const { xpBonusLevel } = useGameStore.getState();
+    const finalXp = Math.round(baseAmount * (1 + xpBonusLevel * 0.1));
+
     // Durante level_up, só acumula XP sem subir de novo
     if (state.gameState === "level_up") {
-      set({ currentXp: state.currentXp + amount });
+      set({ currentXp: state.currentXp + finalXp });
       return;
     }
 
-    let xp = state.currentXp + amount;
+    let xp = state.currentXp + finalXp;
     let nextReq = state.xpToNextLevel;
     let level = state.matchLevel;
 
@@ -303,12 +350,17 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
   spawnEnemy: (canvasWidth, canvasHeight) => {
     const { x, y } = randomEdgePosition(canvasWidth, canvasHeight);
+    const timeAlive = get().timeAlive;
+    const cycles = Math.floor(timeAlive / 15);
+    const currentEnemyMaxHp = Math.round(
+      DEFAULT_ENEMY_HP * Math.pow(1.05, cycles),
+    );
     const enemy: Enemy = {
       id: crypto.randomUUID(),
       x,
       y,
-      hp: DEFAULT_ENEMY_HP,
-      maxHp: DEFAULT_ENEMY_HP,
+      hp: currentEnemyMaxHp,
+      maxHp: currentEnemyMaxHp,
       speed: DEFAULT_ENEMY_SPEED,
       vx: 0,
       vy: 0,
@@ -357,6 +409,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
   processCombat: (baseDamage, _attackRange, _attackCooldown) => {
     const now = performance.now();
+    const wallClock = Date.now();
     const {
       playerX,
       playerY,
@@ -365,16 +418,14 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeAttacks,
       matchBuffs,
     } = get();
-    const { arms, armTier, getAttackRange, getAttackCooldown, getBaseDamage } =
+    const { arms, getAttackRange, getAttackCooldown, getBaseDamage } =
       useGameStore.getState();
 
     if (enemies.length === 0) return false;
 
-    // Cooldown efetivo: base (com talents) / buff de velocidade
     const effectiveCooldown = getAttackCooldown() / matchBuffs.attackSpeed;
     if (now < lastAttackTime + effectiveCooldown) return false;
 
-    // Alcance efetivo: base (com talents) * buff de range
     const effectiveRange = getAttackRange() * matchBuffs.attackRange;
 
     const inRange = enemies
@@ -389,13 +440,34 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     if (inRange.length === 0) return false;
 
     const damage =
-      (baseDamage || getBaseDamage()) * armTier * matchBuffs.damageMultiplier;
+      (baseDamage || getBaseDamage()) * matchBuffs.damageMultiplier;
     const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
-    const newAttacks: ActiveAttack[] = inRange.map(({ enemy }) => ({
-      targetX: enemy.x,
-      targetY: enemy.y,
-      timestamp: now,
-    }));
+    const { leftArms, rightArms } = getArmDistribution(arms);
+    const punchOrder = getArmPunchOrder(arms);
+
+    const newAttacks: ActiveAttack[] = inRange.map(({ enemy }, i) => {
+      const arm = punchOrder[i] ?? punchOrder[punchOrder.length - 1]!;
+      const armsOnSide = arm.side === "left" ? leftArms : rightArms;
+      const rest = getArmRestPosition(
+        playerX,
+        playerY,
+        arm.side,
+        arm.armIndex,
+        armsOnSide,
+      );
+      return {
+        id: crypto.randomUUID(),
+        targetX: enemy.x,
+        targetY: enemy.y,
+        startX: rest.x,
+        startY: rest.y,
+        startTime: wallClock,
+        duration: PUNCH_DURATION_MS,
+        isRetracting: false,
+        side: arm.side,
+        armIndex: arm.armIndex,
+      };
+    });
 
     let kills = 0;
     const nextEnemies: Enemy[] = [];
@@ -428,12 +500,17 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     return true;
   },
 
-  pruneActiveAttacks: (maxAgeMs = 150) => {
-    const now = performance.now();
+  pruneActiveAttacks: (maxAgeMs = PUNCH_DURATION_MS * 2) => {
+    const now = Date.now();
     set((s) => ({
-      activeAttacks: s.activeAttacks.filter(
-        (a) => now - a.timestamp < maxAgeMs,
-      ),
+      activeAttacks: s.activeAttacks
+        .map((a) => {
+          if (!a.isRetracting && now - a.startTime >= a.duration) {
+            return { ...a, isRetracting: true, startTime: now };
+          }
+          return a;
+        })
+        .filter((a) => !(a.isRetracting && now - a.startTime >= a.duration)),
     }));
   },
 
