@@ -8,8 +8,8 @@ import {
 } from "@/lib/matchUpgrades";
 import {
   getArmDistribution,
-  getArmPunchOrder,
   getArmRestPosition,
+  pickNextPunchSide,
 } from "@/src/game/entities/Player";
 import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import { useGameStore } from "@/store/useGameStore";
@@ -56,6 +56,12 @@ export type Drop = {
   spawnTime: number;
 };
 
+export type RunStats = {
+  enemiesDefeated: number;
+  goldCollected: number;
+  diamondsCollected: number;
+};
+
 export type MatchBuffs = {
   attackSpeed: number;
   attackRange: number;
@@ -70,6 +76,12 @@ const DEFAULT_BUFFS: MatchBuffs = {
   damageMultiplier: 1,
 };
 
+const EMPTY_RUN_STATS: RunStats = {
+  enemiesDefeated: 0,
+  goldCollected: 0,
+  diamondsCollected: 0,
+};
+
 /** Estado volátil da partida atual (não persistido). */
 export type ArenaStoreState = {
   gameState: GameState;
@@ -79,6 +91,8 @@ export type ArenaStoreState = {
   enemies: Enemy[];
   drops: Drop[];
   lastAttackTime: number;
+  /** Último lado que socou (próximo ataque alterna). */
+  lastPunchSide: "left" | "right";
   activeAttacks: ActiveAttack[];
   floatingTexts: FloatingText[];
   shakeFrames: number;
@@ -91,11 +105,15 @@ export type ArenaStoreState = {
   levelUpOptions: MatchUpgrade[];
   /** Multiplicador de velocidade da partida (1 ou 2). */
   gameSpeed: number;
+  /** Estatísticas da run atual. */
+  runStats: RunStats;
   startGame: () => void;
   setGameOver: () => void;
   /** Volta ao menu mantendo o progresso persistente (claim & exit). */
   exitMatch: () => void;
   toggleGameSpeed: () => void;
+  recordEnemyDefeats: (count: number) => void;
+  recordLootCollected: (gold: number, diamonds: number) => void;
   addXp: (amount: number) => void;
   selectUpgrade: (upgradeType: UpgradeType, value: number) => void;
   setPlayerPosition: (x: number, y: number) => void;
@@ -179,6 +197,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   enemies: [],
   drops: [],
   lastAttackTime: 0,
+  lastPunchSide: "right",
   activeAttacks: [],
   floatingTexts: [],
   shakeFrames: 0,
@@ -189,6 +208,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   matchBuffs: { ...DEFAULT_BUFFS },
   levelUpOptions: [],
   gameSpeed: 1,
+  runStats: { ...EMPTY_RUN_STATS },
 
   startGame: () => {
     const maxHp = useGameStore.getState().getMaxHp();
@@ -202,6 +222,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       enemies: [],
       drops: [],
       lastAttackTime: 0,
+      lastPunchSide: "right",
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
@@ -212,6 +233,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchBuffs: { ...DEFAULT_BUFFS },
       levelUpOptions: [],
       gameSpeed: 1,
+      runStats: { ...EMPTY_RUN_STATS },
       playerX: playerX || w / 2,
       playerY: playerY || h / 2,
     });
@@ -223,6 +245,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       enemies: [],
       drops: [],
       lastAttackTime: 0,
+      lastPunchSide: "right",
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
@@ -236,6 +259,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       enemies: [],
       drops: [],
       lastAttackTime: 0,
+      lastPunchSide: "right",
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
@@ -246,11 +270,33 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchBuffs: { ...DEFAULT_BUFFS },
       levelUpOptions: [],
       gameSpeed: 1,
+      runStats: { ...EMPTY_RUN_STATS },
       currentHp: useGameStore.getState().getMaxHp(),
     }),
 
   toggleGameSpeed: () =>
     set((s) => ({ gameSpeed: s.gameSpeed === 1 ? 2 : 1 })),
+
+  recordEnemyDefeats: (count) => {
+    if (count <= 0) return;
+    set((s) => ({
+      runStats: {
+        ...s.runStats,
+        enemiesDefeated: s.runStats.enemiesDefeated + count,
+      },
+    }));
+  },
+
+  recordLootCollected: (gold, diamonds) => {
+    if (gold <= 0 && diamonds <= 0) return;
+    set((s) => ({
+      runStats: {
+        ...s.runStats,
+        goldCollected: s.runStats.goldCollected + gold,
+        diamondsCollected: s.runStats.diamondsCollected + diamonds,
+      },
+    }));
+  },
 
   addFloatingTexts: (texts) =>
     set((s) => ({ floatingTexts: [...s.floatingTexts, ...texts] })),
@@ -409,12 +455,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
   processCombat: (baseDamage, _attackRange, _attackCooldown) => {
     const now = performance.now();
-    const wallClock = Date.now();
     const {
       playerX,
       playerY,
       enemies,
       lastAttackTime,
+      lastPunchSide,
       activeAttacks,
       matchBuffs,
     } = get();
@@ -443,17 +489,21 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       (baseDamage || getBaseDamage()) * matchBuffs.damageMultiplier;
     const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
     const { leftArms, rightArms } = getArmDistribution(arms);
-    const punchOrder = getArmPunchOrder(arms);
+    const sideUseCount = { left: 0, right: 0 };
+    let punchSide = lastPunchSide;
 
     const newAttacks: ActiveAttack[] = inRange.map(({ enemy }, i) => {
-      const arm = punchOrder[i] ?? punchOrder[punchOrder.length - 1]!;
-      const armsOnSide = arm.side === "left" ? leftArms : rightArms;
+      punchSide = pickNextPunchSide(punchSide, leftArms, rightArms);
+      const armsOnSide = punchSide === "left" ? leftArms : rightArms;
+      const armIndex =
+        armsOnSide > 0 ? sideUseCount[punchSide] % armsOnSide : 0;
+      sideUseCount[punchSide] += 1;
       const rest = getArmRestPosition(
         playerX,
         playerY,
-        arm.side,
-        arm.armIndex,
-        armsOnSide,
+        punchSide,
+        armIndex,
+        Math.max(1, armsOnSide),
       );
       return {
         id: crypto.randomUUID(),
@@ -461,11 +511,11 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         targetY: enemy.y,
         startX: rest.x,
         startY: rest.y,
-        startTime: wallClock,
+        startTime: now + i * 40,
         duration: PUNCH_DURATION_MS,
         isRetracting: false,
-        side: arm.side,
-        armIndex: arm.armIndex,
+        side: punchSide,
+        armIndex,
       };
     });
 
@@ -488,6 +538,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
     set({
       lastAttackTime: now,
+      lastPunchSide: punchSide,
       enemies: nextEnemies,
       activeAttacks: [...activeAttacks, ...newAttacks],
     });
@@ -522,6 +573,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       enemies: [],
       drops: [],
       lastAttackTime: 0,
+      lastPunchSide: "right",
       activeAttacks: [],
       floatingTexts: [],
       shakeFrames: 0,
@@ -531,5 +583,6 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
       levelUpOptions: [],
+      runStats: { ...EMPTY_RUN_STATS },
     }),
 }));

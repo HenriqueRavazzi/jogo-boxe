@@ -181,6 +181,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         baseAttackSpeed: game.getAttackCooldown(),
         matchBuffs: arena.matchBuffs,
         lastAttackTime: arena.lastAttackTime,
+        lastPunchSide: arena.lastPunchSide,
         now: gameNow,
         contactDamage: CONTACT_DAMAGE,
       });
@@ -230,6 +231,16 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         game.addGems(loot.collectedDiamonds);
       }
 
+      const defeatedThisFrame = combat.killSites.length;
+      if (defeatedThisFrame > 0) {
+        useArenaStore.getState().recordEnemyDefeats(defeatedThisFrame);
+      }
+      if (loot.collectedGold > 0 || loot.collectedDiamonds > 0) {
+        useArenaStore
+          .getState()
+          .recordLootCollected(loot.collectedGold, loot.collectedDiamonds);
+      }
+
       useArenaStore.setState({
         playerX: cx,
         playerY: cy,
@@ -237,6 +248,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         drops: loot.drops,
         currentHp: combat.player.hp,
         lastAttackTime: combat.lastAttackTime,
+        lastPunchSide: combat.lastPunchSide,
         activeAttacks,
         floatingTexts,
         shakeFrames,
@@ -448,6 +460,22 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     let last = performance.now();
     let wasPlaying = false;
 
+    /** Evita spike de física/spawn ao voltar de aba pausada (tab-out). */
+    const safeDeltaSeconds = (now: number, previous: number): number => {
+      let deltaMs = now - previous;
+      if (deltaMs > 100 || deltaMs < 0) {
+        deltaMs = 16; // ~1 frame a 60fps
+      }
+      return deltaMs / 1000;
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        last = performance.now();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     const loop = (now: number) => {
       rafId.current = window.requestAnimationFrame(loop);
 
@@ -469,7 +497,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         return;
       }
 
-      const realDt = Math.min((now - last) / 1000, 0.05);
+      const realDt = safeDeltaSeconds(now, last);
       last = now;
       update(realDt);
       draw();
@@ -480,6 +508,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     return () => {
       window.cancelAnimationFrame(rafId.current);
       window.removeEventListener("resize", resize);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [canvasRef]);
 }

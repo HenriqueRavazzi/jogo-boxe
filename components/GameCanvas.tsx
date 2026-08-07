@@ -23,7 +23,8 @@ export function GameCanvas() {
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 z-0 h-full w-full touch-none"
+      draggable={false}
+      className="pointer-events-none absolute inset-0 z-0 h-full w-full touch-none select-none"
       aria-label="Arena de combate"
     />
   );

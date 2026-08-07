@@ -16,4 +16,13 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+canvas,
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
 }

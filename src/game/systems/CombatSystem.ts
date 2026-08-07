@@ -2,8 +2,8 @@ import type { Player } from "@/src/game/entities/Player";
 import type { Enemy } from "@/src/game/entities/Enemy";
 import {
   getArmDistribution,
-  getArmPunchOrder,
   getArmRestPosition,
+  pickNextPunchSide,
   type ArmSide,
 } from "@/src/game/entities/Player";
 
@@ -45,6 +45,8 @@ export type CombatSystemInput = {
   baseAttackSpeed: number;
   matchBuffs: MatchBuffsInput;
   lastAttackTime: number;
+  /** Último lado que socou — próximo tick alterna a partir daqui. */
+  lastPunchSide: ArmSide;
   now: number;
   contactDamage: number;
   knockbackImpulse?: number;
@@ -56,6 +58,7 @@ export type CombatSystemResult = {
   /** Inimigos ainda vivos (mortos já filtrados). */
   enemies: Enemy[];
   lastAttackTime: number;
+  lastPunchSide: ArmSide;
   newAttacks: ActiveAttack[];
   hitSplats: HitSplat[];
   kills: number;
@@ -66,10 +69,12 @@ export type CombatSystemResult = {
 
 const DEFAULT_KNOCKBACK = 14;
 export const PUNCH_DURATION_MS = 150;
+/** Atraso leve entre socos no mesmo tick (ms de game clock). */
+const PUNCH_STAGGER_MS = 40;
 
 /**
  * Sistema de combate: colisão de contato + auto-ataque multi-alvo + knockback.
- * Cada hit é atribuído a um braço (esquerda/direita) com animação de extensão.
+ * Socos alternam L/R via lastPunchSide; 1 alvo = 1 braço (não dispara todos).
  */
 export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const {
@@ -82,6 +87,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     baseAttackSpeed,
     matchBuffs,
     lastAttackTime,
+    lastPunchSide,
     now,
     contactDamage,
     knockbackImpulse = DEFAULT_KNOCKBACK,
@@ -109,6 +115,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   }
 
   let nextAttackTime = lastAttackTime;
+  let nextPunchSide = lastPunchSide;
   const newAttacks: ActiveAttack[] = [];
   const hitSplats: HitSplat[] = [];
   let kills = 0;
@@ -119,6 +126,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   if (canAttack && living.length > 0 && !player.isDead) {
     const effectiveRange = baseRange * matchBuffs.attackRange;
+    // Até `arms` alvos distintos — 1 inimigo consome só 1 braço neste tick
     const inRange = living
       .map((enemy) => ({
         enemy,
@@ -136,8 +144,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
 
       const { leftArms, rightArms } = getArmDistribution(arms);
-      const punchOrder = getArmPunchOrder(arms);
-      const wallClock = now;
+      const sideUseCount: Record<ArmSide, number> = { left: 0, right: 0 };
+      let punchSide = lastPunchSide;
 
       inRange.forEach(({ enemy }, i) => {
         enemy.applyKnockback(
@@ -146,14 +154,18 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           knockbackImpulse,
         );
 
-        const arm = punchOrder[i] ?? punchOrder[punchOrder.length - 1]!;
-        const armsOnSide = arm.side === "left" ? leftArms : rightArms;
+        punchSide = pickNextPunchSide(punchSide, leftArms, rightArms);
+        const armsOnSide = punchSide === "left" ? leftArms : rightArms;
+        const armIndex =
+          armsOnSide > 0 ? sideUseCount[punchSide] % armsOnSide : 0;
+        sideUseCount[punchSide] += 1;
+
         const rest = getArmRestPosition(
           player.x,
           player.y,
-          arm.side,
-          arm.armIndex,
-          armsOnSide,
+          punchSide,
+          armIndex,
+          Math.max(1, armsOnSide),
         );
 
         newAttacks.push({
@@ -162,11 +174,11 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           targetY: enemy.y,
           startX: rest.x,
           startY: rest.y,
-          startTime: wallClock,
+          startTime: now + i * PUNCH_STAGGER_MS,
           duration: punchDurationMs,
           isRetracting: false,
-          side: arm.side,
-          armIndex: arm.armIndex,
+          side: punchSide,
+          armIndex,
         });
 
         hitSplats.push({
@@ -178,6 +190,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           color: isCrit ? "#fde047" : "#ffffff",
         });
       });
+
+      nextPunchSide = punchSide;
 
       const nextLiving: Enemy[] = [];
       for (const enemy of living) {
@@ -202,6 +216,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     player,
     enemies: living,
     lastAttackTime: nextAttackTime,
+    lastPunchSide: nextPunchSide,
     newAttacks,
     hitSplats,
     kills,

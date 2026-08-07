@@ -11,6 +11,8 @@ type MainMenuProps = {
   onStart: () => void;
   onOpenTalents: () => void;
   onSlotReady: () => void;
+  /** Game Over → menu + sync (mesmo fluxo de Sair da Partida). */
+  onReturnToMenu?: () => void;
 };
 
 /**
@@ -23,6 +25,7 @@ export function MainMenu({
   onStart,
   onOpenTalents,
   onSlotReady,
+  onReturnToMenu,
 }: MainMenuProps) {
   const gold = useGameStore((s) => s.gold);
   const gems = useGameStore((s) => s.gems);
@@ -77,6 +80,16 @@ export function MainMenu({
           >
             {isGameOver ? "RESTART" : "START GAME"}
           </button>
+
+          {isGameOver && (
+            <button
+              type="button"
+              onClick={onReturnToMenu}
+              className="w-full rounded-xl border border-white/15 bg-zinc-800/80 py-3 text-sm font-semibold text-zinc-300 transition hover:bg-zinc-700/80 hover:text-zinc-100"
+            >
+              Voltar ao Menu Principal
+            </button>
+          )}
 
           {!isGameOver && (
             <button

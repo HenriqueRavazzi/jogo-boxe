@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { GameCanvas } from "@/components/GameCanvas";
+import { GameOverModal } from "@/components/GameOverModal";
 import { InGameStats } from "@/components/InGameStats";
 import { LevelUpModal } from "@/components/LevelUpModal";
 import { MainMenu } from "@/components/MainMenu";
@@ -15,6 +16,7 @@ import { useGameStore } from "@/store/useGameStore";
  * Página principal
  * - menu: sidebar + upgrades + talents
  * - playing: canvas + TopBar + InGameStats
+ * - gameover: modal com runStats
  */
 export default function Home() {
   const gameState = useArenaStore((s) => s.gameState);
@@ -23,10 +25,9 @@ export default function Home() {
   const activeSlotId = useGameStore((s) => s.activeSlotId);
   const [showTalents, setShowTalents] = useState(false);
   const [slotReady, setSlotReady] = useState(false);
-  const [exiting, setExiting] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const canPlay = Boolean(activeSlotId) && slotReady;
-  const showMenu = gameState === "menu" || gameState === "gameover";
   const inMatch = gameState === "playing" || gameState === "level_up";
 
   // Sync com Neon ao voltar ao menu
@@ -37,18 +38,29 @@ export default function Home() {
   }, [gameState, activeSlotId]);
 
   const handleExitMatch = async () => {
-    if (exiting) return;
-    setExiting(true);
+    if (busy) return;
+    setBusy(true);
     try {
-      exitMatch();
       await syncWithDB();
+      exitMatch();
     } finally {
-      setExiting(false);
+      setBusy(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await syncWithDB();
+      startGame();
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-zinc-950">
+    <div className="relative h-dvh w-full select-none overflow-hidden bg-zinc-950">
       <GameCanvas />
 
       {/* HUD global (sempre): recursos */}
@@ -61,16 +73,24 @@ export default function Home() {
         <InGameStats onExitMatch={() => void handleExitMatch()} />
       )}
 
-      {/* Menu principal */}
-      {showMenu && !showTalents && (
+      {/* Menu principal (não no game over) */}
+      {gameState === "menu" && !showTalents && (
         <MainMenu
           canPlay={canPlay}
-          isGameOver={gameState === "gameover"}
+          isGameOver={false}
           onStart={() => {
             void syncWithDB().finally(() => startGame());
           }}
           onOpenTalents={() => setShowTalents(true)}
           onSlotReady={() => setSlotReady(true)}
+        />
+      )}
+
+      {gameState === "gameover" && (
+        <GameOverModal
+          busy={busy}
+          onRestart={() => void handleRestart()}
+          onReturnToMenu={() => void handleExitMatch()}
         />
       )}
 

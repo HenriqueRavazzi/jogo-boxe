@@ -49,6 +49,22 @@ export function getArmPunchOrder(totalArms: number): {
   return order;
 }
 
+/**
+ * Alterna o lado do soco a partir do último.
+ * Respeita distribuição (ex.: 1 braço = só esquerda).
+ */
+export function pickNextPunchSide(
+  lastPunchSide: ArmSide,
+  leftArms: number,
+  rightArms: number,
+): ArmSide {
+  const prefer: ArmSide = lastPunchSide === "right" ? "left" : "right";
+  if (prefer === "left" && leftArms > 0) return "left";
+  if (prefer === "right" && rightArms > 0) return "right";
+  if (leftArms > 0) return "left";
+  return "right";
+}
+
 export class Player {
   constructor(
     public x: number,
