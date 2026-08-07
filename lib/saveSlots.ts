@@ -2,9 +2,11 @@ import { DEFAULT_SKILL_TREE } from "@/lib/skillTree";
 import {
   DEFAULT_SKILLS_DATA,
   DEFAULT_UNLOCKED_SKILLS,
+  DEFAULT_META_TREE,
   type SaveData,
   type SkillsData,
   type UnlockedSkillsData,
+  type MetaTreeData,
 } from "@/db/schema";
 
 function normalizeSkills(skills?: Partial<SkillsData> | null): SkillsData {
@@ -20,6 +22,22 @@ function normalizeUnlocked(
   return {
     ...DEFAULT_UNLOCKED_SKILLS,
     ...(unlocked ?? {}),
+  };
+}
+
+function normalizeMetaTree(
+  data: Partial<MetaTreeData> & Partial<SaveData>,
+): MetaTreeData {
+  return {
+    metaDamageLevel:
+      data.metaDamageLevel ?? DEFAULT_META_TREE.metaDamageLevel,
+    metaKnockbackLevel:
+      data.metaKnockbackLevel ?? DEFAULT_META_TREE.metaKnockbackLevel,
+    metaHpLevel: data.metaHpLevel ?? DEFAULT_META_TREE.metaHpLevel,
+    metaLifeStealLevel:
+      data.metaLifeStealLevel ?? DEFAULT_META_TREE.metaLifeStealLevel,
+    metaSkillRegenLevel:
+      data.metaSkillRegenLevel ?? DEFAULT_META_TREE.metaSkillRegenLevel,
   };
 }
 
@@ -46,6 +64,7 @@ export function createDefaultSaveData(): SaveData {
     skillTree: { ...DEFAULT_SKILL_TREE },
     skillLevels: { ...DEFAULT_SKILLS_DATA },
     unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+    ...DEFAULT_META_TREE,
   };
 }
 
@@ -71,6 +90,8 @@ export function normalizeSaveData(
   if (skillTree.node_frost_chance) unlockedSkills.ice = true;
   if (skillTree.node_shock_chance) unlockedSkills.lightning = true;
 
+  const meta = normalizeMetaTree(data);
+
   return {
     ...createDefaultSaveData(),
     ...data,
@@ -85,6 +106,7 @@ export function normalizeSaveData(
     skillTree,
     skillLevels,
     unlockedSkills,
+    ...meta,
   };
 }
 

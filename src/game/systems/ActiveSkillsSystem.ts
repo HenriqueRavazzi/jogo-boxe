@@ -86,6 +86,10 @@ export type RunActiveSkillsResult = {
   questShock: number;
   /** Splats de dano do raio neste frame. */
   lightningHits: LightningHitSplat[];
+  /** Dano total de skills especiais neste frame (regen meta). */
+  skillDamageDealt: number;
+  /** Hits de skills especiais neste frame (regen meta). */
+  skillHitsLanded: number;
 };
 
 /**
@@ -117,12 +121,15 @@ function applyArenaBurn(
   now: number,
   burnDps: number,
   durationMs: number,
-): void {
-  if (burnDps <= 0) return;
+): number {
+  if (burnDps <= 0) return 0;
+  let hit = 0;
   for (const enemy of enemies) {
     if (enemy.isDead) continue;
     enemy.applyBurn(burnDps, now, durationMs);
+    hit += 1;
   }
+  return hit;
 }
 
 /**
@@ -219,6 +226,8 @@ export function runActiveSkills(
   let questFreeze = 0;
   let questShock = 0;
   const lightningHits: LightningHitSplat[] = [];
+  let skillDamageDealt = 0;
+  let skillHitsLanded = 0;
 
   // ——— Gelo ———
   if (matchSkills.ice > 0) {
@@ -239,6 +248,7 @@ export function runActiveSkills(
         now,
         freezeDurationMs,
       );
+      skillHitsLanded += questFreeze;
     }
 
     if (now < next.iceActiveUntil) {
@@ -271,12 +281,15 @@ export function runActiveSkills(
       next.fireActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
       next.firePulseAt = now;
       next.fireNextPulseAt = now + ACTIVE_SKILL_CYCLE_MS;
-      applyArenaBurn(
+      const burned = applyArenaBurn(
         enemies,
         now,
         burnTickDamage,
         ACTIVE_SKILL_DURATION_MS,
       );
+      skillHitsLanded += burned;
+      // Estimativa de dano do primeiro tick de burn para regen meta
+      skillDamageDealt += burned * burnTickDamage;
     }
 
     if (now < next.fireActiveUntil) {
@@ -327,6 +340,10 @@ export function runActiveSkills(
         );
         questShock += burst.shocked;
         lightningHits.push(...burst.hits);
+        for (const hit of burst.hits) {
+          skillDamageDealt += hit.damage;
+          skillHitsLanded += 1;
+        }
       }
     }
   } else {
@@ -356,6 +373,8 @@ export function runActiveSkills(
     questFreeze,
     questShock,
     lightningHits,
+    skillDamageDealt,
+    skillHitsLanded,
   };
 }
 

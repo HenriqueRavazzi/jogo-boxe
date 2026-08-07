@@ -100,6 +100,11 @@ export async function GET() {
       "skillLevels",
       "unlockedSkills",
       "skillTree",
+      "metaDamageLevel",
+      "metaKnockbackLevel",
+      "metaHpLevel",
+      "metaLifeStealLevel",
+      "metaSkillRegenLevel",
     ];
 
     const saveData = readBack?.saveData;

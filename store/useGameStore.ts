@@ -2,12 +2,14 @@
 
 import { create } from "zustand";
 import type {
+  MetaTreeUpgradeType,
   SaveData,
   SkillsData,
   SkillUpgradeType,
   UnlockedSkillsData,
 } from "@/db/schema";
 import {
+  DEFAULT_META_TREE,
   DEFAULT_SKILLS_DATA,
   DEFAULT_UNLOCKED_SKILLS,
 } from "@/db/schema";
@@ -51,8 +53,10 @@ export type EffectiveStats = {
   arms: number;
   /** Nível de life steal (cada nível = +1% do dano causado). */
   lifeStealLevel: number;
-  /** Fração de cura sobre dano (0.01 = 1%). */
+  /** Fração de cura sobre dano físico (árvore + meta diamantes). */
   lifeStealPercent: number;
+  /** Nível meta de regeneração por skill. */
+  metaSkillRegenLevel: number;
   /** Chance crítica efetiva (0–0.5). */
   critChance: number;
   /** Multiplicador de dano crítico. */
@@ -110,6 +114,12 @@ export type GameStoreState = {
   skillLevels: SkillsData;
   /** Desbloqueio permanente na base (Diamantes Normais). */
   unlockedSkills: UnlockedSkillsData;
+  /** Árvore de atributos permanentes (Diamantes Normais). */
+  metaDamageLevel: number;
+  metaKnockbackLevel: number;
+  metaHpLevel: number;
+  metaLifeStealLevel: number;
+  metaSkillRegenLevel: number;
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
   /** Lista de dificuldades do Neon. */
@@ -158,6 +168,9 @@ export type GameStoreState = {
   upgradeCritDamage: () => boolean;
   /** Upgrade de XP com diamantes. */
   upgradeXpBonus: () => boolean;
+  /** Upgrade da árvore de atributos (Diamantes Normais). */
+  upgradeMetaTree: (type: MetaTreeUpgradeType) => boolean;
+  getMetaTreeUpgradeCost: (type: MetaTreeUpgradeType) => number;
   getHpUpgradeCost: () => number;
   getDamageUpgradeCost: () => number;
   getAttackSpeedUpgradeCost: () => number;
@@ -222,6 +235,17 @@ export const MAX_UPGRADE_LEVELS = {
   range: 10,
 } as const;
 
+/** Árvore de atributos permanentes (Diamantes Normais). */
+export const MAX_META_TREE_LEVEL = 20;
+export const META_TREE_COST_BASE = 5;
+export const META_DAMAGE_PER_LEVEL = 3;
+export const META_HP_PER_LEVEL = 15;
+export const META_KNOCKBACK_PER_LEVEL = 1.5;
+/** Pontos percentuais por nível (0.5 → 0.5%). */
+export const META_LIFE_STEAL_PERCENT_PER_LEVEL = 0.5;
+export const META_SKILL_REGEN_DAMAGE_RATIO = 0.01;
+export const META_SKILL_REGEN_HIT_HEAL = 0.5;
+
 /** @deprecated Prefer MAX_UPGRADE_LEVELS.attackSpeed / .range */
 const MAX_STAT_LEVEL = MAX_UPGRADE_LEVELS.attackSpeed;
 
@@ -257,6 +281,43 @@ export function getUpgradeCost(baseCost: number, currentLevel: number): number {
       baseCost * Math.pow(UPGRADE_COST_GROWTH, Math.max(0, currentLevel)),
     ),
   );
+}
+
+export function getMetaTreeCostAt(level: number): number {
+  return getUpgradeCost(META_TREE_COST_BASE, level);
+}
+
+export function getMetaLifeStealRatio(level: number): number {
+  return (
+    Math.max(0, level) * (META_LIFE_STEAL_PERCENT_PER_LEVEL / 100)
+  );
+}
+
+/** Cura por dano/hits de skills especiais (Gelo/Fogo/Raio/Ricochete). */
+export function getMetaSkillRegenHealing(
+  level: number,
+  skillDamageDealt: number,
+  skillHitsLanded: number,
+): number {
+  if (level <= 0) return 0;
+  return (
+    Math.max(0, skillDamageDealt) *
+      (META_SKILL_REGEN_DAMAGE_RATIO * level) +
+    Math.max(0, skillHitsLanded) * (META_SKILL_REGEN_HIT_HEAL * level)
+  );
+}
+
+function getMetaTreeLevel(
+  state: {
+    metaDamageLevel: number;
+    metaKnockbackLevel: number;
+    metaHpLevel: number;
+    metaLifeStealLevel: number;
+    metaSkillRegenLevel: number;
+  },
+  type: MetaTreeUpgradeType,
+): number {
+  return state[type];
 }
 
 export function getPurpleSkillCostAt(level: number): number {
@@ -457,6 +518,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   skillTree: { ...DEFAULT_SKILL_TREE },
   skillLevels: { ...DEFAULT_SKILLS_DATA },
   unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+  metaDamageLevel: defaults.metaDamageLevel,
+  metaKnockbackLevel: defaults.metaKnockbackLevel,
+  metaHpLevel: defaults.metaHpLevel,
+  metaLifeStealLevel: defaults.metaLifeStealLevel,
+  metaSkillRegenLevel: defaults.metaSkillRegenLevel,
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
@@ -488,6 +554,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
       skillLevels: { ...DEFAULT_SKILLS_DATA, ...n.skillLevels },
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
+      metaDamageLevel: n.metaDamageLevel,
+      metaKnockbackLevel: n.metaKnockbackLevel,
+      metaHpLevel: n.metaHpLevel,
+      metaLifeStealLevel: n.metaLifeStealLevel,
+      metaSkillRegenLevel: n.metaSkillRegenLevel,
     });
   },
 
@@ -499,6 +570,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...DEFAULT_SKILL_TREE },
       skillLevels: { ...DEFAULT_SKILLS_DATA },
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+      ...DEFAULT_META_TREE,
     }),
 
   getSaveSnapshot: () => {
@@ -524,6 +596,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...s.skillTree },
       skillLevels: { ...s.skillLevels },
       unlockedSkills: { ...s.unlockedSkills },
+      metaDamageLevel: s.metaDamageLevel,
+      metaKnockbackLevel: s.metaKnockbackLevel,
+      metaHpLevel: s.metaHpLevel,
+      metaLifeStealLevel: s.metaLifeStealLevel,
+      metaSkillRegenLevel: s.metaSkillRegenLevel,
     };
   },
 
@@ -674,8 +751,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getKnockbackUpgradeCost: () => getKnockbackCostAt(get().knockbackLevel),
 
-  getKnockbackPower: () =>
-    getKnockbackPowerAt(get().baseKnockbackPower, get().knockbackLevel),
+  getKnockbackPower: () => {
+    const s = get();
+    return (
+      getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
+      Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL
+    );
+  },
 
   getCritChanceUpgradeCost: () => getCritChanceCostAt(get().critChanceLevel),
 
@@ -690,8 +772,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getXpMultiplier: () => xpMultiplierAt(get().xpBonusLevel),
 
+  getMetaTreeUpgradeCost: (type) =>
+    getMetaTreeCostAt(getMetaTreeLevel(get(), type)),
+
+  upgradeMetaTree: (type) => {
+    const current = getMetaTreeLevel(get(), type);
+    if (current >= MAX_META_TREE_LEVEL) return false;
+    const cost = getMetaTreeCostAt(current);
+    if (get().gems < cost) return false;
+    set((s) => ({
+      gems: s.gems - cost,
+      [type]: current + 1,
+    }));
+    return true;
+  },
+
   /**
-   * Derived state: upgrades de ouro + bônus da skill tree.
+   * Derived state: upgrades de ouro + bônus da skill tree + árvore de diamantes.
    * Bases de CD/range/HP vêm de `baseConfig` (Neon).
    */
   getEffectiveStats: () => {
@@ -703,12 +800,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const skillRange = skillRangeBonus(tree);
     const skillCd = skillCooldownReduction(tree);
     const lifeStealLevel = getLifeStealLevel(tree);
+    const metaLifeSteal = getMetaLifeStealRatio(s.metaLifeStealLevel);
     const ricochet = getRicochetConfig(
       tree,
       s.skillLevels.ricochet,
     );
 
     const goldHp = cfg.baseHp + (s.maxHpLevel - 1) * HP_PER_LEVEL;
+    const metaHp = Math.max(0, s.metaHpLevel) * META_HP_PER_LEVEL;
+    const metaDamage = Math.max(0, s.metaDamageLevel) * META_DAMAGE_PER_LEVEL;
     const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
     const goldCooldown = cooldownAtLevel(
       s.attackSpeedLevel,
@@ -716,8 +816,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     );
 
     return {
-      maxHp: Math.round(goldHp + skillHp),
-      damage: Math.round(s.baseDamage + skillDmg),
+      maxHp: Math.round(goldHp + skillHp + metaHp),
+      damage: Math.round(s.baseDamage + skillDmg + metaDamage),
       attackRange: Math.min(
         MAX_ATTACK_RANGE,
         Math.round(goldRange + skillRange),
@@ -729,17 +829,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       xpMultiplier: xpMultiplierAt(s.xpBonusLevel),
       arms: s.arms,
       lifeStealLevel,
-      lifeStealPercent: lifeStealLevel * 0.01,
+      lifeStealPercent: lifeStealLevel * 0.01 + metaLifeSteal,
+      metaSkillRegenLevel: s.metaSkillRegenLevel,
       critChance: getCritChanceAt(s.critChanceLevel),
       critDamageMultiplier: getCritDamageMultiplierAt(s.critDamageLevel),
       ricochetUnlocked: s.unlockedSkills.ricochet,
       ricochetCooldown: ricochet.cooldownMs,
       maxBounces: ricochet.maxBounces,
       bounceDamagePercent: ricochet.bounceDamagePercent,
-      knockbackPower: getKnockbackPowerAt(
-        s.baseKnockbackPower,
-        s.knockbackLevel,
-      ),
+      knockbackPower:
+        getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
+        Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL,
       skillBonus: {
         hp: skillHp,
         damage: skillDmg,

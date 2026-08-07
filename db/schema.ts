@@ -45,6 +45,25 @@ export const DEFAULT_UNLOCKED_SKILLS: UnlockedSkillsData = {
   lightning: false,
 };
 
+/** Árvore de atributos permanentes (Diamantes Normais). */
+export type MetaTreeData = {
+  metaDamageLevel: number;
+  metaKnockbackLevel: number;
+  metaHpLevel: number;
+  metaLifeStealLevel: number;
+  metaSkillRegenLevel: number;
+};
+
+export type MetaTreeUpgradeType = keyof MetaTreeData;
+
+export const DEFAULT_META_TREE: MetaTreeData = {
+  metaDamageLevel: 0,
+  metaKnockbackLevel: 0,
+  metaHpLevel: 0,
+  metaLifeStealLevel: 0,
+  metaSkillRegenLevel: 0,
+};
+
 /** Progresso persistido (ouro, gemas, upgrades) — espelha o useGameStore. */
 export type SaveData = {
   gold: number;
@@ -80,6 +99,12 @@ export type SaveData = {
   skillLevels: SkillsData;
   /** Skills liberadas na base (Diamantes Normais) para a roleta in-game. */
   unlockedSkills: UnlockedSkillsData;
+  /** Árvore de atributos permanentes (Diamantes Normais). */
+  metaDamageLevel: number;
+  metaKnockbackLevel: number;
+  metaHpLevel: number;
+  metaLifeStealLevel: number;
+  metaSkillRegenLevel: number;
 };
 
 export const gameSaves = pgTable("game_saves", {

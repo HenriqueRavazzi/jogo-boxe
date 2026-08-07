@@ -11,13 +11,17 @@ import {
 import type { QuestProgressEvent } from "@/lib/quests";
 import { getLifeStealRatio, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
 import {
+  getMetaLifeStealRatio,
+  getMetaSkillRegenHealing,
+  useGameStore,
+} from "@/store/useGameStore";
+import {
   createActiveSkillPulseState,
   isRicochetActive,
   LIGHTNING_LINK_RADIUS,
   runActiveSkills,
   type ActiveSkillPulseState,
 } from "@/src/game/systems/ActiveSkillsSystem";
-import { useGameStore } from "@/store/useGameStore";
 import type { SkillsData } from "@/db/schema";
 import { DEFAULT_SKILLS_DATA } from "@/db/schema";
 
@@ -216,7 +220,10 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const lightningTargets = 2 + skillLevels.lightning;
   const shockSlowAmount = Math.min(0.85, 0.2 + skillLevels.lightning * 0.1);
   const fireLevel = matchSkills.fire;
-  const lifeStealRatio = getLifeStealRatio(gameState.skillTree);
+  const lifeStealRatio =
+    getLifeStealRatio(gameState.skillTree) +
+    getMetaLifeStealRatio(gameState.metaLifeStealLevel);
+  const metaSkillRegenLevel = gameState.metaSkillRegenLevel;
   // Ricochete periódico: janela 2s / ciclo 25s (gerenciada em ActiveSkillsSystem)
   const maxBounces = 2 + skillLevels.ricochet;
   const bounceDamageMult = 0.6 + skillLevels.ricochet * 0.15;
@@ -392,6 +399,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   let living = enemies.filter((e) => !e.isDead);
 
   let lightningDamageDealt = 0;
+  let skillDamageDealt = activeSkills.skillDamageDealt;
+  let skillHitsLanded = activeSkills.skillHitsLanded;
   for (const hit of activeSkills.lightningHits) {
     lightningDamageDealt += hit.damage;
     hitSplats.push({
@@ -404,8 +413,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     });
   }
 
-  const applyLifeSteal = (damageDealt: number) => {
-    const healingAmount = damageDealt * lifeStealRatio;
+  const applyHealingSplat = (healingAmount: number) => {
     if (healingAmount <= 0 || player.isDead) return;
     const hpBefore = player.hp;
     player.heal(healingAmount);
@@ -422,9 +430,23 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   };
 
-  if (lightningDamageDealt > 0) {
-    applyLifeSteal(lightningDamageDealt);
+  const applyLifeSteal = (damageDealt: number) => {
+    applyHealingSplat(damageDealt * lifeStealRatio);
+  };
+
+  const applySkillRegen = (damage: number, hits: number) => {
+    applyHealingSplat(
+      getMetaSkillRegenHealing(metaSkillRegenLevel, damage, hits),
+    );
+  };
+
+  // Regen por skill dos pulsos ativos (raio/gelo/fogo) — não usa life steal físico
+  if (skillDamageDealt > 0 || skillHitsLanded > 0) {
+    applySkillRegen(skillDamageDealt, skillHitsLanded);
+    skillDamageDealt = 0;
+    skillHitsLanded = 0;
   }
+  void lightningDamageDealt;
 
   const effectiveCooldown = baseAttackSpeed / matchBuffs.attackSpeed;
   const canAttack = now >= lastAttackTime + effectiveCooldown;
@@ -447,9 +469,20 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       const critMult = useGameStore.getState().getCritDamageMultiplier();
       /** Dano acumulado por id (primário + chain). */
       const damageById = new Map<string, number>();
+      /** Dano físico comum (socos) para life steal. */
+      const physicalById = new Map<string, number>();
+      /** Dano de skills (ricochete / cadeia de raio) para regen. */
+      const skillById = new Map<string, number>();
+      let punchSkillHits = 0;
 
-      const addDamage = (id: string, amount: number) => {
+      const addDamage = (id: string, amount: number, kind: "physical" | "skill") => {
         damageById.set(id, (damageById.get(id) ?? 0) + amount);
+        if (kind === "physical") {
+          physicalById.set(id, (physicalById.get(id) ?? 0) + amount);
+        } else {
+          skillById.set(id, (skillById.get(id) ?? 0) + amount);
+          punchSkillHits += 1;
+        }
       };
 
       // Olha para o último alvo do lote neste tick
@@ -515,7 +548,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           scale: isCrit ? 1.4 : 1,
         });
 
-        addDamage(enemy.id, damage);
+        addDamage(enemy.id, damage, "physical");
 
         // Ricochete ativo: cadeia a partir do alvo do soco
         if (ricochetWindowActive && maxBounces > 1) {
@@ -560,7 +593,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
               color: "#fbbf24",
             });
 
-            addDamage(target.id, bounceDamage);
+            addDamage(target.id, bounceDamage, "skill");
             target.applyKnockback(
               target.x - prevX,
               target.y - prevY,
@@ -626,7 +659,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           for (const { enemy: chained } of chainTargets) {
             chained.applyShockSlow(shockSlowAmount, now);
             questEvents.push({ type: "inflict_shock", amount: 1 });
-            addDamage(chained.id, chainDamage);
+            addDamage(chained.id, chainDamage, "skill");
             hitSplats.push({
               id: crypto.randomUUID(),
               x: chained.x,
@@ -642,15 +675,23 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       nextPunchSide = punchSide;
 
       const nextLiving: Enemy[] = [];
-      let damageDealt = 0;
+      let physicalDealt = 0;
+      let skillDealt = 0;
       for (const enemy of living) {
         const dealt = damageById.get(enemy.id);
         if (dealt == null || dealt <= 0) {
           nextLiving.push(enemy);
           continue;
         }
-        // HP removido de fato (não conta overkill)
-        damageDealt += Math.min(dealt, Math.max(0, enemy.hp));
+        const hpBefore = Math.max(0, enemy.hp);
+        const physicalPart = physicalById.get(enemy.id) ?? 0;
+        const skillPart = skillById.get(enemy.id) ?? 0;
+        // HP removido de fato (não conta overkill), rateado entre físico e skill
+        const absorbed = Math.min(dealt, hpBefore);
+        if (dealt > 0 && absorbed > 0) {
+          physicalDealt += absorbed * (physicalPart / dealt);
+          skillDealt += absorbed * (skillPart / dealt);
+        }
         if (enemy.takeDamage(dealt)) {
           pushKill(enemy);
         } else {
@@ -659,7 +700,10 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       }
       living = nextLiving;
 
-      applyLifeSteal(damageDealt);
+      applyLifeSteal(physicalDealt);
+      if (skillDealt > 0 || punchSkillHits > 0) {
+        applySkillRegen(skillDealt, punchSkillHits);
+      }
     }
   }
 

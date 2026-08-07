@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Coins, Gem } from "lucide-react";
+import { MetaTreePanel } from "@/components/MetaTreePanel";
 import { SaveMenu } from "@/components/SaveMenu";
 import { UpgradePanel } from "@/components/UpgradePanel";
 import { useGameStore } from "@/store/useGameStore";
@@ -14,6 +16,8 @@ type MainMenuProps = {
   /** Game Over → menu + sync (mesmo fluxo de Sair da Partida). */
   onReturnToMenu?: () => void;
 };
+
+type UpgradeTab = "gold" | "diamonds";
 
 /**
  * Menu principal: saves dinâmicos, START, upgrades e skill tree.
@@ -32,6 +36,7 @@ export function MainMenu({
   const selectedDifficultyId = useGameStore((s) => s.selectedDifficultyId);
   const setSelectedDifficulty = useGameStore((s) => s.setSelectedDifficulty);
   const configsLoaded = useGameStore((s) => s.configsLoaded);
+  const [upgradeTab, setUpgradeTab] = useState<UpgradeTab>("gold");
 
   const selected = difficulties.find((d) => d.id === selectedDifficultyId);
 
@@ -147,14 +152,39 @@ export function MainMenu({
         </div>
       </aside>
 
-      {/* Área central: upgrades com ouro (interativos no menu) */}
+      {/* Área central: upgrades ouro / árvore de diamantes */}
       {!isGameOver && (
         <div className="pointer-events-none relative hidden flex-1 sm:block">
-          <div className="pointer-events-auto absolute inset-x-4 bottom-4 top-auto max-h-[55%] overflow-y-auto rounded-2xl border border-white/10 bg-black/50 p-3 backdrop-blur-sm">
-            <p className="mb-2 px-1 text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
-              Upgrades (Ouro)
-            </p>
-            <UpgradePanel embedded />
+          <div className="pointer-events-auto absolute inset-x-4 bottom-4 top-auto max-h-[60%] overflow-y-auto rounded-2xl border border-white/10 bg-black/50 p-3 backdrop-blur-sm">
+            <div className="mb-2 flex items-center gap-1 px-1">
+              <button
+                type="button"
+                onClick={() => setUpgradeTab("gold")}
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition ${
+                  upgradeTab === "gold"
+                    ? "bg-amber-500/20 text-amber-200"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Ouro
+              </button>
+              <button
+                type="button"
+                onClick={() => setUpgradeTab("diamonds")}
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition ${
+                  upgradeTab === "diamonds"
+                    ? "bg-cyan-500/20 text-cyan-200"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Diamantes
+              </button>
+            </div>
+            {upgradeTab === "gold" ? (
+              <UpgradePanel embedded />
+            ) : (
+              <MetaTreePanel embedded />
+            )}
           </div>
         </div>
       )}
