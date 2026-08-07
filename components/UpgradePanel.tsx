@@ -1,13 +1,22 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Coins, HeartPulse, Hand, Swords } from "lucide-react";
+import {
+  Coins,
+  Crosshair,
+  Gauge,
+  Hand,
+  HeartPulse,
+  Swords,
+} from "lucide-react";
 import { useGameStore } from "@/store/useGameStore";
 
 /** Painel inferior com cards de upgrade. */
 export function UpgradePanel() {
   const maxHpLevel = useGameStore((s) => s.maxHpLevel);
   const baseDamageLevel = useGameStore((s) => s.baseDamageLevel);
+  const baseAttackSpeed = useGameStore((s) => s.baseAttackSpeed);
+  const baseRange = useGameStore((s) => s.baseRange);
   const arms = useGameStore((s) => s.arms);
   const armTier = useGameStore((s) => s.armTier);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
@@ -15,10 +24,16 @@ export function UpgradePanel() {
 
   const getHpUpgradeCost = useGameStore((s) => s.getHpUpgradeCost);
   const getDamageUpgradeCost = useGameStore((s) => s.getDamageUpgradeCost);
+  const getAttackSpeedUpgradeCost = useGameStore(
+    (s) => s.getAttackSpeedUpgradeCost,
+  );
+  const getRangeUpgradeCost = useGameStore((s) => s.getRangeUpgradeCost);
   const getIncomeUpgradeCost = useGameStore((s) => s.getIncomeUpgradeCost);
   const getArmsUpgradeCost = useGameStore((s) => s.getArmsUpgradeCost);
   const upgradeHP = useGameStore((s) => s.upgradeHP);
   const upgradeDamage = useGameStore((s) => s.upgradeDamage);
+  const upgradeAttackSpeed = useGameStore((s) => s.upgradeAttackSpeed);
+  const upgradeRange = useGameStore((s) => s.upgradeRange);
   const upgradeIncome = useGameStore((s) => s.upgradeIncome);
   const upgradeArms = useGameStore((s) => s.upgradeArms);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
@@ -26,12 +41,15 @@ export function UpgradePanel() {
 
   const hpCost = getHpUpgradeCost();
   const damageCost = getDamageUpgradeCost();
+  const speedCost = getAttackSpeedUpgradeCost();
+  const rangeCost = getRangeUpgradeCost();
   const incomeCost = getIncomeUpgradeCost();
   const armsCost = getArmsUpgradeCost();
+  const speedMaxed = baseAttackSpeed <= 200;
 
   return (
     <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4">
-      <div className="pointer-events-auto mx-auto grid max-w-4xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="pointer-events-auto mx-auto grid max-w-5xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         <UpgradeCard
           icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
           title={`Max HP: Nível ${maxHpLevel}`}
@@ -47,6 +65,22 @@ export function UpgradePanel() {
           cost={damageCost}
           canAfford={gold >= damageCost}
           onUpgrade={upgradeDamage}
+        />
+        <UpgradeCard
+          icon={<Gauge className="h-5 w-5 text-lime-400" />}
+          title={`Attack Speed: ${baseAttackSpeed}ms`}
+          subtitle={speedMaxed ? "Cooldown mínimo atingido" : "Menor cooldown"}
+          cost={speedCost}
+          canAfford={!speedMaxed && gold >= speedCost}
+          onUpgrade={upgradeAttackSpeed}
+        />
+        <UpgradeCard
+          icon={<Crosshair className="h-5 w-5 text-orange-400" />}
+          title={`Range: ${baseRange}px`}
+          subtitle="Alcance do auto-ataque"
+          cost={rangeCost}
+          canAfford={gold >= rangeCost}
+          onUpgrade={upgradeRange}
         />
         <UpgradeCard
           icon={<Coins className="h-5 w-5 text-yellow-400" />}

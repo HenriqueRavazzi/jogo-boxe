@@ -158,11 +158,13 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.fill();
       }
 
-      // Inimigos (círculos vermelhos)
+      // Inimigos: cor pelo HP (vermelho vivo → quase preto)
       for (const enemy of enemies) {
+        const hpPercent = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
+        const red = Math.floor(255 * hpPercent);
         ctx.beginPath();
         ctx.arc(enemy.x, enemy.y, ENEMY_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = "#e11d48";
+        ctx.fillStyle = `rgb(${red}, 0, 0)`;
         ctx.fill();
       }
 
