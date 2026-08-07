@@ -1,5 +1,7 @@
 import { jsonb, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
+import type { SkillTreeState } from "@/lib/skillTree";
+
 /** Progresso persistido (ouro, gemas, upgrades) — espelha o useGameStore. */
 export type SaveData = {
   gold: number;
@@ -11,6 +13,7 @@ export type SaveData = {
   arms: number;
   armTier: number;
   incomeMultiplier: number;
+  skillTree: SkillTreeState;
 };
 
 export const gameSaves = pgTable("game_saves", {

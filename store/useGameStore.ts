@@ -2,6 +2,12 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  DEFAULT_SKILL_TREE,
+  canUnlockSkill,
+  type SkillNodeId,
+  type SkillTreeState,
+} from "@/lib/skillTree";
 
 /** Estado persistente — espelha o JSONB `save_data` no banco. */
 export type GameStoreState = {
@@ -18,8 +24,10 @@ export type GameStoreState = {
   /** Tier/nível dos braços (sobe ao completar o ciclo de 6). */
   armTier: number;
   incomeMultiplier: number;
+  skillTree: SkillTreeState;
   addGold: (baseAmount: number) => void;
   addGems: (amount: number) => void;
+  unlockSkill: (nodeId: SkillNodeId, cost: number) => boolean;
   upgradeHP: () => boolean;
   upgradeDamage: () => boolean;
   upgradeAttackSpeed: () => boolean;
@@ -60,6 +68,33 @@ const BASE_RANGE = 100;
 const RANGE_STEP = 15;
 const RANGE_COST_BASE = 60;
 
+function skillHpBonus(tree: SkillTreeState): number {
+  let bonus = 0;
+  if (tree.node_hp_1) bonus += 25;
+  if (tree.node_hp_2) bonus += 50;
+  if (tree.node_iron_guard) bonus += 40;
+  return bonus;
+}
+
+function skillDamageBonus(tree: SkillTreeState): number {
+  let bonus = 0;
+  if (tree.node_dmg_1) bonus += 5;
+  if (tree.node_dmg_2) bonus += 10;
+  return bonus;
+}
+
+function skillRangeBonus(tree: SkillTreeState): number {
+  return tree.node_range_focus ? 25 : 0;
+}
+
+function skillCooldownReduction(tree: SkillTreeState): number {
+  let reduction = 0;
+  if (tree.node_spark_ignition) reduction += 50;
+  if (tree.node_spark_burst) reduction += 75;
+  if (tree.node_spark_fury) reduction += 100;
+  return reduction;
+}
+
 export const useGameStore = create<GameStoreState>()(
   persist(
     (set, get) => ({
@@ -72,6 +107,7 @@ export const useGameStore = create<GameStoreState>()(
       arms: ARMS_MIN,
       armTier: 1,
       incomeMultiplier: 1,
+      skillTree: { ...DEFAULT_SKILL_TREE },
 
       addGold: (baseAmount) =>
         set((s) => ({
@@ -79,6 +115,18 @@ export const useGameStore = create<GameStoreState>()(
         })),
 
       addGems: (amount) => set((s) => ({ gems: s.gems + amount })),
+
+      unlockSkill: (nodeId, cost) => {
+        const { skillTree, gold } = get();
+        if (!canUnlockSkill(skillTree, nodeId, gold)) return false;
+        if (cost > gold) return false;
+
+        set((s) => ({
+          gold: s.gold - cost,
+          skillTree: { ...s.skillTree, [nodeId]: true },
+        }));
+        return true;
+      },
 
       getHpUpgradeCost: () => get().maxHpLevel * UPGRADE_COST_BASE,
 
@@ -108,14 +156,23 @@ export const useGameStore = create<GameStoreState>()(
         return (purchasesDone + 1) * ARMS_COST_BASE;
       },
 
-      getMaxHp: () => HP_BASE + (get().maxHpLevel - 1) * HP_PER_LEVEL,
+      getMaxHp: () =>
+        HP_BASE +
+        (get().maxHpLevel - 1) * HP_PER_LEVEL +
+        skillHpBonus(get().skillTree),
 
       getBaseDamage: () =>
-        DAMAGE_BASE + (get().baseDamageLevel - 1) * DAMAGE_PER_LEVEL,
+        DAMAGE_BASE +
+        (get().baseDamageLevel - 1) * DAMAGE_PER_LEVEL +
+        skillDamageBonus(get().skillTree),
 
-      getAttackRange: () => get().baseRange,
+      getAttackRange: () => get().baseRange + skillRangeBonus(get().skillTree),
 
-      getAttackCooldown: () => get().baseAttackSpeed,
+      getAttackCooldown: () =>
+        Math.max(
+          ATTACK_SPEED_MIN_MS,
+          get().baseAttackSpeed - skillCooldownReduction(get().skillTree),
+        ),
 
       upgradeHP: () => {
         const cost = get().getHpUpgradeCost();
@@ -204,6 +261,10 @@ export const useGameStore = create<GameStoreState>()(
               ? p.baseAttackSpeed
               : BASE_ATTACK_SPEED_MS,
           baseRange: typeof p.baseRange === "number" ? p.baseRange : BASE_RANGE,
+          skillTree: {
+            ...DEFAULT_SKILL_TREE,
+            ...(p.skillTree ?? {}),
+          },
         };
       },
     },

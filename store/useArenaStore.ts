@@ -301,17 +301,17 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeAttacks,
       matchBuffs,
     } = get();
-    const { arms, armTier, baseRange, baseAttackSpeed } =
+    const { arms, armTier, getAttackRange, getAttackCooldown, getBaseDamage } =
       useGameStore.getState();
 
     if (enemies.length === 0) return false;
 
-    // Cooldown efetivo: baseAttackSpeed / buff de velocidade
-    const effectiveCooldown = baseAttackSpeed / matchBuffs.attackSpeed;
+    // Cooldown efetivo: base (com talents) / buff de velocidade
+    const effectiveCooldown = getAttackCooldown() / matchBuffs.attackSpeed;
     if (now < lastAttackTime + effectiveCooldown) return false;
 
-    // Alcance efetivo: baseRange * buff de range
-    const effectiveRange = baseRange * matchBuffs.attackRange;
+    // Alcance efetivo: base (com talents) * buff de range
+    const effectiveRange = getAttackRange() * matchBuffs.attackRange;
 
     const inRange = enemies
       .map((enemy) => ({
@@ -325,7 +325,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     if (inRange.length === 0) return false;
 
     const damage =
-      baseDamage * armTier * matchBuffs.damageMultiplier;
+      (baseDamage || getBaseDamage()) * armTier * matchBuffs.damageMultiplier;
     const hitIds = new Set(inRange.map(({ enemy }) => enemy.id));
     const newAttacks: ActiveAttack[] = inRange.map(({ enemy }) => ({
       targetX: enemy.x,
