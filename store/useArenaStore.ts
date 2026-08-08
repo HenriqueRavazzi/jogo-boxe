@@ -14,17 +14,23 @@ import {
   type MatchUpgrade,
   type UpgradeType,
 } from "@/lib/matchUpgrades";
-import { DEFAULT_SKILLS_DATA, type SkillsData } from "@/db/schema";
+import {
+  DEFAULT_MATCH_SKILLS,
+  type MatchSkillsData,
+} from "@/db/schema";
 import {
   getArmDistribution,
   getArmRestPosition,
   pickNextPunchSide,
 } from "@/src/game/entities/Player";
-import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import {
   createActiveSkillPulseState,
   type ActiveSkillPulseState,
+  type LightningProjectile,
+  type SkillVfxEffect,
 } from "@/src/game/systems/ActiveSkillsSystem";
+import type { RicochetPathEffect } from "@/src/game/systems/CombatSystem";
+import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import { useGameStore } from "@/store/useGameStore";
 
 export type { ActiveQuest, QuestProgressEvent } from "@/lib/quests";
@@ -35,6 +41,7 @@ export type EnemyStatusEffect = {
   type: "freeze" | "shock" | "burn";
   expiresAt: number;
   burnDps?: number;
+  burnStacks?: number;
   slowAmount?: number;
 };
 
@@ -117,6 +124,8 @@ export type MatchBuffs = {
   attackSpeed: number;
   attackRange: number;
   damageMultiplier: number;
+  critDamageMultiplier: number;
+  skillDamageMultiplier: number;
 };
 
 export type GameState = "menu" | "playing" | "gameover" | "level_up";
@@ -125,6 +134,8 @@ const DEFAULT_BUFFS: MatchBuffs = {
   attackSpeed: 1,
   attackRange: 1,
   damageMultiplier: 1,
+  critDamageMultiplier: 1,
+  skillDamageMultiplier: 1,
 };
 
 const EMPTY_RUN_STATS: RunStats = {
@@ -152,6 +163,8 @@ export type ArenaStoreState = {
   lastRicochetTime: number;
   activeAttacks: ActiveAttack[];
   floatingTexts: FloatingText[];
+  /** Traços ciano da cadeia de ricochete (curta duração). */
+  ricochetPathEffects: RicochetPathEffect[];
   shakeFrames: number;
   /** Tempo vivo na partida atual (segundos). */
   timeAlive: number;
@@ -163,12 +176,14 @@ export type ArenaStoreState = {
    * Níveis de skills especiais ativos nesta run (começa em 0).
    * Só sobem ao escolher cartas de level-up.
    */
-  matchSkills: SkillsData;
-  /** Timers / janelas ativas de Gelo e Fogo periódicos. */
+  matchSkills: MatchSkillsData;
+  /** Timers / janelas ativas de Gelo / Raio / Ricochete. */
   activeSkillPulse: ActiveSkillPulseState;
+  /** Projéteis elétricos do Raio. */
+  lightningProjectiles: LightningProjectile[];
+  /** VFX temporários (gelo / raio). */
+  skillVfxEffects: SkillVfxEffect[];
   levelUpOptions: MatchUpgrade[];
-  /** Multiplicador de velocidade da partida (1 ou 2). */
-  gameSpeed: number;
   /** Estatísticas da run atual. */
   runStats: RunStats;
   /** Quantos bosses já foram invocados nesta run (ciclos de 240s / 4 min). */
@@ -184,7 +199,6 @@ export type ArenaStoreState = {
   /** Volta ao menu mantendo o progresso persistente (claim & exit). */
   exitMatch: () => void;
   togglePause: () => void;
-  toggleGameSpeed: () => void;
   recordEnemyDefeats: (count: number) => void;
   recordLootCollected: (gold: number, diamonds: number) => void;
   /** Incrementa progresso das quests a partir de eventos de combate. */
@@ -248,12 +262,18 @@ function randomEdgePosition(canvasWidth: number, canvasHeight: number) {
   }
 }
 
-function rollLevelUpOptions(matchSkills: SkillsData): MatchUpgrade[] {
+function rollLevelUpOptions(
+  matchSkills: MatchSkillsData,
+  matchBuffs: MatchBuffs,
+): MatchUpgrade[] {
   const game = useGameStore.getState();
+  const stats = game.getEffectiveStats();
   return generateUpgradeOptions(3, {
     unlockedSkills: game.unlockedSkills,
     matchSkills,
-    skillLevels: game.skillLevels,
+    skills: game.skills,
+    effectiveRange: stats.attackRange * matchBuffs.attackRange,
+    effectiveCooldownMs: stats.attackCooldownMs / matchBuffs.attackSpeed,
   });
 }
 
@@ -270,12 +290,13 @@ function enterLevelUp(
 ) {
   // Recompensa de diamante por level up in-match
   useGameStore.getState().addGems(1);
+  const state = get();
   set({
     currentXp: xp,
     xpToNextLevel,
     matchLevel,
     gameState: "level_up",
-    levelUpOptions: rollLevelUpOptions(get().matchSkills),
+    levelUpOptions: rollLevelUpOptions(state.matchSkills, state.matchBuffs),
   });
 }
 
@@ -293,16 +314,18 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   lastRicochetTime: 0,
   activeAttacks: [],
   floatingTexts: [],
+  ricochetPathEffects: [],
   shakeFrames: 0,
   timeAlive: 0,
   currentXp: 0,
   xpToNextLevel: BASE_XP_TO_LEVEL,
   matchLevel: 1,
   matchBuffs: { ...DEFAULT_BUFFS },
-  matchSkills: { ...DEFAULT_SKILLS_DATA },
+  matchSkills: { ...DEFAULT_MATCH_SKILLS },
   activeSkillPulse: createActiveSkillPulseState(),
+  lightningProjectiles: [],
+  skillVfxEffects: [],
   levelUpOptions: [],
-  gameSpeed: 1,
   runStats: { ...EMPTY_RUN_STATS },
   bossesSpawned: 0,
   bossesKilled: 0,
@@ -326,16 +349,18 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
+      ricochetPathEffects: [],
       shakeFrames: 0,
       timeAlive: 0,
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
-      matchSkills: { ...DEFAULT_SKILLS_DATA },
+      matchSkills: { ...DEFAULT_MATCH_SKILLS },
       activeSkillPulse: createActiveSkillPulseState(),
+      lightningProjectiles: [],
+      skillVfxEffects: [],
       levelUpOptions: [],
-      gameSpeed: 1,
       runStats: { ...EMPTY_RUN_STATS },
       bossesSpawned: 0,
       bossesKilled: 0,
@@ -358,6 +383,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
+      ricochetPathEffects: [],
       shakeFrames: 0,
       levelUpOptions: [],
       bossesSpawned: 0,
@@ -365,6 +391,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeQuests: [],
       isPaused: false,
       activeSkillPulse: createActiveSkillPulseState(),
+      lightningProjectiles: [],
+      skillVfxEffects: [],
     }),
 
   /** Claim & exit: limpa a arena e volta ao menu (ouro/gems já estão no useGameStore). */
@@ -379,6 +407,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
+      ricochetPathEffects: [],
       shakeFrames: 0,
       timeAlive: 0,
       currentXp: 0,
@@ -390,10 +419,11 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       isPaused: false,
       playerRotation: -Math.PI / 2,
       matchBuffs: { ...DEFAULT_BUFFS },
-      matchSkills: { ...DEFAULT_SKILLS_DATA },
+      matchSkills: { ...DEFAULT_MATCH_SKILLS },
       activeSkillPulse: createActiveSkillPulseState(),
+      lightningProjectiles: [],
+      skillVfxEffects: [],
       levelUpOptions: [],
-      gameSpeed: 1,
       runStats: { ...EMPTY_RUN_STATS },
       currentHp: useGameStore.getState().getEffectiveStats().maxHp,
     }),
@@ -403,9 +433,6 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     if (gameState !== "playing") return;
     set({ isPaused: !isPaused });
   },
-
-  toggleGameSpeed: () =>
-    set((s) => ({ gameSpeed: s.gameSpeed === 1 ? 2 : 1 })),
 
   recordEnemyDefeats: (count) => {
     if (count <= 0) return;
@@ -771,14 +798,17 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       lastRicochetTime: 0,
       activeAttacks: [],
       floatingTexts: [],
+      ricochetPathEffects: [],
       shakeFrames: 0,
       timeAlive: 0,
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
-      matchSkills: { ...DEFAULT_SKILLS_DATA },
+      matchSkills: { ...DEFAULT_MATCH_SKILLS },
       activeSkillPulse: createActiveSkillPulseState(),
+      lightningProjectiles: [],
+      skillVfxEffects: [],
       levelUpOptions: [],
       runStats: { ...EMPTY_RUN_STATS },
       bossesKilled: 0,

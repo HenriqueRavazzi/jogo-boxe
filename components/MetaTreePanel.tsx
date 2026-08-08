@@ -12,7 +12,9 @@ import {
 import type { MetaTreeUpgradeType } from "@/db/schema";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
-  MAX_META_TREE_LEVEL,
+  formatLevelLabel,
+  getMetaTreeMaxLevel,
+  isLevelCapped,
   META_DAMAGE_PER_LEVEL,
   META_HP_PER_LEVEL,
   META_KNOCKBACK_PER_LEVEL,
@@ -96,7 +98,8 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
         {CARDS.map((card) => {
           const level = levels[card.type];
           const cost = getMetaTreeUpgradeCost(card.type);
-          const atMax = level >= MAX_META_TREE_LEVEL;
+          const maxLevel = getMetaTreeMaxLevel(card.type);
+          const atMax = isLevelCapped(level, maxLevel);
           const canAfford = !atMax && gems >= cost;
 
           return (
@@ -113,9 +116,7 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
                   {card.title}
                 </span>
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-200/60">
-                  {atMax
-                    ? "Máx"
-                    : `Nv. ${level}/${MAX_META_TREE_LEVEL}`}
+                  {atMax ? "Máx" : formatLevelLabel(level, maxLevel)}
                 </span>
               </div>
               <p className="text-[11px] leading-snug text-zinc-400">

@@ -19,8 +19,10 @@ export type StatusEffectType = "freeze" | "shock" | "burn";
 export type StatusEffect = {
   type: StatusEffectType;
   expiresAt: number;
-  /** DPS de queimadura (burn). */
+  /** DPS de queimadura (burn) — soma das stacks. */
   burnDps?: number;
+  /** Pilhas de queimadura on-hit. */
+  burnStacks?: number;
   /** Fração de slow 0–1 (shock). */
   slowAmount?: number;
 };
@@ -197,18 +199,24 @@ export class Enemy {
 
   /**
    * Aplica ou renova um status (mantém a expiração mais longa).
-   * Meta opcional: burnDps / slowAmount.
+   * Meta opcional: burnDps / burnStacks / slowAmount.
    */
   applyStatus(
     type: StatusEffectType,
     expiresAt: number,
-    meta?: { burnDps?: number; slowAmount?: number },
+    meta?: { burnDps?: number; burnStacks?: number; slowAmount?: number },
   ): void {
     const existing = this.statusEffects.find((s) => s.type === type);
     if (existing) {
       existing.expiresAt = Math.max(existing.expiresAt, expiresAt);
       if (meta?.burnDps != null) {
         existing.burnDps = Math.max(existing.burnDps ?? 0, meta.burnDps);
+      }
+      if (meta?.burnStacks != null) {
+        existing.burnStacks = Math.max(
+          existing.burnStacks ?? 0,
+          meta.burnStacks,
+        );
       }
       if (meta?.slowAmount != null) {
         existing.slowAmount = Math.max(
@@ -222,13 +230,51 @@ export class Enemy {
       type,
       expiresAt,
       burnDps: meta?.burnDps,
+      burnStacks: meta?.burnStacks,
       slowAmount: meta?.slowAmount,
     });
   }
 
   applyBurn(burnDps: number, now: number, durationMs = BURN_DURATION_MS): void {
     if (burnDps <= 0) return;
-    this.applyStatus("burn", now + durationMs, { burnDps });
+    this.applyStatus("burn", now + durationMs, { burnDps, burnStacks: 1 });
+  }
+
+  /**
+   * On-hit: +1 stack de burn (teto = maxStacks). DPS = stacks × dpsPerStack.
+   */
+  applyBurnStack(
+    dpsPerStack: number,
+    maxStacks: number,
+    now: number,
+    durationMs = BURN_DURATION_MS,
+  ): number {
+    if (dpsPerStack <= 0 || maxStacks <= 0) return 0;
+    const cap = Math.max(1, Math.floor(maxStacks));
+    const existing = this.statusEffects.find((s) => s.type === "burn");
+    const prev = existing?.burnStacks ?? 0;
+    const next = Math.min(cap, prev + 1);
+    const burnDps = next * dpsPerStack;
+    if (existing) {
+      existing.burnStacks = next;
+      existing.burnDps = burnDps;
+      existing.expiresAt = now + durationMs;
+    } else {
+      this.statusEffects.push({
+        type: "burn",
+        expiresAt: now + durationMs,
+        burnDps,
+        burnStacks: next,
+      });
+    }
+    return next;
+  }
+
+  getBurnStacks(now: number): number {
+    const burn = this.statusEffects.find(
+      (s) => s.type === "burn" && s.expiresAt > now,
+    );
+    return burn?.burnStacks ?? 0;
   }
 
   applyShockSlow(

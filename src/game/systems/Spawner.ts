@@ -13,12 +13,16 @@ import {
 } from "@/src/game/entities/Enemy";
 
 export const BASE_ENEMY_HP = 30;
-/** A cada N segundos, novos inimigos ganham HP/dano composto. */
-export const ENEMY_HP_CYCLE_SECONDS = 15;
-/** +18% composto por ciclo de 15s (HP). */
-export const ENEMY_HP_GROWTH_PER_CYCLE = 1.18;
-/** +8% composto por ciclo de 15s (dano). */
-export const ENEMY_DAMAGE_GROWTH_PER_CYCLE = 1.08;
+/** Ciclo de escalonamento da horda (segundos). */
+export const SCALING_CYCLE_SECONDS = 30;
+/** +50% de HP/dano por degrau de poder (a cada 3 ciclos de densidade). */
+export const ENEMY_POWER_STEP = 0.5;
+/** @deprecated Mantido por compat; poder agora usa ciclos de 30s. */
+export const ENEMY_HP_CYCLE_SECONDS = SCALING_CYCLE_SECONDS;
+/** @deprecated */
+export const ENEMY_HP_GROWTH_PER_CYCLE = 1.5;
+/** @deprecated */
+export const ENEMY_DAMAGE_GROWTH_PER_CYCLE = 1.5;
 /** Teto de crescimento visual (+50%). */
 export const ENEMY_VISUAL_SCALE_CAP = 0.5;
 /** Boss a cada 4 minutos. */
@@ -42,25 +46,48 @@ const BASE_AMOUNT = 1; // inimigos por disparo de spawn
 export const MAX_ENEMIES = 80;
 
 /**
- * Escalabilidade de volume: a cada 30s o intervalo cai e o batch sobe.
- * difficultyFactor = floor(timeAlive / 30)
+ * Ciclo de escalonamento: floor(timeAlive / 30).
+ * Densidade sobe a cada ciclo; poder sobe a cada 3 ciclos.
  */
+export function getScalingCycle(timeAliveSeconds: number): number {
+  return Math.floor(Math.max(0, timeAliveSeconds) / SCALING_CYCLE_SECONDS);
+}
+
+/** Alias legado — mesmo que getScalingCycle. */
 export function getHordeDifficultyFactor(timeAliveSeconds: number): number {
-  return Math.floor(Math.max(0, timeAliveSeconds) / 30);
+  return getScalingCycle(timeAliveSeconds);
+}
+
+/**
+ * Degraus de poder: ciclos 1–2 = 0, ciclo 3–5 = 1, ciclo 6–8 = 2…
+ * (ciclo 1-based = scalingCycle + 1; bump quando ciclo % 3 === 0).
+ */
+export function getEnemyPowerLevel(timeAliveSeconds: number): number {
+  const scalingCycle = getScalingCycle(timeAliveSeconds);
+  const cycleNumber = scalingCycle + 1; // 1, 2, 3, 4…
+  return Math.floor(cycleNumber / 3);
+}
+
+/** Multiplicador de HP/dano: 1 → 1.5 → 2.0 → … (+50% do base por degrau). */
+export function getEnemyPowerMultiplier(timeAliveSeconds: number): number {
+  return 1 + getEnemyPowerLevel(timeAliveSeconds) * ENEMY_POWER_STEP;
 }
 
 export function getSpawnIntervalMs(timeAlive: number): number {
-  const difficultyFactor = getHordeDifficultyFactor(timeAlive);
+  const scalingCycle = getScalingCycle(timeAlive);
   return Math.max(
     MIN_INTERVAL,
-    BASE_INTERVAL / (1 + difficultyFactor * 0.2),
+    BASE_INTERVAL / (1 + scalingCycle * 0.2),
   );
 }
 
-/** Quantidade de inimigos comuns por tick de spawn. */
+/**
+ * Quantidade de inimigos comuns por tick — sobe a cada ciclo de 30s.
+ * Ciclo 0 → 1, ciclo 1 → 2, ciclo 2 → 3…
+ */
 export function getSpawnAmount(timeAlive: number): number {
-  const difficultyFactor = getHordeDifficultyFactor(timeAlive);
-  return BASE_AMOUNT + Math.floor(difficultyFactor * 0.5);
+  const scalingCycle = getScalingCycle(timeAlive);
+  return BASE_AMOUNT + scalingCycle;
 }
 
 export type DifficultySpawnMultipliers = {
@@ -102,25 +129,18 @@ export function getEnemyMaxHpAtTime(
   baseHp = BASE_ENEMY_HP,
   difficultyMultiplier = 1,
 ): number {
-  const cycles15s = Math.floor(
-    Math.max(0, timeAliveInSeconds) / ENEMY_HP_CYCLE_SECONDS,
-  );
+  const powerMul = getEnemyPowerMultiplier(timeAliveInSeconds);
   const difficultyMul = difficultyMultiplier || 1;
-  return Math.max(
-    1,
-    Math.floor(
-      baseHp * Math.pow(ENEMY_HP_GROWTH_PER_CYCLE, cycles15s) * difficultyMul,
-    ),
-  );
+  return Math.max(1, Math.floor(baseHp * powerMul * difficultyMul));
 }
 
-/** Escala visual: até +50% com o tempo (minutos vivos). */
+/** Escala visual: acompanha degraus de poder (até +50%). */
 export function getEnemyVisualScale(
   typeScale: number,
   timeAliveInSeconds: number,
 ): number {
-  const minutesAlive = Math.max(0, timeAliveInSeconds) / 60;
-  const growth = Math.min(ENEMY_VISUAL_SCALE_CAP, minutesAlive * 0.05);
+  const powerLevel = getEnemyPowerLevel(timeAliveInSeconds);
+  const growth = Math.min(ENEMY_VISUAL_SCALE_CAP, powerLevel * 0.15);
   return typeScale * (1 + growth);
 }
 
@@ -182,21 +202,16 @@ function scaleFromType(
   const dmgMul = difficulty?.enemyDamageMultiplier || 1;
   const spdMul = difficulty?.enemySpeedMultiplier || 1;
 
-  const cycles15s = Math.floor(Math.max(0, timeAlive) / ENEMY_HP_CYCLE_SECONDS);
+  const powerMul = getEnemyPowerMultiplier(timeAlive);
   const overflowHp = Math.pow(BOSS_OVERFLOW_HP_GROWTH, overflow);
   const overflowDmg = Math.pow(BOSS_OVERFLOW_DAMAGE_GROWTH, overflow);
 
-  // HP exponencial por ciclo de 15s
-  const scaledHp = Math.floor(
-    config.hpBase * Math.pow(ENEMY_HP_GROWTH_PER_CYCLE, cycles15s) * hpMul,
-  );
+  // HP: base × (1 + 0.5 × powerLevel) — sobe a cada 3 ciclos de densidade
+  const scaledHp = Math.floor(config.hpBase * powerMul * hpMul);
 
-  // Dano composto por ciclo de 15s
+  // Dano: mesma curva escalonada de poder
   const scaledDamage =
-    config.damage *
-    Math.pow(ENEMY_DAMAGE_GROWTH_PER_CYCLE, cycles15s) *
-    dmgMul *
-    overflowDmg;
+    config.damage * powerMul * dmgMul * overflowDmg;
 
   const speedPx = Math.min(
     160 * Math.max(1, spdMul),
@@ -209,7 +224,7 @@ function scaleFromType(
 
   const damage = Number(Math.max(0.4, scaledDamage).toFixed(2));
 
-  // Escala visual: até +50% com minutos vivos
+  // Escala visual acompanha degraus de poder
   const visualScale = getEnemyVisualScale(config.scale, timeAlive);
 
   return {

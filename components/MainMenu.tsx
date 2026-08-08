@@ -56,10 +56,10 @@ export function MainMenu({
         </div>
 
         {/* Recursos do slot ativo */}
-        <div className="flex flex-wrap gap-2">
-          <div className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+        <div className="flex flex-col gap-2">
+          <div className="flex w-full items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
             <Coins className="h-4 w-4 shrink-0 text-amber-300" aria-hidden />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[10px] font-medium uppercase tracking-wider text-amber-200/70">
                 Ouro
               </p>
@@ -68,9 +68,9 @@ export function MainMenu({
               </p>
             </div>
           </div>
-          <div className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2">
+          <div className="flex w-full items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2">
             <Gem className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[10px] font-medium uppercase tracking-wider text-cyan-200/70">
                 Diamantes
               </p>
@@ -79,9 +79,9 @@ export function MainMenu({
               </p>
             </div>
           </div>
-          <div className="inline-flex min-w-0 flex-[1.1] items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-3 py-2">
+          <div className="flex w-full items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-3 py-2">
             <Gem className="h-4 w-4 shrink-0 text-violet-300" aria-hidden />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[10px] font-medium uppercase tracking-wider text-violet-200/70">
                 Roxos
               </p>

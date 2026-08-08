@@ -12,6 +12,7 @@ import {
   rotateLocalOffset,
 } from "@/src/game/entities/Player";
 import {
+  RICOCHET_PATH_DURATION_MS,
   runCombatSystem,
 } from "@/src/game/systems/CombatSystem";
 import {
@@ -25,7 +26,7 @@ import {
 } from "@/src/game/systems/ActiveSkillsSystem";
 import { runSpawner } from "@/src/game/systems/Spawner";
 import { useArenaStore, type ActiveAttack } from "@/store/useArenaStore";
-import { useGameStore } from "@/store/useGameStore";
+import { clampGameSpeed, useGameStore } from "@/store/useGameStore";
 
 const PLAYER_RADIUS = 18;
 const BODY_RADIUS = 16;
@@ -148,7 +149,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const update = (realDt: number) => {
       const arena = useArenaStore.getState();
       const game = useGameStore.getState();
-      const gameSpeed = arena.gameSpeed === 2 ? 2 : 1;
+      const gameSpeed = clampGameSpeed(game.gameSpeedMultiplier);
       // Física, spawn, timeAlive e timers usam dt em segundos (escalado)
       const dt = realDt * gameSpeed;
       gameClockMs += realDt * 1000 * gameSpeed;
@@ -222,6 +223,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         canvasHeight: canvas.clientHeight,
         matchSkills: arena.matchSkills,
         activeSkillPulse: arena.activeSkillPulse,
+        lightningProjectiles: arena.lightningProjectiles ?? [],
       });
 
       const livingEnemies = combat.enemies
@@ -241,6 +243,16 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         })),
         ...combat.hitSplats,
       ].filter((t) => t.age < FLOATING_TEXT_MAX_AGE);
+
+      const ricochetPathEffects = [
+        ...arena.ricochetPathEffects.filter((e) => e.expiresAt > gameNow),
+        ...combat.ricochetPaths,
+      ];
+
+      const skillVfxEffects = [
+        ...(arena.skillVfxEffects ?? []).filter((e) => e.expiresAt > gameNow),
+        ...combat.skillVfx,
+      ];
 
       let shakeFrames = arena.shakeFrames;
       if (combat.contactHits > 0) {
@@ -329,11 +341,14 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         lastRicochetTime: combat.lastRicochetTime,
         activeAttacks,
         floatingTexts,
+        ricochetPathEffects,
         shakeFrames,
         timeAlive: nextTimeAlive,
         bossesSpawned: spawn.bossesSpawned,
         bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
         activeSkillPulse: combat.activeSkillPulse,
+        lightningProjectiles: combat.lightningProjectiles,
+        skillVfxEffects,
       });
 
       if (combat.player.hp <= 0) {
@@ -486,6 +501,9 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         projectiles,
         activeAttacks,
         floatingTexts,
+        ricochetPathEffects,
+        skillVfxEffects,
+        lightningProjectiles,
         activeSkillPulse,
       } = useArenaStore.getState();
       const arms = useGameStore.getState().arms;
@@ -510,49 +528,72 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
-      // Ondas visuais de Gelo / Fogo (janela ativa 3s)
-      const iceT = pulseVisualProgress(activeSkillPulse.icePulseAt, now);
-      if (iceT > 0) {
-        const radius = 40 + iceT * Math.max(w, h) * 0.55;
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(125, 211, 252, ${0.75 * (1 - iceT)})`;
-        ctx.lineWidth = 4;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius * 0.72, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(186, 230, 253, ${0.4 * (1 - iceT)})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+      // VFX de skills (gelo / raio) com fade-out
+      for (const effect of skillVfxEffects ?? []) {
+        if (effect.expiresAt <= now) continue;
+        const life = effect.expiresAt - effect.startedAt;
+        const alpha = Math.max(
+          0,
+          Math.min(1, (effect.expiresAt - now) / Math.max(1, life)),
+        );
+
+        if (effect.kind === "ice") {
+          const progress = 1 - alpha;
+          const radius = Math.max(8, effect.maxRadius * Math.min(1, progress * 1.35));
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(125, 211, 252, 0.9)";
+          ctx.lineWidth = 5;
+          ctx.shadowColor = "#7dd3fc";
+          ctx.shadowBlur = 18;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(effect.x, effect.y, radius * 0.78, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(186, 230, 253, 0.55)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          // Cristais no anel
+          const crystals = 10;
+          for (let i = 0; i < crystals; i++) {
+            const ang = (i / crystals) * Math.PI * 2 + progress * 0.6;
+            const cx = effect.x + Math.cos(ang) * radius;
+            const cy = effect.y + Math.sin(ang) * radius;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - 5);
+            ctx.lineTo(cx + 3, cy);
+            ctx.lineTo(cx, cy + 5);
+            ctx.lineTo(cx - 3, cy);
+            ctx.closePath();
+            ctx.fillStyle = "rgba(224, 242, 254, 0.85)";
+            ctx.fill();
+          }
+          ctx.restore();
+        } else if (effect.kind === "lightning" && effect.points.length > 1) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = "#e0f2fe";
+          ctx.lineWidth = 3.5;
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+          ctx.shadowColor = "#38bdf8";
+          ctx.shadowBlur = 16;
+          ctx.beginPath();
+          ctx.moveTo(effect.points[0]!.x, effect.points[0]!.y);
+          for (let i = 1; i < effect.points.length; i++) {
+            ctx.lineTo(effect.points[i]!.x, effect.points[i]!.y);
+          }
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(255,255,255,0.85)";
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 6;
+          ctx.stroke();
+          ctx.restore();
+        }
       }
-      const fireT = pulseVisualProgress(activeSkillPulse.firePulseAt, now);
-      if (fireT > 0) {
-        const radius = 36 + fireT * Math.max(w, h) * 0.5;
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(249, 115, 22, ${0.8 * (1 - fireT)})`;
-        ctx.lineWidth = 4;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius * 0.65, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(239, 68, 68, ${0.45 * (1 - fireT)})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-      const zapT = pulseVisualProgress(activeSkillPulse.lightningPulseAt, now);
-      if (zapT > 0) {
-        const radius = 30 + zapT * Math.max(w, h) * 0.48;
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(250, 204, 21, ${0.85 * (1 - zapT)})`;
-        ctx.lineWidth = 3.5;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius * 0.7, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(253, 224, 71, ${0.4 * (1 - zapT)})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
+
+      // Anel de ricochete (janela ativa)
       const ricoT = pulseVisualProgress(
         activeSkillPulse.ricochetPulseAt,
         now,
@@ -577,7 +618,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
 
       for (const enemy of enemies) {
-        Enemy.fromData({
+        const enemyEntity = Enemy.fromData({
           ...enemy,
           type: enemy.type ?? "normal",
           radius: enemy.radius ?? 12,
@@ -590,7 +631,48 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           isAttacking: enemy.isAttacking ?? false,
           projectileDamage: enemy.projectileDamage ?? 0,
           color: enemy.color ?? "",
-        }).draw(ctx, now);
+        });
+        enemyEntity.draw(ctx, now);
+
+        // Brasas de burn (stacks)
+        const burnStacks =
+          enemy.statusEffects?.find(
+            (s) => s.type === "burn" && s.expiresAt > now,
+          )?.burnStacks ?? 0;
+        if (burnStacks > 0) {
+          const sparks = Math.min(12, 3 + burnStacks * 2);
+          for (let i = 0; i < sparks; i++) {
+            const ang = (i / sparks) * Math.PI * 2 + now * 0.004;
+            const dist = (enemy.radius ?? 12) + 4 + (i % 3) * 3;
+            const sx = enemy.x + Math.cos(ang) * dist;
+            const sy =
+              enemy.y +
+              Math.sin(ang) * dist -
+              ((now * 0.04 + i * 7) % 14);
+            ctx.beginPath();
+            ctx.arc(sx, sy, 1.6 + (i % 2), 0, Math.PI * 2);
+            ctx.fillStyle =
+              i % 2 === 0
+                ? "rgba(251, 146, 60, 0.9)"
+                : "rgba(239, 68, 68, 0.85)";
+            ctx.fill();
+          }
+        }
+      }
+
+      // Projéteis elétricos
+      for (const bolt of lightningProjectiles ?? []) {
+        ctx.save();
+        ctx.shadowColor = "#38bdf8";
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(bolt.x, bolt.y, bolt.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "#e0f2fe";
+        ctx.fill();
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
       }
 
       for (const proj of projectiles ?? []) {
@@ -601,6 +683,32 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.strokeStyle = "#99f6e4";
         ctx.lineWidth = 1.5;
         ctx.stroke();
+      }
+
+      // Linhas de ricochete (player → cadeia de alvos)
+      for (const effect of ricochetPathEffects ?? []) {
+        if (effect.expiresAt <= now || effect.points.length === 0) continue;
+        const remaining = effect.expiresAt - now;
+        const alpha = Math.max(
+          0,
+          Math.min(1, remaining / RICOCHET_PATH_DURATION_MS),
+        );
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = "#00ffff";
+        ctx.lineWidth = 4;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.shadowColor = "#00ffff";
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.moveTo(playerX, playerY);
+        for (const point of effect.points) {
+          ctx.lineTo(point.x, point.y);
+        }
+        ctx.stroke();
+        ctx.restore();
       }
 
       for (const drop of drops) {

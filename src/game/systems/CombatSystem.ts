@@ -1,6 +1,5 @@
 import type { Player } from "@/src/game/entities/Player";
 import type { Enemy } from "@/src/game/entities/Enemy";
-import { BURN_DURATION_MS } from "@/src/game/entities/Enemy";
 import {
   angleToward,
   getArmDistribution,
@@ -16,19 +15,25 @@ import {
   useGameStore,
 } from "@/store/useGameStore";
 import {
+  buildZigzagPoints,
+  chainLightningTargets,
   createActiveSkillPulseState,
   isRicochetActive,
-  LIGHTNING_LINK_RADIUS,
+  LIGHTNING_VFX_MS,
   runActiveSkills,
   type ActiveSkillPulseState,
+  type LightningProjectile,
+  type SkillVfxEffect,
 } from "@/src/game/systems/ActiveSkillsSystem";
-import type { SkillsData } from "@/db/schema";
-import { DEFAULT_SKILLS_DATA } from "@/db/schema";
+import type { MatchSkillsData } from "@/db/schema";
+import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
 
 export type MatchBuffsInput = {
   attackSpeed: number;
   attackRange: number;
   damageMultiplier: number;
+  critDamageMultiplier?: number;
+  skillDamageMultiplier?: number;
 };
 
 export type ActiveAttack = {
@@ -56,6 +61,17 @@ export type HitSplat = {
   /** Escala de fonte (críticos > 1). */
   scale?: number;
 };
+
+/** Segmento visual da cadeia de ricochete (player → alvos). */
+export type RicochetPathPoint = { x: number; y: number };
+
+export type RicochetPathEffect = {
+  points: RicochetPathPoint[];
+  /** Game clock em que o traço some. */
+  expiresAt: number;
+};
+
+export const RICOCHET_PATH_DURATION_MS = 200;
 
 /** Projétil disparado por inimigo ranged. */
 export type EnemyProjectile = {
@@ -94,9 +110,11 @@ export type CombatSystemInput = {
   canvasWidth?: number;
   canvasHeight?: number;
   /** Skills especiais ativos nesta run (0 = inativo). */
-  matchSkills?: SkillsData;
-  /** Timers de pulso gelo/fogo. */
+  matchSkills?: MatchSkillsData;
+  /** Timers de pulso gelo/raio/ricochete. */
   activeSkillPulse?: ActiveSkillPulseState;
+  /** Projéteis elétricos em voo. */
+  lightningProjectiles?: LightningProjectile[];
 };
 
 export type CombatSystemResult = {
@@ -108,6 +126,8 @@ export type CombatSystemResult = {
   lastRicochetTime: number;
   newAttacks: ActiveAttack[];
   hitSplats: HitSplat[];
+  /** Traços de ricochete gerados neste frame (VFX). */
+  ricochetPaths: RicochetPathEffect[];
   kills: number;
   /** Coordenadas dos inimigos mortos neste frame (para loot). */
   killSites: { x: number; y: number; enemyType: Enemy["type"] }[];
@@ -118,8 +138,10 @@ export type CombatSystemResult = {
   playerRotation: number;
   /** Projéteis após update + novos disparos. */
   projectiles: EnemyProjectile[];
-  /** Estado atualizado dos pulsos gelo/fogo. */
+  /** Estado atualizado dos pulsos. */
   activeSkillPulse: ActiveSkillPulseState;
+  lightningProjectiles: LightningProjectile[];
+  skillVfx: SkillVfxEffect[];
 };
 
 const DEFAULT_KNOCKBACK = 5;
@@ -206,27 +228,27 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     canvasHeight = 2000,
     matchSkills: inputMatchSkills,
     activeSkillPulse: inputPulse = createActiveSkillPulseState(),
+    lightningProjectiles: inputLightning = [],
   } = input;
 
   let playerRotation = inputRotation;
 
   const gameState = useGameStore.getState();
-  const matchSkills = inputMatchSkills ?? { ...DEFAULT_SKILLS_DATA };
-  const skillLevels = gameState.skillLevels;
-  // Procs no soco: ativos se a skill foi escolhida na run
-  const hasFreeze = matchSkills.ice > 0;
-  const hasShock = matchSkills.lightning > 0;
-  const freezeDurationMs = 1000 + skillLevels.ice * 500;
-  const lightningTargets = 2 + skillLevels.lightning;
-  const shockSlowAmount = Math.min(0.85, 0.2 + skillLevels.lightning * 0.1);
+  const matchSkills = inputMatchSkills ?? { ...DEFAULT_MATCH_SKILLS };
+  const skills = gameState.skills;
+  const shockSlowAmount = Math.min(
+    0.85,
+    0.2 + skills.lightning.hits * 0.1,
+  );
   const fireLevel = matchSkills.fire;
+  const fireMaxStacks = Math.max(1, skills.fire.damage);
   const lifeStealRatio =
     getLifeStealRatio(gameState.skillTree) +
     getMetaLifeStealRatio(gameState.metaLifeStealLevel);
   const metaSkillRegenLevel = gameState.metaSkillRegenLevel;
-  // Ricochete periódico: janela 2s / ciclo 25s (gerenciada em ActiveSkillsSystem)
-  const maxBounces = 2 + skillLevels.ricochet;
-  const bounceDamageMult = 0.6 + skillLevels.ricochet * 0.15;
+  // Ricochete: hits / damage (ciclo gerenciado em ActiveSkillsSystem)
+  const maxBounces = 2 + skills.ricochet.hits;
+  const bounceDamageMult = 0.6 + skills.ricochet.damage * 0.15;
   const knockbackPower =
     knockbackImpulse ??
     gameState.getKnockbackPower() ??
@@ -238,6 +260,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   let kills = 0;
   const killSites: { x: number; y: number; enemyType: Enemy["type"] }[] = [];
   const questEvents: QuestProgressEvent[] = [];
+  const skillVfx: SkillVfxEffect[] = [];
 
   const pushKillQuests = (enemyType: Enemy["type"]) => {
     questEvents.push({ type: "kill_enemies", amount: 1 });
@@ -254,17 +277,21 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     pushKillQuests(enemy.type);
   };
 
-  // Skills ativas periódicas (gelo / fogo / raio / ricochete)
+  const effectiveRange = baseRange * matchBuffs.attackRange;
+  const skillDamageMult = matchBuffs.skillDamageMultiplier ?? 1;
   const activeSkills = runActiveSkills({
     enemies,
     playerX: player.x,
     playerY: player.y,
     now,
-    baseDamage: baseDamage * matchBuffs.damageMultiplier,
+    baseDamage:
+      baseDamage * matchBuffs.damageMultiplier * skillDamageMult,
     matchSkills,
-    skillLevels,
+    skills,
     pulseState: inputPulse,
+    effectiveRange,
   });
+  skillVfx.push(...activeSkills.newSkillVfx);
   const ricochetWindowActive = isRicochetActive(
     activeSkills.pulseState,
     now,
@@ -275,14 +302,92 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       amount: activeSkills.questFreeze,
     });
   }
-  if (activeSkills.questShock > 0) {
-    questEvents.push({
-      type: "inflict_shock",
-      amount: activeSkills.questShock,
+
+  // Projéteis de raio: move + impacto + cadeia em zigue-zague
+  let skillDamageFromLightning = activeSkills.skillDamageDealt;
+  let skillHitsFromLightning = activeSkills.skillHitsLanded;
+  const lightningProjectiles: LightningProjectile[] = [
+    ...activeSkills.newLightningProjectiles,
+  ];
+  const maxLightningHits = 2 + skills.lightning.hits;
+  const boltMargin = 40;
+  const pendingLightningSplats: HitSplat[] = [];
+
+  for (const bolt of inputLightning) {
+    const nx = bolt.x + bolt.vx * dt;
+    const ny = bolt.y + bolt.vy * dt;
+    if (
+      nx < -boltMargin ||
+      ny < -boltMargin ||
+      nx > canvasWidth + boltMargin ||
+      ny > canvasHeight + boltMargin
+    ) {
+      continue;
+    }
+
+    let hitEnemy: Enemy | null = null;
+    let hitDist = Infinity;
+    for (const enemy of enemies) {
+      if (enemy.isDead) continue;
+      const dist = Math.hypot(nx - enemy.x, ny - enemy.y);
+      if (dist <= enemy.radius + bolt.radius && dist < hitDist) {
+        hitEnemy = enemy;
+        hitDist = dist;
+      }
+    }
+
+    if (!hitEnemy) {
+      lightningProjectiles.push({ ...bolt, x: nx, y: ny });
+      continue;
+    }
+
+    // Impacto no 1º alvo + cadeia
+    const chainTargets = chainLightningTargets(
+      enemies,
+      hitEnemy.x,
+      hitEnemy.y,
+      Math.max(0, maxLightningHits - 1),
+      new Set([hitEnemy.id]),
+    );
+    const allHits = [hitEnemy, ...chainTargets];
+    const pathPoints: { x: number; y: number }[] = [
+      { x: player.x, y: player.y },
+    ];
+
+    let prevX = player.x;
+    let prevY = player.y;
+    for (let i = 0; i < allHits.length; i++) {
+      const target = allHits[i]!;
+      const dmg =
+        i === 0 ? bolt.damage : bolt.damage * CHAIN_DAMAGE_MULT;
+      target.hp -= dmg;
+      target.applyShockSlow(shockSlowAmount, now);
+      questEvents.push({ type: "inflict_shock", amount: 1 });
+      skillDamageFromLightning += dmg;
+      skillHitsFromLightning += 1;
+      pendingLightningSplats.push({
+        id: crypto.randomUUID(),
+        x: target.x,
+        y: target.y,
+        text: String(Math.max(1, Math.round(dmg))),
+        age: 0,
+        color: "#e0f2fe",
+      });
+      const zig = buildZigzagPoints(prevX, prevY, target.x, target.y);
+      pathPoints.push(...zig.slice(1));
+      prevX = target.x;
+      prevY = target.y;
+    }
+
+    skillVfx.push({
+      kind: "lightning",
+      points: pathPoints,
+      startedAt: now,
+      expiresAt: now + LIGHTNING_VFX_MS,
     });
   }
 
-  // Mortes por burn / raio periódico (antes dos socos)
+  // Mortes por burn / raio (antes dos socos)
   for (const enemy of enemies) {
     if (!enemy.isDead) continue;
     pushKill(enemy);
@@ -395,23 +500,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   let nextAttackTime = lastAttackTime;
   let nextPunchSide = lastPunchSide;
   const newAttacks: ActiveAttack[] = [];
-  const hitSplats: HitSplat[] = [];
+  const hitSplats: HitSplat[] = [...pendingLightningSplats];
+  const ricochetPaths: RicochetPathEffect[] = [];
   let living = enemies.filter((e) => !e.isDead);
 
-  let lightningDamageDealt = 0;
-  let skillDamageDealt = activeSkills.skillDamageDealt;
-  let skillHitsLanded = activeSkills.skillHitsLanded;
-  for (const hit of activeSkills.lightningHits) {
-    lightningDamageDealt += hit.damage;
-    hitSplats.push({
-      id: crypto.randomUUID(),
-      x: hit.x,
-      y: hit.y,
-      text: String(hit.damage),
-      age: 0,
-      color: "#fde047",
-    });
-  }
+  let skillDamageDealt = skillDamageFromLightning;
+  let skillHitsLanded = skillHitsFromLightning;
 
   const applyHealingSplat = (healingAmount: number) => {
     if (healingAmount <= 0 || player.isDead) return;
@@ -446,7 +540,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     skillDamageDealt = 0;
     skillHitsLanded = 0;
   }
-  void lightningDamageDealt;
 
   const effectiveCooldown = baseAttackSpeed / matchBuffs.attackSpeed;
   const canAttack = now >= lastAttackTime + effectiveCooldown;
@@ -465,8 +558,11 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     if (inRange.length > 0) {
       nextAttackTime = now;
       const punchBase = baseDamage * matchBuffs.damageMultiplier;
+      const skillPunchBase = punchBase * skillDamageMult;
       const critChance = useGameStore.getState().getCritChance();
-      const critMult = useGameStore.getState().getCritDamageMultiplier();
+      const critMult =
+        useGameStore.getState().getCritDamageMultiplier() *
+        (matchBuffs.critDamageMultiplier ?? 1);
       /** Dano acumulado por id (primário + chain). */
       const damageById = new Map<string, number>();
       /** Dano físico comum (socos) para life steal. */
@@ -552,7 +648,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
         // Ricochete ativo: cadeia a partir do alvo do soco
         if (ricochetWindowActive && maxBounces > 1) {
-          const bounceDamage = punchBase * bounceDamageMult;
+          const bounceDamage = skillPunchBase * bounceDamageMult;
           const displayBounce = Math.max(1, Math.round(bounceDamage));
           const bounceChain = chainRicochet(
             living,
@@ -563,6 +659,15 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             RICOCHET_LINK_RADIUS,
             new Set([enemy.id]),
           );
+
+          // VFX: player → alvo primário → saltos
+          ricochetPaths.push({
+            points: [
+              { x: enemy.x, y: enemy.y },
+              ...bounceChain.map((t) => ({ x: t.x, y: t.y })),
+            ],
+            expiresAt: now + RICOCHET_PATH_DURATION_MS,
+          });
 
           let prevX = enemy.x;
           let prevY = enemy.y;
@@ -604,71 +709,25 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           }
         }
 
-        // Fogo no soco (se skill ativa na run) — mesmo DPS do pulso periódico
+        // Fogo on-hit: burnDamage / burnDuration granulares
         if (fireLevel > 0) {
-          const burnDps = punchBase * 0.2 * (1 + skillLevels.fire * 0.5);
-          enemy.applyBurn(burnDps, now, BURN_DURATION_MS);
+          const burnDamage =
+            skillPunchBase * 0.2 * (1 + skills.fire.damage * 0.5);
+          const burnDurationMs = 2000 + skills.fire.duration * 500;
+          const stacks = enemy.applyBurnStack(
+            burnDamage,
+            fireMaxStacks,
+            now,
+            burnDurationMs,
+          );
           hitSplats.push({
             id: crypto.randomUUID(),
             x: enemy.x + 10,
             y: enemy.y - 10,
-            text: "BURN",
+            text: `BURN×${stacks}`,
             age: 0,
             color: "#fb923c",
           });
-        }
-
-        // Gelo: 15% se skill desbloqueada (duração escala com ice)
-        if (hasFreeze && Math.random() < ELEMENTAL_PROC_CHANCE) {
-          enemy.applyStatus("freeze", now + freezeDurationMs);
-          questEvents.push({ type: "inflict_freeze", amount: 1 });
-          hitSplats.push({
-            id: crypto.randomUUID(),
-            x: enemy.x + 8,
-            y: enemy.y - 14,
-            text: "ICE",
-            age: 0,
-            color: "#7dd3fc",
-          });
-        }
-
-        // Raio: 15% — cadeia + slow (targets/slow escalam com lightning)
-        if (hasShock && Math.random() < ELEMENTAL_PROC_CHANCE) {
-          enemy.applyShockSlow(shockSlowAmount, now);
-          questEvents.push({ type: "inflict_shock", amount: 1 });
-          hitSplats.push({
-            id: crypto.randomUUID(),
-            x: enemy.x - 8,
-            y: enemy.y - 18,
-            text: "ZAP",
-            age: 0,
-            color: "#facc15",
-          });
-
-          const chainDamage = damage * CHAIN_DAMAGE_MULT;
-          const chainTargets = living
-            .filter((e) => e.id !== enemy.id)
-            .map((e) => ({
-              enemy: e,
-              dist: Math.hypot(e.x - enemy.x, e.y - enemy.y),
-            }))
-            .filter(({ dist }) => dist <= LIGHTNING_LINK_RADIUS)
-            .sort((a, b) => a.dist - b.dist)
-            .slice(0, lightningTargets);
-
-          for (const { enemy: chained } of chainTargets) {
-            chained.applyShockSlow(shockSlowAmount, now);
-            questEvents.push({ type: "inflict_shock", amount: 1 });
-            addDamage(chained.id, chainDamage, "skill");
-            hitSplats.push({
-              id: crypto.randomUUID(),
-              x: chained.x,
-              y: chained.y,
-              text: String(Math.round(chainDamage)),
-              age: 0,
-              color: "#fde047",
-            });
-          }
         }
       });
 
@@ -717,6 +776,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     lastRicochetTime: lastRicochetTime,
     newAttacks,
     hitSplats,
+    ricochetPaths,
     kills,
     killSites,
     contactHits,
@@ -724,5 +784,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     playerRotation,
     projectiles,
     activeSkillPulse: activeSkills.pulseState,
+    lightningProjectiles,
+    skillVfx,
   };
 }

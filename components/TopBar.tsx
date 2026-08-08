@@ -1,14 +1,20 @@
 "use client";
 
-import { Coins, Gem, Heart, Star } from "lucide-react";
+import { Coins, Gem, Gauge, Heart, Star } from "lucide-react";
 import { useArenaStore } from "@/store/useArenaStore";
-import { useGameStore } from "@/store/useGameStore";
+import {
+  GAME_SPEED_OPTIONS,
+  clampGameSpeed,
+  useGameStore,
+} from "@/store/useGameStore";
 
 /** Barra superior flutuante: recursos, XP e HP da partida. */
 export function TopBar() {
   const gold = useGameStore((s) => s.gold);
   const gems = useGameStore((s) => s.gems);
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
+  const gameSpeedMultiplier = useGameStore((s) => s.gameSpeedMultiplier);
+  const setGameSpeedMultiplier = useGameStore((s) => s.setGameSpeedMultiplier);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const currentHp = useArenaStore((s) => s.currentHp);
   const currentXp = useArenaStore((s) => s.currentXp);
@@ -20,24 +26,50 @@ export function TopBar() {
     0,
     Math.min(100, (currentXp / xpToNextLevel) * 100),
   );
+  const gameSpeed = clampGameSpeed(gameSpeedMultiplier);
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-4 p-4">
-      <div className="pointer-events-auto flex items-center gap-3 rounded-lg bg-black/55 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur-sm">
-        <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
-          <Coins className="h-4 w-4 text-amber-400" aria-hidden />
-          {gold.toLocaleString("pt-BR")}
-        </span>
-        <span className="h-4 w-px bg-white/20" aria-hidden />
-        <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
-          <Gem className="h-4 w-4 text-cyan-400" aria-hidden />
-          {gems.toLocaleString("pt-BR")}
-        </span>
-        <span className="h-4 w-px bg-white/20" aria-hidden />
-        <span className="inline-flex items-center gap-1.5 font-medium tabular-nums text-violet-200">
-          <Gem className="h-4 w-4 text-violet-400" aria-hidden />
-          {purpleDiamonds.toLocaleString("pt-BR")}
-        </span>
+      <div className="pointer-events-auto flex flex-col gap-2">
+        <div className="flex items-center gap-3 rounded-lg bg-black/55 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur-sm">
+          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
+            <Coins className="h-4 w-4 text-amber-400" aria-hidden />
+            {gold.toLocaleString("pt-BR")}
+          </span>
+          <span className="h-4 w-px bg-white/20" aria-hidden />
+          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
+            <Gem className="h-4 w-4 text-cyan-400" aria-hidden />
+            {gems.toLocaleString("pt-BR")}
+          </span>
+          <span className="h-4 w-px bg-white/20" aria-hidden />
+          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums text-violet-200">
+            <Gem className="h-4 w-4 text-violet-400" aria-hidden />
+            {purpleDiamonds.toLocaleString("pt-BR")}
+          </span>
+        </div>
+
+        <div className="inline-flex items-center gap-1 rounded-lg bg-black/55 p-1 shadow-lg backdrop-blur-sm">
+          <span className="inline-flex items-center gap-1 px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+            <Gauge className="h-3 w-3" aria-hidden />
+            Vel
+          </span>
+          {GAME_SPEED_OPTIONS.map((speed) => (
+            <button
+              key={speed}
+              type="button"
+              onClick={() => setGameSpeedMultiplier(speed)}
+              className={`rounded-md px-2 py-1 text-[11px] font-bold transition ${
+                gameSpeed === speed
+                  ? "bg-emerald-500/30 text-emerald-200"
+                  : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+              }`}
+              aria-label={`Velocidade ${speed}x`}
+              aria-pressed={gameSpeed === speed}
+            >
+              {speed}x
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="pointer-events-auto flex min-w-[10rem] flex-col gap-2">

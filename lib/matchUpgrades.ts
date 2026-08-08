@@ -1,6 +1,16 @@
 /** Raridades e geração de cartas de upgrade in-match. */
 
-import type { SkillsData, UnlockedSkillsData } from "@/db/schema";
+import type {
+  MatchSkillsData,
+  SkillsData,
+  UnlockedSkillsData,
+} from "@/db/schema";
+import { getSkillMetaCap } from "@/db/schema";
+
+/** Para de oferecer cartas de alcance acima deste valor efetivo (px). */
+export const MATCH_RANGE_UPGRADE_CAP = 650;
+/** Para de oferecer cartas de velocidade abaixo deste cooldown efetivo (ms). */
+export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
@@ -11,12 +21,16 @@ export type UpgradeCategory =
   | "damage"
   | "speed"
   | "range"
+  | "critDamage"
+  | "skillDamage"
   | SpecialSkillKey;
 
 export type UpgradeType =
   | "attackSpeed"
   | "attackRange"
   | "damageMultiplier"
+  | "critDamageMultiplier"
+  | "skillDamageMultiplier"
   | SpecialSkillKey;
 
 export type MatchUpgrade = {
@@ -54,9 +68,16 @@ const RARITY_BONUS: Record<Rarity, number> = {
   legendary: 0.25,
 };
 
+type StatCategory =
+  | "damage"
+  | "speed"
+  | "range"
+  | "critDamage"
+  | "skillDamage";
+
 const STAT_UPGRADE_POOL: {
   type: UpgradeType;
-  category: UpgradeCategory;
+  category: StatCategory;
   name: string;
   short: string;
 }[] = [
@@ -77,6 +98,18 @@ const STAT_UPGRADE_POOL: {
     category: "damage",
     name: "Damage",
     short: "Dano",
+  },
+  {
+    type: "critDamageMultiplier",
+    category: "critDamage",
+    name: "Crit Damage",
+    short: "Dano Crítico",
+  },
+  {
+    type: "skillDamageMultiplier",
+    category: "skillDamage",
+    name: "Skill Damage",
+    short: "Dano das Skills",
   },
 ];
 
@@ -133,19 +166,23 @@ export function getMatchSkillMaxLevel(metaSkillLevel: number): number {
 export function canOfferSpecialSkill(
   key: SpecialSkillKey,
   unlockedSkills: UnlockedSkillsData,
-  matchSkills: SkillsData,
-  skillLevels: SkillsData,
+  matchSkills: MatchSkillsData,
+  skills: SkillsData,
 ): boolean {
   if (!unlockedSkills[key]) return false;
   const current = matchSkills[key] ?? 0;
-  const max = getMatchSkillMaxLevel(skillLevels[key] ?? 0);
+  const max = getMatchSkillMaxLevel(getSkillMetaCap(skills[key]));
   return current < max;
 }
 
 export type GenerateUpgradeOptionsContext = {
   unlockedSkills: UnlockedSkillsData;
-  matchSkills: SkillsData;
-  skillLevels: SkillsData;
+  matchSkills: MatchSkillsData;
+  skills: SkillsData;
+  /** Alcance efetivo atual (base × buffs). */
+  effectiveRange?: number;
+  /** Cooldown efetivo atual em ms (base / buff de velocidade). */
+  effectiveCooldownMs?: number;
 };
 
 /**
@@ -165,7 +202,7 @@ function rollRarity(): Rarity {
 }
 
 function createStatUpgrade(
-  category: "damage" | "speed" | "range",
+  category: StatCategory,
   rarity: Rarity,
 ): MatchUpgrade {
   const pool =
@@ -255,11 +292,37 @@ export const RARITY_STYLES: Record<
  */
 export const SPECIAL_SKILL_CARD_CHANCE = 0.15;
 
-const STAT_CATEGORIES: Array<"damage" | "speed" | "range"> = [
+const ALL_STAT_CATEGORIES: StatCategory[] = [
   "damage",
   "speed",
   "range",
+  "critDamage",
+  "skillDamage",
 ];
+
+/** Quais categorias de status ainda podem aparecer na roleta. */
+export function getEligibleStatCategories(ctx?: {
+  effectiveRange?: number;
+  effectiveCooldownMs?: number;
+}): StatCategory[] {
+  return ALL_STAT_CATEGORIES.filter((category) => {
+    if (
+      category === "range" &&
+      ctx?.effectiveRange != null &&
+      ctx.effectiveRange >= MATCH_RANGE_UPGRADE_CAP
+    ) {
+      return false;
+    }
+    if (
+      category === "speed" &&
+      ctx?.effectiveCooldownMs != null &&
+      ctx.effectiveCooldownMs <= MATCH_COOLDOWN_UPGRADE_FLOOR
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
 
 /**
  * Gera N cartas com raridade ponderada e categorias distintas.
@@ -271,12 +334,12 @@ export function generateUpgradeOptions(
 ): MatchUpgrade[] {
   const unlocked = ctx?.unlockedSkills;
   const matchSkills = ctx?.matchSkills;
-  const skillLevels = ctx?.skillLevels;
+  const skills = ctx?.skills;
 
   const eligibleSpecials: SpecialSkillKey[] = [];
-  if (unlocked && matchSkills && skillLevels) {
+  if (unlocked && matchSkills && skills) {
     for (const key of SPECIAL_SKILL_KEYS) {
-      if (canOfferSpecialSkill(key, unlocked, matchSkills, skillLevels)) {
+      if (canOfferSpecialSkill(key, unlocked, matchSkills, skills)) {
         eligibleSpecials.push(key);
       }
     }
@@ -284,7 +347,7 @@ export function generateUpgradeOptions(
 
   const selectedCards: MatchUpgrade[] = [];
   let specialPool = [...eligibleSpecials];
-  let statPool = [...STAT_CATEGORIES];
+  let statPool = getEligibleStatCategories(ctx);
 
   while (selectedCards.length < count) {
     const rarity = rollRarity();

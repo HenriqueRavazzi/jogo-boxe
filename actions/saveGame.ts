@@ -20,7 +20,7 @@ function columnsFromSave(saveData: SaveData) {
   return {
     saveData: normalized,
     purpleDiamonds: normalized.purpleDiamonds,
-    skillsData: normalized.skillLevels ?? DEFAULT_SKILLS_DATA,
+    skillsData: normalized.skills ?? DEFAULT_SKILLS_DATA,
   };
 }
 

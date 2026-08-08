@@ -55,7 +55,7 @@ export async function GET() {
         .set({
           saveData: probeSaveData,
           purpleDiamonds: probeSaveData.purpleDiamonds,
-          skillsData: probeSaveData.skillLevels,
+          skillsData: probeSaveData.skills,
           updatedAt: new Date(),
         })
         .where(eq(gameSaves.saveName, HEALTH_SAVE_NAME))
@@ -69,7 +69,7 @@ export async function GET() {
           password: "probe",
           saveData: probeSaveData,
           purpleDiamonds: probeSaveData.purpleDiamonds,
-          skillsData: probeSaveData.skillLevels,
+          skillsData: probeSaveData.skills,
         })
         .returning();
       probe = inserted;
@@ -97,7 +97,7 @@ export async function GET() {
       "critChanceLevel",
       "critDamageLevel",
       "purpleDiamonds",
-      "skillLevels",
+      "skills",
       "unlockedSkills",
       "skillTree",
       "metaDamageLevel",

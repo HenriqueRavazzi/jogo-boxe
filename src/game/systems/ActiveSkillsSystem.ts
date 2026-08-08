@@ -1,36 +1,44 @@
-/** Skills ativas periódicas (Gelo / Fogo / Raio / Ricochete). */
+/** Skills ativas periódicas (Gelo / Raio / Ricochete). Fogo é on-hit no combate. */
 
 import type { Enemy } from "@/src/game/entities/Enemy";
-import type { SkillsData } from "@/db/schema";
+import type { MatchSkillsData, SkillsData } from "@/db/schema";
 import { SHOCK_SLOW_DURATION_MS } from "@/src/game/entities/Enemy";
 
 export const ACTIVE_SKILL_CYCLE_MS = 20_000;
 export const ACTIVE_SKILL_DURATION_MS = 3_000;
-/** Ricochete: ciclo mais longo, janela curta de frenesi. */
-export const RICOCHET_CYCLE_MS = 25_000;
+/** @deprecated Preferir fórmula: max(2000, 7000 - cooldown×500). */
+export const RICOCHET_CYCLE_MS = 7_000;
 export const RICOCHET_ACTIVE_MS = 2_000;
-/** Intervalo entre cadeias de raio enquanto a janela está ativa. */
-export const LIGHTNING_TICK_MS = 500;
-/** Raio da onda de gelo (px) — cobre a arena típica. */
-export const ICE_WAVE_RADIUS = 2400;
-/** Alcance do 1º alvo do raio a partir do jogador. */
-export const LIGHTNING_FIRST_RANGE = 520;
+/** Fração do alcance efetivo do herói usada pelo gelo. */
+export const ICE_RANGE_RATIO = 0.4;
+/** Duração do VFX da onda de gelo (ms). */
+export const ICE_VFX_MS = 450;
+/** Duração do VFX da cadeia de raio (ms). */
+export const LIGHTNING_VFX_MS = 280;
+/** Velocidade do projétil elétrico (px/s). */
+export const LIGHTNING_PROJECTILE_SPEED = 920;
+export const LIGHTNING_PROJECTILE_RADIUS = 7;
 /** Alcance entre saltos da cadeia (horda densa). */
 export const LIGHTNING_LINK_RADIUS = 280;
+/** @deprecated Preferir iceRadius dinâmico (40% do range). */
+export const ICE_WAVE_RADIUS = 2400;
+/** @deprecated */
+export const LIGHTNING_FIRST_RANGE = 520;
+/** @deprecated */
+export const LIGHTNING_TICK_MS = 500;
 
 export type ActiveSkillPulseState = {
-  /** Próximo disparo de gelo (game clock ms). 0 = ainda não inicializado. */
   iceNextPulseAt: number;
   iceActiveUntil: number;
-  /** Timestamp do último pulso (para VFX). */
   icePulseAt: number;
+  /** Raio da última onda de gelo (para VFX). */
+  iceWaveRadius: number;
   fireNextPulseAt: number;
   fireActiveUntil: number;
   firePulseAt: number;
   lightningNextPulseAt: number;
   lightningActiveUntil: number;
   lightningPulseAt: number;
-  /** Último tick de cadeia durante a janela ativa. */
   lightningLastTickAt: number;
   ricochetNextPulseAt: number;
   ricochetActiveUntil: number;
@@ -42,6 +50,7 @@ export function createActiveSkillPulseState(): ActiveSkillPulseState {
     iceNextPulseAt: 0,
     iceActiveUntil: 0,
     icePulseAt: 0,
+    iceWaveRadius: 0,
     fireNextPulseAt: 0,
     fireActiveUntil: 0,
     firePulseAt: 0,
@@ -69,44 +78,74 @@ export type LightningHitSplat = {
   damage: number;
 };
 
+/** Projétil elétrico em voo (player → 1º alvo). */
+export type LightningProjectile = {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  damage: number;
+  radius: number;
+  /** Alvo preferencial no momento do disparo. */
+  targetEnemyId: string | null;
+};
+
+export type SkillVfxEffect =
+  | {
+      kind: "ice";
+      x: number;
+      y: number;
+      maxRadius: number;
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
+      kind: "lightning";
+      points: { x: number; y: number }[];
+      startedAt: number;
+      expiresAt: number;
+    };
+
 export type RunActiveSkillsInput = {
   enemies: Enemy[];
   playerX: number;
   playerY: number;
   now: number;
   baseDamage: number;
-  matchSkills: SkillsData;
-  skillLevels: SkillsData;
+  matchSkills: MatchSkillsData;
+  skills: SkillsData;
   pulseState: ActiveSkillPulseState;
+  /** Alcance efetivo do herói (base × buffs) — gelo usa 40%. */
+  effectiveRange: number;
 };
 
 export type RunActiveSkillsResult = {
   pulseState: ActiveSkillPulseState;
   questFreeze: number;
   questShock: number;
-  /** Splats de dano do raio neste frame. */
   lightningHits: LightningHitSplat[];
-  /** Dano total de skills especiais neste frame (regen meta). */
   skillDamageDealt: number;
-  /** Hits de skills especiais neste frame (regen meta). */
   skillHitsLanded: number;
+  /** Projéteis de raio disparados neste frame. */
+  newLightningProjectiles: LightningProjectile[];
+  /** VFX de onda de gelo / cadeias. */
+  newSkillVfx: SkillVfxEffect[];
 };
 
-/**
- * Congela inimigos no raio da onda (duração escala com skillLevels.ice).
- */
 function applyIceWave(
   enemies: Enemy[],
   playerX: number,
   playerY: number,
   now: number,
   freezeDurationMs: number,
+  iceRadius: number,
 ): number {
   let hit = 0;
   for (const enemy of enemies) {
     if (enemy.isDead) continue;
     const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
-    if (dist > ICE_WAVE_RADIUS) continue;
+    if (dist > iceRadius) continue;
     enemy.applyStatus("freeze", now + freezeDurationMs);
     hit += 1;
   }
@@ -114,40 +153,22 @@ function applyIceWave(
 }
 
 /**
- * Aplica burn em todos os inimigos vivos (DPS escala com skillLevels.fire).
+ * Cadeia a partir de um origem (após impacto do projétil).
  */
-function applyArenaBurn(
-  enemies: Enemy[],
-  now: number,
-  burnDps: number,
-  durationMs: number,
-): number {
-  if (burnDps <= 0) return 0;
-  let hit = 0;
-  for (const enemy of enemies) {
-    if (enemy.isDead) continue;
-    enemy.applyBurn(burnDps, now, durationMs);
-    hit += 1;
-  }
-  return hit;
-}
-
-/**
- * Cadeia de raio: 1º mais perto do player, depois saltos para o mais próximo.
- */
-function chainLightningTargets(
+export function chainLightningTargets(
   enemies: Enemy[],
   originX: number,
   originY: number,
   targetCount: number,
+  excludeIds: Set<string> = new Set(),
 ): Enemy[] {
   const chain: Enemy[] = [];
-  const used = new Set<string>();
+  const used = new Set(excludeIds);
   let cx = originX;
   let cy = originY;
 
   for (let i = 0; i < targetCount; i++) {
-    const maxDist = i === 0 ? LIGHTNING_FIRST_RANGE : LIGHTNING_LINK_RADIUS;
+    const maxDist = i === 0 ? LIGHTNING_LINK_RADIUS * 1.4 : LIGHTNING_LINK_RADIUS;
     let best: Enemy | null = null;
     let bestDist = Infinity;
 
@@ -170,43 +191,36 @@ function chainLightningTargets(
   return chain;
 }
 
-/**
- * Dispara uma cadeia: dano + slow. Retorna hits para VFX/quests.
- */
-function fireLightningChain(
-  enemies: Enemy[],
-  playerX: number,
-  playerY: number,
-  now: number,
-  targetCount: number,
-  damage: number,
-  slowAmount: number,
-): { hits: LightningHitSplat[]; shocked: number } {
-  const chain = chainLightningTargets(
-    enemies,
-    playerX,
-    playerY,
-    targetCount,
-  );
-  const hits: LightningHitSplat[] = [];
-  let shocked = 0;
+/** Pontos em zigue-zague entre A e B (VFX). */
+export function buildZigzagPoints(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  segments = 5,
+): { x: number; y: number }[] {
+  const points: { x: number; y: number }[] = [{ x: ax, y: ay }];
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
 
-  for (const enemy of chain) {
-    enemy.applyShockSlow(slowAmount, now, SHOCK_SLOW_DURATION_MS);
-    enemy.hp -= damage;
-    shocked += 1;
-    hits.push({
-      x: enemy.x,
-      y: enemy.y,
-      damage: Math.max(1, Math.round(damage)),
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const wobble = (Math.random() * 2 - 1) * Math.min(28, len * 0.12);
+    points.push({
+      x: ax + dx * t + nx * wobble,
+      y: ay + dy * t + ny * wobble,
     });
   }
-
-  return { hits, shocked };
+  points.push({ x: bx, y: by });
+  return points;
 }
 
 /**
- * Atualiza timers e aplica pulsos de Gelo/Fogo/Raio quando ativos na run.
+ * Atualiza timers: gelo (AoE 40% range), raio (projétil), ricochete.
+ * Fogo é tratado no CombatSystem (on-hit).
  */
 export function runActiveSkills(
   input: RunActiveSkillsInput,
@@ -218,132 +232,113 @@ export function runActiveSkills(
     now,
     baseDamage,
     matchSkills,
-    skillLevels,
+    skills,
     pulseState,
+    effectiveRange,
   } = input;
 
   const next: ActiveSkillPulseState = { ...pulseState };
   let questFreeze = 0;
-  let questShock = 0;
+  const questShock = 0;
   const lightningHits: LightningHitSplat[] = [];
   let skillDamageDealt = 0;
   let skillHitsLanded = 0;
+  const newLightningProjectiles: LightningProjectile[] = [];
+  const newSkillVfx: SkillVfxEffect[] = [];
 
-  // ——— Gelo ———
+  const iceCooldownMs = Math.max(
+    5_000,
+    20_000 - skills.ice.cooldown * 1_000,
+  );
+  const lightningCooldownMs = Math.max(
+    5_000,
+    20_000 - skills.lightning.cooldown * 1_000,
+  );
+  const ricochetCooldownMs = Math.max(
+    2_000,
+    7_000 - skills.ricochet.cooldown * 500,
+  );
+
+  // ——— Gelo (onda periódica a 40% do range) ———
   if (matchSkills.ice > 0) {
     if (next.iceNextPulseAt <= 0) {
       next.iceNextPulseAt = now;
     }
 
     if (now >= next.iceNextPulseAt) {
+      const iceRadius = Math.max(40, effectiveRange * ICE_RANGE_RATIO);
       next.iceActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
       next.icePulseAt = now;
-      next.iceNextPulseAt = now + ACTIVE_SKILL_CYCLE_MS;
+      next.iceWaveRadius = iceRadius;
+      next.iceNextPulseAt = now + iceCooldownMs;
 
-      const freezeDurationMs = 1000 + skillLevels.ice * 500;
+      const freezeDurationMs = 1000 + skills.ice.duration * 500;
       questFreeze = applyIceWave(
         enemies,
         playerX,
         playerY,
         now,
         freezeDurationMs,
+        iceRadius,
       );
       skillHitsLanded += questFreeze;
-    }
-
-    if (now < next.iceActiveUntil) {
-      const freezeDurationMs = 1000 + skillLevels.ice * 500;
-      const remaining = Math.max(0, next.iceActiveUntil - now);
-      const applyMs = Math.max(remaining, Math.min(freezeDurationMs, 500));
-      for (const enemy of enemies) {
-        if (enemy.isDead) continue;
-        if (enemy.hasStatus("freeze", now)) continue;
-        const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
-        if (dist > ICE_WAVE_RADIUS) continue;
-        enemy.applyStatus("freeze", now + applyMs);
-      }
+      newSkillVfx.push({
+        kind: "ice",
+        x: playerX,
+        y: playerY,
+        maxRadius: iceRadius,
+        startedAt: now,
+        expiresAt: now + ICE_VFX_MS,
+      });
     }
   } else {
     next.iceNextPulseAt = 0;
     next.iceActiveUntil = 0;
+    next.iceWaveRadius = 0;
   }
 
-  // ——— Fogo ———
-  if (matchSkills.fire > 0) {
-    if (next.fireNextPulseAt <= 0) {
-      next.fireNextPulseAt = now;
-    }
+  // ——— Fogo: removido do periódico (on-hit no combate) ———
+  next.fireNextPulseAt = 0;
+  next.fireActiveUntil = 0;
 
-    const burnTickDamage =
-      baseDamage * 0.2 * (1 + skillLevels.fire * 0.5);
-
-    if (now >= next.fireNextPulseAt) {
-      next.fireActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
-      next.firePulseAt = now;
-      next.fireNextPulseAt = now + ACTIVE_SKILL_CYCLE_MS;
-      const burned = applyArenaBurn(
-        enemies,
-        now,
-        burnTickDamage,
-        ACTIVE_SKILL_DURATION_MS,
-      );
-      skillHitsLanded += burned;
-      // Estimativa de dano do primeiro tick de burn para regen meta
-      skillDamageDealt += burned * burnTickDamage;
-    }
-
-    if (now < next.fireActiveUntil) {
-      const remaining = Math.max(100, next.fireActiveUntil - now);
-      applyArenaBurn(enemies, now, burnTickDamage, remaining);
-    }
-  } else {
-    next.fireNextPulseAt = 0;
-    next.fireActiveUntil = 0;
-  }
-
-  // ——— Raio ———
+  // ——— Raio: dispara projétil elétrico a cada ciclo ———
   if (matchSkills.lightning > 0) {
     if (next.lightningNextPulseAt <= 0) {
       next.lightningNextPulseAt = now;
     }
 
-    const targetCount = 2 + skillLevels.lightning;
-    const lightningDamage =
-      baseDamage * (0.35 + skillLevels.lightning * 0.15);
-    const slowAmount = Math.min(
-      0.85,
-      0.2 + skillLevels.lightning * 0.1,
-    );
-
     if (now >= next.lightningNextPulseAt) {
-      next.lightningActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
       next.lightningPulseAt = now;
-      next.lightningNextPulseAt = now + ACTIVE_SKILL_CYCLE_MS;
-      next.lightningLastTickAt = 0; // força tick imediato na janela
-    }
+      next.lightningNextPulseAt = now + lightningCooldownMs;
+      next.lightningActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
 
-    if (now < next.lightningActiveUntil) {
-      const dueTick =
-        next.lightningLastTickAt <= 0 ||
-        now >= next.lightningLastTickAt + LIGHTNING_TICK_MS;
-
-      if (dueTick) {
-        next.lightningLastTickAt = now;
-        const burst = fireLightningChain(
-          enemies,
-          playerX,
-          playerY,
-          now,
-          targetCount,
-          lightningDamage,
-          slowAmount,
-        );
-        questShock += burst.shocked;
-        lightningHits.push(...burst.hits);
-        for (const hit of burst.hits) {
-          skillDamageDealt += hit.damage;
-          skillHitsLanded += 1;
+      let nearest: Enemy | null = null;
+      let nearestDist = Infinity;
+      for (const enemy of enemies) {
+        if (enemy.isDead) continue;
+        const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
+        if (dist < nearestDist) {
+          nearest = enemy;
+          nearestDist = dist;
         }
+      }
+
+      if (nearest) {
+        const dx = nearest.x - playerX;
+        const dy = nearest.y - playerY;
+        const len = Math.hypot(dx, dy) || 1;
+        const lightningDamage =
+          baseDamage * (1 + skills.lightning.damage * 0.2);
+        newLightningProjectiles.push({
+          id: crypto.randomUUID(),
+          x: playerX,
+          y: playerY,
+          vx: (dx / len) * LIGHTNING_PROJECTILE_SPEED,
+          vy: (dy / len) * LIGHTNING_PROJECTILE_SPEED,
+          damage: lightningDamage,
+          radius: LIGHTNING_PROJECTILE_RADIUS,
+          targetEnemyId: nearest.id,
+        });
       }
     }
   } else {
@@ -352,7 +347,7 @@ export function runActiveSkills(
     next.lightningLastTickAt = 0;
   }
 
-  // ——— Ricochete (janela 2s a cada 25s — socos disparam cadeia) ———
+  // ——— Ricochete ———
   if (matchSkills.ricochet > 0) {
     if (next.ricochetNextPulseAt <= 0) {
       next.ricochetNextPulseAt = now;
@@ -361,7 +356,7 @@ export function runActiveSkills(
     if (now >= next.ricochetNextPulseAt) {
       next.ricochetActiveUntil = now + RICOCHET_ACTIVE_MS;
       next.ricochetPulseAt = now;
-      next.ricochetNextPulseAt = now + RICOCHET_CYCLE_MS;
+      next.ricochetNextPulseAt = now + ricochetCooldownMs;
     }
   } else {
     next.ricochetNextPulseAt = 0;
@@ -375,6 +370,8 @@ export function runActiveSkills(
     lightningHits,
     skillDamageDealt,
     skillHitsLanded,
+    newLightningProjectiles,
+    newSkillVfx,
   };
 }
 

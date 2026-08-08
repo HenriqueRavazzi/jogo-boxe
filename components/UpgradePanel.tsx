@@ -15,8 +15,10 @@ import {
 import {
   MAX_CRIT_CHANCE,
   MAX_UPGRADE_LEVELS,
+  formatLevelLabel,
   getMetaMaxCooldownMs,
   getMetaMaxRangePx,
+  isLevelCapped,
   useGameStore,
 } from "@/store/useGameStore";
 import { syncWithDB } from "@/lib/syncWithDB";
@@ -87,14 +89,20 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
     Math.round((incomeMultiplier - 1) / 0.2),
   );
 
-  const hpAtMax = maxHpLevel >= MAX_UPGRADE_LEVELS.hp;
-  const damageAtMax = baseDamageLevel >= MAX_UPGRADE_LEVELS.damage;
-  const incomeAtMax = incomeLevel >= MAX_UPGRADE_LEVELS.income;
-  const knockbackAtMax = knockbackLevel >= MAX_UPGRADE_LEVELS.knockback;
+  const hpAtMax = isLevelCapped(maxHpLevel, MAX_UPGRADE_LEVELS.hp);
+  const damageAtMax = isLevelCapped(baseDamageLevel, MAX_UPGRADE_LEVELS.damage);
+  const incomeAtMax = isLevelCapped(incomeLevel, MAX_UPGRADE_LEVELS.income);
+  const knockbackAtMax = isLevelCapped(
+    knockbackLevel,
+    MAX_UPGRADE_LEVELS.knockback,
+  );
   const critChanceAtMax =
-    critChanceLevel >= MAX_UPGRADE_LEVELS.critChance ||
+    isLevelCapped(critChanceLevel, MAX_UPGRADE_LEVELS.critChance) ||
     critChance >= MAX_CRIT_CHANCE;
-  const critDamageAtMax = critDamageLevel >= MAX_UPGRADE_LEVELS.critDamage;
+  const critDamageAtMax = isLevelCapped(
+    critDamageLevel,
+    MAX_UPGRADE_LEVELS.critDamage,
+  );
 
   const metaCdFloor = getMetaMaxCooldownMs(baseConfig.baseAttackSpeed);
   const metaRangeCeil = getMetaMaxRangePx(baseConfig.baseRange);
@@ -125,7 +133,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
     >
       <UpgradeCard
         icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
-        title={`Max HP: Nível ${maxHpLevel}/${MAX_UPGRADE_LEVELS.hp}`}
+        title={`Max HP: ${formatLevelLabel(maxHpLevel, MAX_UPGRADE_LEVELS.hp)}`}
         subtitle={`HP atual: ${getMaxHp()}`}
         cost={hpCost}
         canAfford={!hpAtMax && gold >= hpCost}
@@ -135,7 +143,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<Swords className="h-5 w-5 text-amber-400" />}
         title={`Dano: ${getBaseDamage()}`}
-        subtitle={`Nível ${baseDamageLevel}/${MAX_UPGRADE_LEVELS.damage}`}
+        subtitle={formatLevelLabel(baseDamageLevel, MAX_UPGRADE_LEVELS.damage)}
         cost={damageCost}
         canAfford={!damageAtMax && gold >= damageCost}
         atMax={damageAtMax}
@@ -191,11 +199,10 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<Zap className="h-5 w-5 text-orange-400" />}
         title={`Dano Crítico: ${critDamageMult.toFixed(2)}x`}
-        subtitle={
-          critDamageAtMax
-            ? "MÁXIMO"
-            : `Nível ${critDamageLevel}/${MAX_UPGRADE_LEVELS.critDamage}`
-        }
+        subtitle={formatLevelLabel(
+          critDamageLevel,
+          MAX_UPGRADE_LEVELS.critDamage,
+        )}
         cost={critDamageCost}
         canAfford={!critDamageAtMax && gold >= critDamageCost}
         atMax={critDamageAtMax}
@@ -207,7 +214,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         subtitle={
           knockbackAtMax
             ? "MÁXIMO"
-            : `Nível ${knockbackLevel}/${MAX_UPGRADE_LEVELS.knockback}`
+            : formatLevelLabel(knockbackLevel, MAX_UPGRADE_LEVELS.knockback)
         }
         cost={knockbackCost}
         canAfford={!knockbackAtMax && gold >= knockbackCost}
@@ -217,11 +224,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<Coins className="h-5 w-5 text-yellow-400" />}
         title={`Multiplicador: ${incomeMultiplier.toFixed(1)}x`}
-        subtitle={
-          incomeAtMax
-            ? "MÁXIMO"
-            : `Nível ${incomeLevel}/${MAX_UPGRADE_LEVELS.income}`
-        }
+        subtitle={formatLevelLabel(incomeLevel, MAX_UPGRADE_LEVELS.income)}
         cost={incomeCost}
         canAfford={!incomeAtMax && gold >= incomeCost}
         atMax={incomeAtMax}

@@ -1,17 +1,88 @@
 import { DEFAULT_SKILL_TREE } from "@/lib/skillTree";
 import {
+  DEFAULT_MATCH_SKILLS,
+  DEFAULT_META_TREE,
   DEFAULT_SKILLS_DATA,
   DEFAULT_UNLOCKED_SKILLS,
-  DEFAULT_META_TREE,
+  SKILL_STAT_KEYS,
+  type LegacyFlatSkillsData,
+  type MatchSkillsData,
+  type MetaTreeData,
   type SaveData,
   type SkillsData,
+  type SkillUpgradeType,
   type UnlockedSkillsData,
-  type MetaTreeData,
 } from "@/db/schema";
 
-function normalizeSkills(skills?: Partial<SkillsData> | null): SkillsData {
+function isFlatLegacySkills(
+  value: unknown,
+): value is LegacyFlatSkillsData {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.ricochet === "number";
+}
+
+function statsFromLevel(
+  skillId: SkillUpgradeType,
+  level: number,
+): SkillsData[SkillUpgradeType] {
+  const lv = Math.max(0, Math.floor(level));
+  const keys = SKILL_STAT_KEYS[skillId];
+  const out: Record<string, number> = {};
+  for (const key of keys) out[key] = lv;
+  return out as SkillsData[SkillUpgradeType];
+}
+
+function mergeSkillStats<T extends SkillUpgradeType>(
+  skillId: T,
+  partial?: Partial<SkillsData[T]> | null,
+): SkillsData[T] {
   return {
-    ...DEFAULT_SKILLS_DATA,
+    ...DEFAULT_SKILLS_DATA[skillId],
+    ...(partial ?? {}),
+  } as SkillsData[T];
+}
+
+/** Normaliza JSONB legado (flat) ou parcial → estrutura granular. */
+export function normalizeSkills(
+  skills?: Partial<SkillsData> | LegacyFlatSkillsData | null,
+): SkillsData {
+  if (!skills) return { ...cloneSkills(DEFAULT_SKILLS_DATA) };
+
+  if (isFlatLegacySkills(skills)) {
+    return {
+      ricochet: statsFromLevel("ricochet", skills.ricochet) as SkillsData["ricochet"],
+      ice: statsFromLevel("ice", skills.ice) as SkillsData["ice"],
+      fire: statsFromLevel("fire", skills.fire) as SkillsData["fire"],
+      lightning: statsFromLevel(
+        "lightning",
+        skills.lightning,
+      ) as SkillsData["lightning"],
+    };
+  }
+
+  return {
+    ricochet: mergeSkillStats("ricochet", skills.ricochet),
+    ice: mergeSkillStats("ice", skills.ice),
+    fire: mergeSkillStats("fire", skills.fire),
+    lightning: mergeSkillStats("lightning", skills.lightning),
+  };
+}
+
+function cloneSkills(skills: SkillsData): SkillsData {
+  return {
+    ricochet: { ...skills.ricochet },
+    ice: { ...skills.ice },
+    fire: { ...skills.fire },
+    lightning: { ...skills.lightning },
+  };
+}
+
+export function normalizeMatchSkills(
+  skills?: Partial<MatchSkillsData> | null,
+): MatchSkillsData {
+  return {
+    ...DEFAULT_MATCH_SKILLS,
     ...(skills ?? {}),
   };
 }
@@ -62,7 +133,7 @@ export function createDefaultSaveData(): SaveData {
     critChanceLevel: 0,
     critDamageLevel: 0,
     skillTree: { ...DEFAULT_SKILL_TREE },
-    skillLevels: { ...DEFAULT_SKILLS_DATA },
+    skills: cloneSkills(DEFAULT_SKILLS_DATA),
     unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
     ...DEFAULT_META_TREE,
   };
@@ -70,14 +141,17 @@ export function createDefaultSaveData(): SaveData {
 
 /** Hidrata saves antigos sem campos novos. */
 export function normalizeSaveData(
-  data: SaveData & { skills?: SkillsData },
+  data: SaveData & {
+    skills?: SkillsData | LegacyFlatSkillsData;
+    skillLevels?: SkillsData | LegacyFlatSkillsData;
+  },
 ): SaveData {
   const level = data.baseDamageLevel ?? 1;
   const baseDamage =
     data.baseDamage ?? Math.round(10 + (level - 1) * 5);
 
-  const skillLevels = normalizeSkills(
-    data.skillLevels ?? data.skills ?? DEFAULT_SKILLS_DATA,
+  const skills = normalizeSkills(
+    data.skills ?? data.skillLevels ?? DEFAULT_SKILLS_DATA,
   );
 
   const skillTree = {
@@ -92,9 +166,11 @@ export function normalizeSaveData(
 
   const meta = normalizeMetaTree(data);
 
+  const { skillLevels: _legacyLevels, ...rest } = data;
+
   return {
     ...createDefaultSaveData(),
-    ...data,
+    ...rest,
     baseDamage,
     armsNextCost: data.armsNextCost ?? 80,
     xpBonusLevel: data.xpBonusLevel ?? 0,
@@ -104,7 +180,7 @@ export function normalizeSaveData(
     critDamageLevel: data.critDamageLevel ?? 0,
     purpleDiamonds: data.purpleDiamonds ?? 0,
     skillTree,
-    skillLevels,
+    skills,
     unlockedSkills,
     ...meta,
   };
@@ -112,18 +188,22 @@ export function normalizeSaveData(
 
 /** Junta colunas dedicadas + JSONB save_data em um SaveData completo. */
 export function mergeSaveRow(row: {
-  saveData: SaveData & { skills?: SkillsData };
+  saveData: SaveData & {
+    skills?: SkillsData | LegacyFlatSkillsData;
+    skillLevels?: SkillsData | LegacyFlatSkillsData;
+  };
   purpleDiamonds?: number | null;
-  skillsData?: SkillsData | null;
+  skillsData?: SkillsData | LegacyFlatSkillsData | null;
 }): SaveData {
   return normalizeSaveData({
     ...row.saveData,
     purpleDiamonds: row.purpleDiamonds ?? row.saveData.purpleDiamonds ?? 0,
-    skillLevels:
+    skills: normalizeSkills(
       row.skillsData ??
-      row.saveData.skillLevels ??
-      row.saveData.skills ??
-      DEFAULT_SKILLS_DATA,
+        row.saveData.skills ??
+        row.saveData.skillLevels ??
+        DEFAULT_SKILLS_DATA,
+    ),
   });
 }
 

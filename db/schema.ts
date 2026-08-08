@@ -13,22 +13,96 @@ import { sql } from "drizzle-orm";
 
 import type { SkillTreeState } from "@/lib/skillTree";
 
-/** Níveis de skills avançadas (Purple Diamonds). */
+/** Stats granulares por skill avançada (Diamantes Roxos / JSONB). */
+export type RicochetSkillStats = {
+  damage: number;
+  cooldown: number;
+  hits: number;
+};
+
+export type IceSkillStats = {
+  duration: number;
+  cooldown: number;
+};
+
+export type FireSkillStats = {
+  damage: number;
+  duration: number;
+};
+
+export type LightningSkillStats = {
+  damage: number;
+  hits: number;
+  cooldown: number;
+};
+
 export type SkillsData = {
+  ricochet: RicochetSkillStats;
+  ice: IceSkillStats;
+  fire: FireSkillStats;
+  lightning: LightningSkillStats;
+};
+
+export type SkillUpgradeType = keyof SkillsData;
+
+export type SkillStatKey<T extends SkillUpgradeType> = keyof SkillsData[T] &
+  string;
+
+/** Formato legado (nível único por skill) — migrado no normalize. */
+export type LegacyFlatSkillsData = {
   ricochet: number;
   ice: number;
   lightning: number;
   fire: number;
 };
 
-export type SkillUpgradeType = keyof SkillsData;
+/** Níveis in-run (cartas de level-up) — independente do meta granular. */
+export type MatchSkillsData = LegacyFlatSkillsData;
 
-export const DEFAULT_SKILLS_DATA: SkillsData = {
+export const DEFAULT_MATCH_SKILLS: MatchSkillsData = {
   ricochet: 0,
   ice: 0,
   lightning: 0,
   fire: 0,
 };
+
+export const DEFAULT_SKILLS_DATA: SkillsData = {
+  ricochet: { damage: 0, cooldown: 0, hits: 0 },
+  ice: { duration: 0, cooldown: 0 },
+  fire: { damage: 0, duration: 0 },
+  lightning: { damage: 0, hits: 0, cooldown: 0 },
+};
+
+export const SKILL_STAT_KEYS = {
+  ricochet: ["damage", "cooldown", "hits"],
+  ice: ["duration", "cooldown"],
+  fire: ["damage", "duration"],
+  lightning: ["damage", "hits", "cooldown"],
+} as const satisfies {
+  [K in SkillUpgradeType]: readonly (keyof SkillsData[K] & string)[];
+};
+
+/** Teto in-run: maior nível entre os atributos meta da skill. */
+export function getSkillMetaCap(
+  skill: SkillsData[SkillUpgradeType] | number | undefined,
+): number {
+  if (skill == null) return 0;
+  if (typeof skill === "number") return Math.max(0, Math.floor(skill));
+  const values = Object.values(skill as Record<string, number>);
+  if (values.length === 0) return 0;
+  return Math.max(0, ...values.map((v) => Math.floor(Number(v) || 0)));
+}
+
+export function isSkillUpgradeType(value: string): value is SkillUpgradeType {
+  return value in DEFAULT_SKILLS_DATA;
+}
+
+export function isSkillStatKey(
+  skillId: SkillUpgradeType,
+  statKey: string,
+): boolean {
+  return (SKILL_STAT_KEYS[skillId] as readonly string[]).includes(statKey);
+}
 
 /** Desbloqueio permanente na base (Diamantes Normais). */
 export type UnlockedSkillsData = {
@@ -95,8 +169,10 @@ export type SaveData = {
   /** Nível de dano crítico (+15% no multiplicador/nível). */
   critDamageLevel: number;
   skillTree: SkillTreeState;
-  /** Níveis meta (Purple Diamonds) — teto de stacks in-run. */
-  skillLevels: SkillsData;
+  /** Stats meta granulares (Purple Diamonds) — JSONB. */
+  skills: SkillsData;
+  /** @deprecated Preferir `skills`; mantido só para migração de saves antigos. */
+  skillLevels?: SkillsData | LegacyFlatSkillsData;
   /** Skills liberadas na base (Diamantes Normais) para a roleta in-game. */
   unlockedSkills: UnlockedSkillsData;
   /** Árvore de atributos permanentes (Diamantes Normais). */
@@ -116,12 +192,12 @@ export const gameSaves = pgTable("game_saves", {
   saveData: jsonb("save_data").$type<SaveData>().notNull(),
   /** Purple Diamonds (também espelhado em save_data). */
   purpleDiamonds: integer("purple_diamonds").notNull().default(0),
-  /** Níveis de skills avançadas (também espelhado em save_data.skillLevels). */
+  /** Stats granulares de skills avançadas (também espelhado em save_data.skills). */
   skillsData: jsonb("skills_data")
     .$type<SkillsData>()
     .notNull()
     .default(
-      sql`'{"ricochet":0,"ice":0,"lightning":0,"fire":0}'::jsonb`,
+      sql`'{"ricochet":{"damage":0,"cooldown":0,"hits":0},"ice":{"duration":0,"cooldown":0},"fire":{"damage":0,"duration":0},"lightning":{"damage":0,"hits":0,"cooldown":0}}'::jsonb`,
     ),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
