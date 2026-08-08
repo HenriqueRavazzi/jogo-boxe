@@ -36,7 +36,9 @@ import {
   applyMilestoneProgress,
   canClaimMilestone,
   createDefaultMilestoneQuests,
+  getMilestonePhaseRewards,
   getMilestoneQuestDef,
+  advanceMilestonePhase,
   normalizeMilestoneQuests,
   type MilestoneProgressEvent,
   type MilestoneQuestId,
@@ -259,6 +261,19 @@ export type GameStoreState = {
   upgradeCritChance: () => boolean;
   /** Upgrade de dano crítico com ouro. */
   upgradeCritDamage: () => boolean;
+  /**
+   * Compra em lote (x1 / x10 / x100 / max).
+   * Retorna quantos níveis foram comprados.
+   */
+  buyGoldUpgradeBulk: (
+    kind: GoldUpgradeKind,
+    quantity: GoldUpgradeQuantity,
+  ) => number;
+  /** Prévia: níveis possíveis e custo total para a quantidade pedida. */
+  previewGoldUpgradeBulk: (
+    kind: GoldUpgradeKind,
+    quantity: GoldUpgradeQuantity,
+  ) => { count: number; totalCost: number };
   /** Upgrade de XP com diamantes. */
   upgradeXpBonus: () => boolean;
   /** Upgrade da árvore de atributos (Diamantes Normais). */
@@ -339,6 +354,52 @@ export function getUpgradeCost(
         getPrestigeCostMultiplier(prestigeLevel),
     ),
   );
+}
+
+export type GoldUpgradeKind =
+  | "hp"
+  | "damage"
+  | "range"
+  | "income"
+  | "critChance"
+  | "arms";
+
+export type GoldUpgradeQuantity = 1 | 10 | 100 | "max";
+
+const GOLD_BULK_HARD_CAP = 10_000;
+
+function resolveBulkWanted(quantity: GoldUpgradeQuantity): number {
+  if (quantity === "max") return GOLD_BULK_HARD_CAP;
+  return quantity;
+}
+
+/**
+ * Soma custos sequenciais até qty, ouro ou teto.
+ * `getCostAt(level)` = custo para subir do nível atual.
+ */
+export function planSequentialGoldUpgrades(options: {
+  startLevel: number;
+  gold: number;
+  quantity: GoldUpgradeQuantity;
+  getCostAt: (level: number) => number;
+  canBuyAt: (level: number) => boolean;
+}): { count: number; totalCost: number } {
+  const wanted = resolveBulkWanted(options.quantity);
+  let count = 0;
+  let totalCost = 0;
+  let level = options.startLevel;
+
+  while (count < wanted) {
+    if (!options.canBuyAt(level)) break;
+    const cost = options.getCostAt(level);
+    if (!Number.isFinite(cost) || cost <= 0) break;
+    if (totalCost + cost > options.gold) break;
+    totalCost += cost;
+    count += 1;
+    level += 1;
+  }
+
+  return { count, totalCost };
 }
 
 export function getMetaTreeCostAt(level: number, prestigeLevel = 0): number {
@@ -1056,7 +1117,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       armTier: fresh.armTier,
       armsNextCost: fresh.armsNextCost,
       incomeMultiplier: fresh.incomeMultiplier,
-      xpBonusLevel: fresh.xpBonusLevel,
+      /** Aumento de XP (Talents) volta ao nível 0 a cada Ascensão. */
+      xpBonusLevel: 0,
       knockbackLevel: fresh.knockbackLevel,
       baseKnockbackPower: fresh.baseKnockbackPower,
       critChanceLevel: fresh.critChanceLevel,
@@ -1097,25 +1159,25 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (!canClaimMilestone(state, id)) return null;
     const def = getMilestoneQuestDef(id);
     if (!def) return null;
-    const rewards = def.rewards;
+    const row = state[id] ?? { phase: 0, current: 0 };
+    const rewards = getMilestonePhaseRewards(def, row.phase);
 
-    set((s) => ({
-      milestoneQuests: {
-        ...s.milestoneQuests,
-        [id]: {
-          ...(s.milestoneQuests[id] ?? { current: def.target, claimed: false }),
-          current: Math.max(
-            s.milestoneQuests[id]?.current ?? 0,
-            def.target,
-          ),
-          claimed: true,
-        },
-      },
-      gold: s.gold + rewards.gold,
-      gems: s.gems + rewards.gems,
-      purpleDiamonds: s.purpleDiamonds + rewards.purpleDiamonds,
-      ascensionShards: s.ascensionShards + rewards.ascensionShards,
-    }));
+    set((s) => {
+      let mq = advanceMilestonePhase(s.milestoneQuests, id);
+      // Prestígio já alcançado conta para a próxima fase de Ascendido
+      if (id === "ascended") {
+        mq = applyMilestoneProgress(mq, [
+          { type: "prestige_level", amount: s.prestigeLevel },
+        ]);
+      }
+      return {
+        milestoneQuests: mq,
+        gold: s.gold + rewards.gold,
+        gems: s.gems + rewards.gems,
+        purpleDiamonds: s.purpleDiamonds + rewards.purpleDiamonds,
+        ascensionShards: s.ascensionShards + rewards.ascensionShards,
+      };
+    });
 
     void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
       void syncWithDB();
@@ -1471,12 +1533,176 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getAttackCooldown: () => get().getEffectiveStats().attackCooldownMs,
 
+  previewGoldUpgradeBulk: (kind, quantity) => {
+    const s = get();
+    const prestige = s.prestigeLevel;
+    const gold = s.gold;
+
+    if (kind === "arms") {
+      const wanted = resolveBulkWanted(quantity);
+      let count = 0;
+      let totalCost = 0;
+      let stored = s.armsNextCost;
+      while (count < wanted) {
+        const cost = Math.max(
+          1,
+          Math.floor(stored * getPrestigeCostMultiplier(prestige)),
+        );
+        if (totalCost + cost > gold) break;
+        totalCost += cost;
+        stored = Math.floor(stored * ARMS_COST_GROWTH);
+        count += 1;
+      }
+      return { count, totalCost };
+    }
+
+    if (kind === "hp") {
+      return planSequentialGoldUpgrades({
+        startLevel: s.maxHpLevel,
+        gold,
+        quantity,
+        getCostAt: (lv) => getUpgradeCost(UPGRADE_COST_BASE, lv, prestige),
+        canBuyAt: (lv) => !isLevelCapped(lv, MAX_UPGRADE_LEVELS.hp),
+      });
+    }
+
+    if (kind === "damage") {
+      return planSequentialGoldUpgrades({
+        startLevel: s.baseDamageLevel,
+        gold,
+        quantity,
+        getCostAt: (lv) => getUpgradeCost(UPGRADE_COST_BASE, lv, prestige),
+        canBuyAt: (lv) => !isLevelCapped(lv, MAX_UPGRADE_LEVELS.damage),
+      });
+    }
+
+    if (kind === "range") {
+      const metaCeil = getMetaMaxRangePx(s.baseConfig.baseRange);
+      return planSequentialGoldUpgrades({
+        startLevel: s.rangeLevel,
+        gold,
+        quantity,
+        getCostAt: (lv) => getUpgradeCost(RANGE_COST_BASE, lv, prestige),
+        canBuyAt: (lv) => {
+          if (lv >= MAX_UPGRADE_LEVELS.range) return false;
+          const cur = rangeAtLevel(lv, s.baseConfig.baseRange);
+          if (cur >= metaCeil) return false;
+          const next = rangeAtLevel(lv + 1, s.baseConfig.baseRange);
+          return next > cur;
+        },
+      });
+    }
+
+    if (kind === "income") {
+      const incomeLevel = Math.max(
+        0,
+        Math.round((s.incomeMultiplier - 1) / INCOME_STEP),
+      );
+      return planSequentialGoldUpgrades({
+        startLevel: incomeLevel,
+        gold,
+        quantity,
+        getCostAt: (lv) => getUpgradeCost(INCOME_COST_BASE, lv, prestige),
+        canBuyAt: (lv) => !isLevelCapped(lv, MAX_UPGRADE_LEVELS.income),
+      });
+    }
+
+    // critChance
+    return planSequentialGoldUpgrades({
+      startLevel: s.critChanceLevel,
+      gold,
+      quantity,
+      getCostAt: (lv) => getCritChanceCostAt(lv, prestige),
+      canBuyAt: (lv) => {
+        if (isLevelCapped(lv, MAX_UPGRADE_LEVELS.critChance)) return false;
+        return getCritChanceAt(lv) < MAX_CRIT_CHANCE;
+      },
+    });
+  },
+
+  buyGoldUpgradeBulk: (kind, quantity) => {
+    const plan = get().previewGoldUpgradeBulk(kind, quantity);
+    if (plan.count <= 0 || plan.totalCost <= 0) return 0;
+    if (get().gold < plan.totalCost) return 0;
+
+    const n = plan.count;
+    const cost = plan.totalCost;
+
+    if (kind === "hp") {
+      set((s) => ({
+        gold: s.gold - cost,
+        maxHpLevel: s.maxHpLevel + n,
+      }));
+      return n;
+    }
+
+    if (kind === "damage") {
+      set((s) => ({
+        gold: s.gold - cost,
+        baseDamageLevel: s.baseDamageLevel + n,
+        baseDamage: Math.round(s.baseDamage + DAMAGE_PER_LEVEL * n),
+      }));
+      return n;
+    }
+
+    if (kind === "range") {
+      set((s) => ({
+        gold: s.gold - cost,
+        rangeLevel: Math.min(MAX_UPGRADE_LEVELS.range, s.rangeLevel + n),
+      }));
+      return n;
+    }
+
+    if (kind === "income") {
+      set((s) => ({
+        gold: s.gold - cost,
+        incomeMultiplier: Number(
+          (s.incomeMultiplier + INCOME_STEP * n).toFixed(1),
+        ),
+      }));
+      return n;
+    }
+
+    if (kind === "critChance") {
+      set((s) => ({
+        gold: s.gold - cost,
+        critChanceLevel: Math.min(
+          MAX_UPGRADE_LEVELS.critChance,
+          s.critChanceLevel + n,
+        ),
+      }));
+      return n;
+    }
+
+    // arms — simula ciclo braço / prestige de braços
+    set((s) => {
+      let arms = s.arms;
+      let armTier = s.armTier;
+      let baseDamage = s.baseDamage;
+      let armsNextCost = s.armsNextCost;
+      for (let i = 0; i < n; i++) {
+        if (arms < ARMS_MAX) {
+          arms += 1;
+        } else {
+          arms = ARMS_MIN;
+          armTier += 1;
+          baseDamage = Math.round(baseDamage * ARMS_PRESTIGE_DAMAGE);
+        }
+        armsNextCost = Math.floor(armsNextCost * ARMS_COST_GROWTH);
+      }
+      return {
+        gold: s.gold - cost,
+        arms,
+        armTier,
+        baseDamage,
+        armsNextCost,
+      };
+    });
+    return n;
+  },
+
   upgradeHP: () => {
-    if (isLevelCapped(get().maxHpLevel, MAX_UPGRADE_LEVELS.hp)) return false;
-    const cost = get().getHpUpgradeCost();
-    if (get().gold < cost) return false;
-    set((s) => ({ gold: s.gold - cost, maxHpLevel: s.maxHpLevel + 1 }));
-    return true;
+    return get().buyGoldUpgradeBulk("hp", 1) > 0;
   },
 
   upgradeDamage: () => {

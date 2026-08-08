@@ -10,7 +10,6 @@ export type SkillNodeId =
   | "node_dmg_1"
   | "node_dmg_2"
   | "node_range_focus"
-  | "node_ricochet"
   | "node_spark_ignition"
   | "node_spark_burst"
   | "node_spark_fury";
@@ -54,7 +53,6 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_dmg_1: false,
   node_dmg_2: false,
   node_range_focus: false,
-  node_ricochet: false,
   node_spark_ignition: false,
   node_spark_burst: false,
   node_spark_fury: false,
@@ -153,16 +151,6 @@ export const SKILL_NODES: SkillNodeDef[] = [
     tier: 2,
     accent: "amber",
   },
-  {
-    id: "node_ricochet",
-    name: "Ricochet Punch",
-    description: "Soco ricocheteia em até 4 alvos (75% dano, CD 8s)",
-    cost: 28,
-    requires: "node_range_focus",
-    branch: "power",
-    tier: 3,
-    accent: "silver",
-  },
   // Spark
   {
     id: "node_spark_ignition",
@@ -232,8 +220,9 @@ export function getLifeStealRatio(skillTree: SkillTreeState): number {
   return getLifeStealLevel(skillTree) * (LIFE_STEAL_PERCENT_PER_LEVEL / 100);
 }
 
-export function isRicochetUnlocked(skillTree: SkillTreeState): boolean {
-  return Boolean(skillTree.node_ricochet);
+/** @deprecated Ricochete só via Skills Roxas (`unlockedSkills.ricochet`). */
+export function isRicochetUnlocked(_skillTree: SkillTreeState): boolean {
+  return false;
 }
 
 export type RicochetConfig = {
@@ -245,15 +234,15 @@ export type RicochetConfig = {
 
 /**
  * Config de ricochete (UI / meta): ciclo 25s, janela 2s.
- * Bounces = min(5, 2+lv), dano = 60% + 15%/lv (com falloff 0.85 por salto no combate).
+ * Desbloqueio real vem de `unlockedSkills.ricochet` + cartas in-run.
  */
 export function getRicochetConfig(
-  skillTree: SkillTreeState,
+  _skillTree: SkillTreeState,
   ricochetLevel = 0,
 ): RicochetConfig {
   const level = Math.max(0, Math.floor(ricochetLevel));
   return {
-    unlocked: isRicochetUnlocked(skillTree) || level > 0,
+    unlocked: level > 0,
     cooldownMs: 25_000,
     maxBounces: Math.min(5, 2 + level),
     bounceDamagePercent: 0.6 + level * 0.15,

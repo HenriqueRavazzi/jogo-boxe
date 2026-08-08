@@ -175,8 +175,8 @@ export function normalizeSaveData(
   }
 
   const unlockedSkills = normalizeUnlocked(data.unlockedSkills);
-  if (skillTree.node_ricochet) unlockedSkills.ricochet = true;
-  // Migração: nós Elements removidos → preserva desbloqueio de Gelo/Raio
+  // Migração: nós removidos da árvore → preserva desbloqueios em Skills Roxas
+  if (rawTree.node_ricochet) unlockedSkills.ricochet = true;
   if (rawTree.node_frost_chance) unlockedSkills.ice = true;
   if (rawTree.node_shock_chance) unlockedSkills.lightning = true;
 

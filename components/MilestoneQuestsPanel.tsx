@@ -5,6 +5,8 @@ import { Coins, Gem, ScrollText, Sparkles, Trophy } from "lucide-react";
 import {
   MILESTONE_QUESTS,
   canClaimMilestone,
+  getMilestonePhaseRewards,
+  getMilestonePhaseTarget,
   type MilestoneQuestId,
 } from "@/lib/milestoneQuests";
 import { syncWithDB } from "@/lib/syncWithDB";
@@ -18,6 +20,36 @@ function formatTarget(id: MilestoneQuestId, current: number, target: number) {
     return `${curMin}:${String(curSec).padStart(2, "0")} / ${tgtMin}:00`;
   }
   return `${current.toLocaleString("pt-BR")} / ${target.toLocaleString("pt-BR")}`;
+}
+
+function phaseDescription(
+  id: MilestoneQuestId,
+  baseDescription: string,
+  target: number,
+): string {
+  if (id === "implacable_survivor") {
+    const min = Math.max(1, Math.floor(target / 60));
+    return `Sobreviva ${min} min em Difícil ou Infernal.`;
+  }
+  if (id === "ascended") {
+    return `Alcance o Nível ${target} de Prestígio.`;
+  }
+  if (id === "boss_hunter") {
+    return `Derrote ${target.toLocaleString("pt-BR")} bosses em uma única run.`;
+  }
+  if (id === "flame_master") {
+    return `Derrote ${target.toLocaleString("pt-BR")} inimigos sob efeito de Fogo.`;
+  }
+  if (id === "ricochet_rampage") {
+    return `Elimine ${target.toLocaleString("pt-BR")} inimigos na janela de Ricochete.`;
+  }
+  if (id === "gold_rush") {
+    return `Colete ${target.toLocaleString("pt-BR")} de ouro no total.`;
+  }
+  if (id === "diamond_digger") {
+    return `Colete ${target.toLocaleString("pt-BR")} diamantes normais no total.`;
+  }
+  return baseDescription;
 }
 
 /** Painel de Missões / Conquistas no menu principal. */
@@ -59,7 +91,7 @@ export function MilestoneQuestsPanel({
 
       <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
         <p className="text-[11px] leading-snug text-zinc-400">
-          Metas de longo prazo com recompensas altas — ouro, diamantes e shards.
+          Missões eternas: a cada fase a meta e a recompensa sobem.
         </p>
         {claimableCount > 0 && (
           <span className="shrink-0 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
@@ -71,17 +103,19 @@ export function MilestoneQuestsPanel({
       <ul className="flex flex-col gap-2">
         {MILESTONE_QUESTS.map((quest) => {
           const row = milestoneQuests[quest.id] ?? {
+            phase: 0,
             current: 0,
-            claimed: false,
           };
+          const phase = row.phase ?? 0;
+          const target = getMilestonePhaseTarget(quest, phase);
+          const rewards = getMilestonePhaseRewards(quest, phase);
           const pct = Math.max(
             0,
-            Math.min(100, (row.current / quest.target) * 100),
+            Math.min(100, (row.current / target) * 100),
           );
-          const complete = row.current >= quest.target;
+          const complete = row.current >= target;
           const claimable = canClaimMilestone(milestoneQuests, quest.id);
           const busy = claimingId === quest.id;
-          const r = quest.rewards;
 
           return (
             <li
@@ -89,9 +123,7 @@ export function MilestoneQuestsPanel({
               className={`rounded-xl border p-3 transition ${
                 claimable
                   ? "border-emerald-400/50 bg-emerald-950/40 shadow-[0_0_20px_-6px_rgba(52,211,153,0.55)]"
-                  : row.claimed
-                    ? "border-white/5 bg-zinc-950/40 opacity-70"
-                    : "border-white/10 bg-zinc-950/60"
+                  : "border-white/10 bg-zinc-950/60"
               }`}
             >
               <div className="mb-1.5 flex items-start justify-between gap-2">
@@ -99,25 +131,19 @@ export function MilestoneQuestsPanel({
                   <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-50">
                     <Trophy
                       className={`h-3.5 w-3.5 shrink-0 ${
-                        claimable
-                          ? "text-emerald-300"
-                          : row.claimed
-                            ? "text-zinc-500"
-                            : "text-amber-300"
+                        claimable ? "text-emerald-300" : "text-amber-300"
                       }`}
                       aria-hidden
                     />
                     {quest.title}
                   </p>
                   <p className="mt-0.5 text-[11px] leading-snug text-zinc-400">
-                    {quest.description}
+                    {phaseDescription(quest.id, quest.description, target)}
                   </p>
                 </div>
-                {row.claimed && (
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                    Resgatada
-                  </span>
-                )}
+                <span className="shrink-0 rounded-md border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
+                  Fase {phase + 1}
+                </span>
               </div>
 
               <div className="mb-1.5 h-2 overflow-hidden rounded-full bg-zinc-800">
@@ -135,26 +161,26 @@ export function MilestoneQuestsPanel({
 
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[11px] tabular-nums text-zinc-400">
-                  {formatTarget(quest.id, row.current, quest.target)}
+                  {formatTarget(quest.id, row.current, target)}
                 </span>
 
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold tabular-nums">
                   <span className="inline-flex items-center gap-0.5 text-amber-300">
                     <Coins className="h-3 w-3" aria-hidden />
-                    {r.gold.toLocaleString("pt-BR")}
+                    {rewards.gold.toLocaleString("pt-BR")}
                   </span>
                   <span className="inline-flex items-center gap-0.5 text-cyan-300">
                     <Gem className="h-3 w-3" aria-hidden />
-                    {r.gems}
+                    {rewards.gems}
                   </span>
                   <span className="inline-flex items-center gap-0.5 text-violet-300">
                     <Gem className="h-3 w-3" aria-hidden />
-                    {r.purpleDiamonds}
+                    {rewards.purpleDiamonds}
                   </span>
-                  {r.ascensionShards > 0 && (
+                  {rewards.ascensionShards > 0 && (
                     <span className="inline-flex items-center gap-0.5 text-fuchsia-300">
                       <Sparkles className="h-3 w-3" aria-hidden />
-                      {r.ascensionShards}
+                      {rewards.ascensionShards}
                     </span>
                   )}
                 </div>
