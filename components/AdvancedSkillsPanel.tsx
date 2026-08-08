@@ -9,13 +9,16 @@ import {
 import {
   Check,
   ChevronRight,
+  Coins,
   Crosshair,
+  Crown,
   Flame,
   Gem,
   Lock,
   RotateCcw,
   Snowflake,
   Spline,
+  Swords,
   Timer,
   X,
   Zap,
@@ -328,13 +331,17 @@ export function AdvancedSkillsPanel({
   const [selected, setSelected] = useState<SkillUpgradeType | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const gems = useGameStore((s) => s.gems);
+  const gold = useGameStore((s) => s.gold);
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const unlockedSkills = useGameStore((s) => s.unlockedSkills);
   const skills = useGameStore((s) => s.skills);
+  const totalMobsKilled = useGameStore((s) => s.totalMobsKilled);
+  const totalBossesKilled = useGameStore((s) => s.totalBossesKilled);
   const unlockAdvancedSkill = useGameStore((s) => s.unlockAdvancedSkill);
-  const getAdvancedSkillUnlockCost = useGameStore(
-    (s) => s.getAdvancedSkillUnlockCost,
+  const getAdvancedSkillUnlockRequirements = useGameStore(
+    (s) => s.getAdvancedSkillUnlockRequirements,
   );
+  const canUnlockAdvancedSkill = useGameStore((s) => s.canUnlockAdvancedSkill);
   const getPurpleSkillInvestment = useGameStore(
     (s) => s.getPurpleSkillInvestment,
   );
@@ -371,12 +378,20 @@ export function AdvancedSkillsPanel({
         </p>
       )}
       <p className="mb-3 px-1 text-[11px] leading-snug text-zinc-500">
-        Desbloqueie com diamantes. Clique numa skill liberada para upar cada
-        atributo com diamantes roxos (máx. {MAX_PURPLE_SKILL_STAT_LEVEL} por
-        atributo).
+        Desbloqueie com ouro + diamantes após atingir os marcos de abates.
+        Depois, upagrade atributos com diamantes roxos (máx.{" "}
+        {MAX_PURPLE_SKILL_STAT_LEVEL} por atributo).
       </p>
-      <div className="mb-2 px-1 text-[11px] text-violet-300/80">
-        <span className="inline-flex items-center gap-1 font-semibold">
+      <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px]">
+        <span className="inline-flex items-center gap-1 font-semibold text-amber-300/90">
+          <Coins className="h-3 w-3" aria-hidden />
+          {gold.toLocaleString("pt-BR")} ouro
+        </span>
+        <span className="inline-flex items-center gap-1 font-semibold text-cyan-300/90">
+          <Gem className="h-3 w-3" aria-hidden />
+          {gems.toLocaleString("pt-BR")} diamantes
+        </span>
+        <span className="inline-flex items-center gap-1 font-semibold text-violet-300/80">
           <Gem className="h-3 w-3" aria-hidden />
           {purpleDiamonds.toLocaleString("pt-BR")} roxos
         </span>
@@ -386,9 +401,9 @@ export function AdvancedSkillsPanel({
         {CARDS.map((card) => {
           const unlocked = unlockedSkills[card.type];
           const skillStats = skills[card.type];
-          const unlockCost = getAdvancedSkillUnlockCost(card.type);
+          const req = getAdvancedSkillUnlockRequirements(card.type);
           const matchMax = getMatchSkillMaxLevel(getSkillMetaCap(skillStats));
-          const canUnlock = !unlocked && gems >= unlockCost;
+          const canUnlock = canUnlockAdvancedSkill(card.type);
           const totalLevels = SKILL_STAT_KEYS[card.type].reduce(
             (sum, key) => sum + getSkillStatLevel(skills, card.type, key),
             0,
@@ -397,6 +412,11 @@ export function AdvancedSkillsPanel({
             SKILL_STAT_KEYS[card.type].length * MAX_PURPLE_SKILL_STAT_LEVEL;
 
           if (!unlocked) {
+            const mobsOk = totalMobsKilled >= req.requiredMobs;
+            const bossesOk = totalBossesKilled >= req.requiredBosses;
+            const goldOk = gold >= req.goldCost;
+            const gemsOk = gems >= req.diamondCost;
+
             return (
               <div
                 key={card.type}
@@ -417,14 +437,62 @@ export function AdvancedSkillsPanel({
                     aria-hidden
                   />
                 </div>
+
+                <div className="flex flex-col gap-1 rounded-lg border border-white/5 bg-zinc-950/50 px-2 py-1.5 text-[10px]">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span
+                      className={`inline-flex items-center gap-0.5 font-semibold tabular-nums ${
+                        goldOk ? "text-amber-300" : "text-zinc-500"
+                      }`}
+                    >
+                      <Coins className="h-3 w-3" aria-hidden />
+                      {req.goldCost.toLocaleString("pt-BR")} Ouro
+                    </span>
+                    <span className="text-zinc-600">+</span>
+                    <span
+                      className={`inline-flex items-center gap-0.5 font-semibold tabular-nums ${
+                        gemsOk ? "text-cyan-300" : "text-zinc-500"
+                      }`}
+                    >
+                      <Gem className="h-3 w-3" aria-hidden />
+                      {req.diamondCost.toLocaleString("pt-BR")} Diamantes
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-zinc-400">
+                    <span
+                      className={`inline-flex items-center gap-0.5 tabular-nums ${
+                        mobsOk ? "text-emerald-400" : "text-zinc-500"
+                      }`}
+                    >
+                      <Swords className="h-3 w-3" aria-hidden />
+                      Inimigos: {totalMobsKilled.toLocaleString("pt-BR")} /{" "}
+                      {req.requiredMobs.toLocaleString("pt-BR")}
+                    </span>
+                    <span className="text-zinc-700">|</span>
+                    <span
+                      className={`inline-flex items-center gap-0.5 tabular-nums ${
+                        bossesOk ? "text-amber-300" : "text-zinc-500"
+                      }`}
+                    >
+                      <Crown className="h-3 w-3" aria-hidden />
+                      Chefes: {totalBossesKilled.toLocaleString("pt-BR")} /{" "}
+                      {req.requiredBosses.toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                </div>
+
                 <button
                   type="button"
                   disabled={!canUnlock}
                   onClick={() => void unlock(card.type)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-bold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
+                    canUnlock
+                      ? "border border-cyan-400/40 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20"
+                      : "cursor-not-allowed border border-zinc-700/60 bg-zinc-800/50 text-zinc-500"
+                  }`}
                 >
-                  <Gem className="h-3.5 w-3.5 text-cyan-300" aria-hidden />
-                  Desbloquear · {unlockCost.toLocaleString("pt-BR")}
+                  <Lock className="h-3.5 w-3.5" aria-hidden />
+                  Desbloquear
                 </button>
               </div>
             );

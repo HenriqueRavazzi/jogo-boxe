@@ -56,6 +56,7 @@ export async function GET() {
           saveData: probeSaveData,
           purpleDiamonds: probeSaveData.purpleDiamonds,
           prestigeLevel: probeSaveData.prestigeLevel ?? 0,
+          ascensionShards: probeSaveData.ascensionShards ?? 0,
           skillsData: probeSaveData.skills,
           updatedAt: new Date(),
         })
@@ -71,6 +72,7 @@ export async function GET() {
           saveData: probeSaveData,
           purpleDiamonds: probeSaveData.purpleDiamonds,
           prestigeLevel: probeSaveData.prestigeLevel ?? 0,
+          ascensionShards: probeSaveData.ascensionShards ?? 0,
           skillsData: probeSaveData.skills,
         })
         .returning();
@@ -108,6 +110,11 @@ export async function GET() {
       "metaLifeStealLevel",
       "metaSkillRegenLevel",
       "prestigeLevel",
+      "ascensionShards",
+      "ascensionPassives",
+      "milestoneQuests",
+      "totalMobsKilled",
+      "totalBossesKilled",
     ];
 
     const saveData = readBack?.saveData;
@@ -122,6 +129,7 @@ export async function GET() {
       "save_data",
       "purple_diamonds",
       "prestige_level",
+      "ascension_shards",
       "skills_data",
       "updated_at",
     ];

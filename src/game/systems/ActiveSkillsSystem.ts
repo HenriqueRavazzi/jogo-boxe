@@ -387,8 +387,83 @@ export function pulseVisualProgress(
   now: number,
   durationMs = ACTIVE_SKILL_DURATION_MS,
 ): number {
-  if (pulseAt <= 0 || now < pulseAt) return 0;
-  const t = (now - pulseAt) / durationMs;
-  if (t >= 1) return 0;
-  return t;
+  if (pulseAt <= 0) return 0;
+  return Math.max(0, Math.min(1, (now - pulseAt) / durationMs));
+}
+
+export type SkillCooldownMode = "passive" | "ready" | "cooldown" | "active";
+
+export type SkillCooldownInfo = {
+  mode: SkillCooldownMode;
+  /** 0 = esgotado / acabou de usar; 1 = pronto ou ativo cheio. */
+  progress: number;
+  cycleMs: number;
+};
+
+export function getSkillCycleMs(
+  key: "ricochet" | "ice" | "fire" | "lightning",
+  skills: SkillsData,
+): number {
+  switch (key) {
+    case "ice":
+      return Math.max(5_000, 20_000 - skills.ice.cooldown * 1_000);
+    case "lightning":
+      return Math.max(5_000, 20_000 - skills.lightning.cooldown * 1_000);
+    case "ricochet":
+      return Math.max(2_000, 7_000 - skills.ricochet.cooldown * 500);
+    case "fire":
+      return 0;
+  }
+}
+
+/**
+ * Estado de cooldown/ativo para o anel da HUD.
+ * Fogo é passivo (on-hit) — sempre "passive" com progress 1.
+ */
+export function getSkillCooldownInfo(
+  key: "ricochet" | "ice" | "fire" | "lightning",
+  pulse: ActiveSkillPulseState,
+  skills: SkillsData,
+  now: number,
+): SkillCooldownInfo {
+  if (key === "fire") {
+    return { mode: "passive", progress: 1, cycleMs: 0 };
+  }
+
+  const cycleMs = getSkillCycleMs(key, skills);
+  const nextAt =
+    key === "ice"
+      ? pulse.iceNextPulseAt
+      : key === "lightning"
+        ? pulse.lightningNextPulseAt
+        : pulse.ricochetNextPulseAt;
+  const activeUntil =
+    key === "ice"
+      ? pulse.iceActiveUntil
+      : key === "lightning"
+        ? pulse.lightningActiveUntil
+        : pulse.ricochetActiveUntil;
+
+  if (activeUntil > now) {
+    const activeMs =
+      key === "ricochet" ? RICOCHET_ACTIVE_MS : ACTIVE_SKILL_DURATION_MS;
+    const remaining = activeUntil - now;
+    return {
+      mode: "active",
+      progress: Math.max(0, Math.min(1, remaining / activeMs)),
+      cycleMs,
+    };
+  }
+
+  if (nextAt <= 0 || now >= nextAt) {
+    return { mode: "ready", progress: 1, cycleMs };
+  }
+
+  const remaining = nextAt - now;
+  const elapsed = cycleMs - remaining;
+  return {
+    mode: "cooldown",
+    progress: Math.max(0, Math.min(1, elapsed / cycleMs)),
+    cycleMs,
+  };
 }

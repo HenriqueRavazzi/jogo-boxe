@@ -11,6 +11,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+import type { AscensionPassivesData } from "@/lib/ascensionPassives";
+import type { MilestoneQuestsState } from "@/lib/milestoneQuests";
 import type { SkillTreeState } from "@/lib/skillTree";
 
 /** Stats granulares por skill avançada (Diamantes Roxos / JSONB). */
@@ -194,6 +196,16 @@ export type SaveData = {
   metaSkillRegenLevel: number;
   /** Nível de Ascensão / Prestígio (bônus permanente + mundo mais difícil). */
   prestigeLevel: number;
+  /** Moeda de Ascensão (shards) — gasta na loja de passivas permanentes. */
+  ascensionShards: number;
+  /** Passivas permanentes compradas com Ascension Shards (não resetam). */
+  ascensionPassives: AscensionPassivesData;
+  /** Progresso de missões de marco / conquistas (persistido no JSONB save_data). */
+  milestoneQuests: MilestoneQuestsState;
+  /** Abates cumulativos de mobs (não-boss) — desbloqueio de skills. */
+  totalMobsKilled: number;
+  /** Abates cumulativos de bosses — desbloqueio de skills. */
+  totalBossesKilled: number;
 };
 
 export const gameSaves = pgTable("game_saves", {
@@ -207,6 +219,8 @@ export const gameSaves = pgTable("game_saves", {
   purpleDiamonds: integer("purple_diamonds").notNull().default(0),
   /** Nível de Ascensão / Prestígio. */
   prestigeLevel: integer("prestige_level").notNull().default(0),
+  /** Ascension Shards (moeda de passivas permanentes). */
+  ascensionShards: integer("ascension_shards").notNull().default(0),
   /** Stats granulares de skills avançadas (também espelhado em save_data.skills). */
   skillsData: jsonb("skills_data")
     .$type<SkillsData>()

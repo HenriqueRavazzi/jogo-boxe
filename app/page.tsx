@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ActiveSkillsHud } from "@/components/ActiveSkillsHud";
 import { BossHealthBar } from "@/components/BossHealthBar";
+import { BossHordeAlert } from "@/components/BossHordeAlert";
 import { GameCanvas } from "@/components/GameCanvas";
 import { GameOverModal } from "@/components/GameOverModal";
 import { InGameStats } from "@/components/InGameStats";
@@ -35,7 +36,11 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
 
   const canPlay = Boolean(activeSaveId) && saveReady;
-  const inMatch = gameState === "playing" || gameState === "level_up";
+  const inMatch =
+    gameState === "playing" ||
+    gameState === "level_up";
+  const showRunSummary =
+    gameState === "gameover" || gameState === "victory";
 
   // Carrega game_settings + difficulties do Neon
   useEffect(() => {
@@ -108,6 +113,7 @@ export default function Home() {
         <>
           <BossHealthBar />
           <ActiveSkillsHud />
+          <BossHordeAlert />
           <InGameStats onExitMatch={() => void handleExitMatch()} />
           <QuestsPanel />
         </>
@@ -159,8 +165,9 @@ export default function Home() {
         />
       )}
 
-      {gameState === "gameover" && (
+      {showRunSummary && (
         <GameOverModal
+          outcome={gameState === "victory" ? "victory" : "defeat"}
           busy={busy}
           onRestart={() => void handleRestart()}
           onReturnToMenu={() => void handleExitMatch()}

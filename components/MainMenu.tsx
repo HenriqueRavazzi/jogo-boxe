@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { Coins, Gem, Sparkles } from "lucide-react";
 import { AdvancedSkillsPanel } from "@/components/AdvancedSkillsPanel";
+import { AscensionPanel } from "@/components/AscensionPanel";
 import { MetaTreePanel } from "@/components/MetaTreePanel";
+import { MilestoneQuestsPanel } from "@/components/MilestoneQuestsPanel";
 import { SaveMenu } from "@/components/SaveMenu";
 import { UpgradePanel } from "@/components/UpgradePanel";
 import { useGameStore } from "@/store/useGameStore";
@@ -18,7 +20,7 @@ type MainMenuProps = {
   onReturnToMenu?: () => void;
 };
 
-type UpgradeTab = "gold" | "diamonds" | "skills";
+type UpgradeTab = "gold" | "diamonds" | "skills" | "ascension" | "quests";
 
 const PRESTIGE_SHAPE_LABEL: Record<number, string> = {
   0: "Círculos",
@@ -48,9 +50,11 @@ export function MainMenu({
   const gems = useGameStore((s) => s.gems);
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const prestigeLevel = useGameStore((s) => s.prestigeLevel);
+  const ascensionShards = useGameStore((s) => s.ascensionShards);
   const canTriggerPrestige = useGameStore((s) => s.canTriggerPrestige);
   const triggerPrestige = useGameStore((s) => s.triggerPrestige);
   const getPrestigeMultiplier = useGameStore((s) => s.getPrestigeMultiplier);
+  const previewAscensionShards = useGameStore((s) => s.previewAscensionShards);
   const difficulties = useGameStore((s) => s.difficulties);
   const selectedDifficultyId = useGameStore((s) => s.selectedDifficultyId);
   const setSelectedDifficulty = useGameStore((s) => s.setSelectedDifficulty);
@@ -62,6 +66,7 @@ export function MainMenu({
   const prestigeReady = canTriggerPrestige();
   const prestigeMul = getPrestigeMultiplier();
   const nextShape = prestigeShapeLabel(prestigeLevel + 1);
+  const shardsPreview = previewAscensionShards();
 
   const handlePrestige = () => {
     if (!triggerPrestige()) return;
@@ -128,6 +133,17 @@ export function MainMenu({
               <p className="truncate text-sm font-bold tabular-nums text-fuchsia-200">
                 Nv. {prestigeLevel} · +{Math.round((prestigeMul - 1) * 100)}% ·{" "}
                 {prestigeShapeLabel(prestigeLevel)}
+              </p>
+            </div>
+          </div>
+          <div className="flex w-full items-center gap-2 rounded-xl border border-pink-400/30 bg-pink-500/10 px-3 py-2">
+            <Sparkles className="h-4 w-4 shrink-0 text-pink-300" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-pink-200/70">
+                Ascension Shards
+              </p>
+              <p className="truncate text-sm font-bold tabular-nums text-pink-200">
+                {ascensionShards.toLocaleString("pt-BR")}
               </p>
             </div>
           </div>
@@ -216,16 +232,20 @@ export function MainMenu({
                   Fazer Prestígio / Ascender
                   <span className="mt-0.5 block text-[10px] font-medium normal-case tracking-normal text-fuchsia-200/70">
                     {prestigeReady
-                      ? `Mundo → ${nextShape} · +15% permanente`
-                      : "Requer HP≥10, Dano≥8, Tier≥2 ou AS/Range max"}
+                      ? `Mundo → ${nextShape} · +${shardsPreview} shards`
+                      : "Requer HP≥10, Dano≥8, Tier≥2 ou Range max"}
                   </span>
                 </button>
               ) : (
                 <div className="rounded-xl border border-fuchsia-400/40 bg-fuchsia-950/80 p-3">
                   <p className="text-xs leading-relaxed text-fuchsia-100/90">
                     Ascender reseta ouro e upgrades de base (e skills roxas
-                    granulares, com reembolso). Mantém diamantes, árvore meta e
-                    Ascensão. Inimigos viram {nextShape}.
+                    granulares, com reembolso). Mantém diamantes, árvore meta,
+                    passivas de Ascensão e concede{" "}
+                    <span className="font-semibold text-pink-200">
+                      +{shardsPreview} Ascension Shards
+                    </span>
+                    . Inimigos viram {nextShape}.
                   </p>
                   <div className="mt-2 flex gap-2">
                     <button
@@ -288,13 +308,39 @@ export function MainMenu({
               >
                 Skills Roxas
               </button>
+              <button
+                type="button"
+                onClick={() => setUpgradeTab("ascension")}
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition ${
+                  upgradeTab === "ascension"
+                    ? "bg-fuchsia-500/20 text-fuchsia-200"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Ascensão
+              </button>
+              <button
+                type="button"
+                onClick={() => setUpgradeTab("quests")}
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition ${
+                  upgradeTab === "quests"
+                    ? "bg-amber-500/20 text-amber-200"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Missões
+              </button>
             </div>
             {upgradeTab === "gold" ? (
               <UpgradePanel embedded />
             ) : upgradeTab === "diamonds" ? (
               <MetaTreePanel embedded />
-            ) : (
+            ) : upgradeTab === "skills" ? (
               <AdvancedSkillsPanel embedded />
+            ) : upgradeTab === "ascension" ? (
+              <AscensionPanel embedded />
+            ) : (
+              <MilestoneQuestsPanel embedded />
             )}
           </div>
         </div>

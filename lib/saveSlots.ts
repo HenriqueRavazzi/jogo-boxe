@@ -1,3 +1,11 @@
+import {
+  DEFAULT_ASCENSION_PASSIVES,
+  normalizeAscensionPassives,
+} from "@/lib/ascensionPassives";
+import {
+  createDefaultMilestoneQuests,
+  normalizeMilestoneQuests,
+} from "@/lib/milestoneQuests";
 import { DEFAULT_SKILL_TREE } from "@/lib/skillTree";
 import {
   DEFAULT_MATCH_SKILLS,
@@ -137,6 +145,11 @@ export function createDefaultSaveData(): SaveData {
     unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
     ...DEFAULT_META_TREE,
     prestigeLevel: 0,
+    ascensionShards: 0,
+    ascensionPassives: { ...DEFAULT_ASCENSION_PASSIVES },
+    milestoneQuests: createDefaultMilestoneQuests(),
+    totalMobsKilled: 0,
+    totalBossesKilled: 0,
   };
 }
 
@@ -155,15 +168,17 @@ export function normalizeSaveData(
     data.skills ?? data.skillLevels ?? DEFAULT_SKILLS_DATA,
   );
 
-  const skillTree = {
-    ...createDefaultSaveData().skillTree,
-    ...data.skillTree,
-  };
+  const rawTree = (data.skillTree ?? {}) as Record<string, boolean>;
+  const skillTree = { ...createDefaultSaveData().skillTree };
+  for (const id of Object.keys(skillTree) as (keyof typeof skillTree)[]) {
+    if (rawTree[id]) skillTree[id] = true;
+  }
 
   const unlockedSkills = normalizeUnlocked(data.unlockedSkills);
   if (skillTree.node_ricochet) unlockedSkills.ricochet = true;
-  if (skillTree.node_frost_chance) unlockedSkills.ice = true;
-  if (skillTree.node_shock_chance) unlockedSkills.lightning = true;
+  // Migração: nós Elements removidos → preserva desbloqueio de Gelo/Raio
+  if (rawTree.node_frost_chance) unlockedSkills.ice = true;
+  if (rawTree.node_shock_chance) unlockedSkills.lightning = true;
 
   const meta = normalizeMetaTree(data);
 
@@ -181,6 +196,19 @@ export function normalizeSaveData(
     critDamageLevel: data.critDamageLevel ?? 0,
     purpleDiamonds: data.purpleDiamonds ?? 0,
     prestigeLevel: Math.max(0, Math.floor(data.prestigeLevel ?? 0)),
+    ascensionShards: Math.max(0, Math.floor(data.ascensionShards ?? 0)),
+    ascensionPassives: normalizeAscensionPassives(data.ascensionPassives),
+    milestoneQuests: normalizeMilestoneQuests(
+      (data as SaveData).milestoneQuests,
+    ),
+    totalMobsKilled: Math.max(
+      0,
+      Math.floor(Number(data.totalMobsKilled) || 0),
+    ),
+    totalBossesKilled: Math.max(
+      0,
+      Math.floor(Number(data.totalBossesKilled) || 0),
+    ),
     skillTree,
     skills,
     unlockedSkills,
@@ -196,6 +224,7 @@ export function mergeSaveRow(row: {
   };
   purpleDiamonds?: number | null;
   prestigeLevel?: number | null;
+  ascensionShards?: number | null;
   skillsData?: SkillsData | LegacyFlatSkillsData | null;
 }): SaveData {
   return normalizeSaveData({
@@ -203,6 +232,8 @@ export function mergeSaveRow(row: {
     purpleDiamonds: row.purpleDiamonds ?? row.saveData.purpleDiamonds ?? 0,
     prestigeLevel:
       row.prestigeLevel ?? row.saveData.prestigeLevel ?? 0,
+    ascensionShards:
+      row.ascensionShards ?? row.saveData.ascensionShards ?? 0,
     skills: normalizeSkills(
       row.skillsData ??
         row.saveData.skills ??

@@ -24,6 +24,8 @@ export type KillSite = {
 
 const DROP_IDLE_MS = 800;
 const MAGNET_SPEED = 520; // px/s
+/** Alcance base do magnetismo (px). Escala com Ímã Primordial. */
+export const BASE_MAGNET_RANGE = 280;
 /** Valor de cada moeda física ao coletar (nerf econômico). */
 const GOLD_DROP_VALUE = 5;
 /** Moedas base por kill se `rewards` ausente. */
@@ -46,6 +48,8 @@ export type CreateDropsOptions = {
   goldDropMultiplier?: number;
   /** Bosses já derrotados nesta run (antes deste lote). */
   bossesKilled?: number;
+  /** Bônus absoluto na chance de diamante (Sorte do Campeão). */
+  diamondLuckBonus?: number;
 };
 
 export type CreateDropsResult = {
@@ -78,6 +82,7 @@ export function createDropsFromKills(
 ): CreateDropsResult {
   const incomeMultiplier = options.incomeMultiplier ?? 1;
   const goldDropMultiplier = options.goldDropMultiplier ?? 1;
+  const diamondLuckBonus = Math.max(0, options.diamondLuckBonus ?? 0);
   let bossOrdinal = options.bossesKilled ?? 0;
   const drops: Drop[] = [];
   let bossesKilledThisBatch = 0;
@@ -108,7 +113,11 @@ export function createDropsFromKills(
       });
     }
 
-    if (Math.random() < DIAMOND_CHANCE) {
+    const diamondChance = Math.min(
+      0.35,
+      Math.max(rewards.normalDiamondChance, DIAMOND_CHANCE) + diamondLuckBonus,
+    );
+    if (Math.random() < diamondChance) {
       drops.push({
         id: crypto.randomUUID(),
         x: site.x + (Math.random() - 0.5) * 12,
@@ -154,6 +163,8 @@ export type LootSystemInput = {
   playerRadius: number;
   dt: number;
   now?: number;
+  /** Multiplicador do raio de coleta / magnetismo (Ímã Primordial). */
+  magnetRadiusMultiplier?: number;
 };
 
 export type LootSystemResult = {
@@ -175,7 +186,12 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
     playerRadius,
     dt,
     now = Date.now(),
+    magnetRadiusMultiplier = 1,
   } = input;
+
+  const magnetMul = Math.max(1, magnetRadiusMultiplier);
+  const magnetRange = BASE_MAGNET_RANGE * magnetMul;
+  const collectRadius = playerRadius * magnetMul;
 
   let collectedGold = 0;
   let collectedDiamonds = 0;
@@ -190,13 +206,15 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
       const dx = playerX - x;
       const dy = playerY - y;
       const dist = Math.hypot(dx, dy) || 1;
-      const step = MAGNET_SPEED * dt;
-      x += (dx / dist) * step;
-      y += (dy / dist) * step;
+      if (dist <= magnetRange) {
+        const step = MAGNET_SPEED * dt;
+        x += (dx / dist) * step;
+        y += (dy / dist) * step;
+      }
     }
 
     const distToPlayer = Math.hypot(playerX - x, playerY - y);
-    if (distToPlayer < playerRadius) {
+    if (distToPlayer < collectRadius) {
       if (drop.type === "gold") {
         collectedGold += GOLD_DROP_VALUE;
       } else if (drop.type === "purple_diamond") {

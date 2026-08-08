@@ -29,16 +29,16 @@ type QuestTemplate = {
 
 /** Modelos possíveis — sorteados no início e ao claim. */
 const QUEST_TEMPLATES: QuestTemplate[] = [
-  { type: "kill_boss", targetAmount: 1, rewardDiamonds: 5 },
-  { type: "kill_boss", targetAmount: 2, rewardDiamonds: 8 },
-  { type: "inflict_freeze", targetAmount: 35, rewardDiamonds: 4 },
-  { type: "inflict_freeze", targetAmount: 20, rewardDiamonds: 3 },
-  { type: "inflict_shock", targetAmount: 25, rewardDiamonds: 4 },
-  { type: "inflict_shock", targetAmount: 40, rewardDiamonds: 5 },
-  { type: "kill_enemies", targetAmount: 50, rewardDiamonds: 3 },
-  { type: "kill_enemies", targetAmount: 100, rewardDiamonds: 5 },
-  { type: "kill_dashers", targetAmount: 15, rewardDiamonds: 3 },
-  { type: "kill_dashers", targetAmount: 30, rewardDiamonds: 5 },
+  { type: "kill_boss", targetAmount: 1, rewardDiamonds: 8 },
+  { type: "kill_boss", targetAmount: 2, rewardDiamonds: 14 },
+  { type: "inflict_freeze", targetAmount: 35, rewardDiamonds: 7 },
+  { type: "inflict_freeze", targetAmount: 20, rewardDiamonds: 5 },
+  { type: "inflict_shock", targetAmount: 25, rewardDiamonds: 7 },
+  { type: "inflict_shock", targetAmount: 40, rewardDiamonds: 9 },
+  { type: "kill_enemies", targetAmount: 50, rewardDiamonds: 5 },
+  { type: "kill_enemies", targetAmount: 100, rewardDiamonds: 9 },
+  { type: "kill_dashers", targetAmount: 15, rewardDiamonds: 5 },
+  { type: "kill_dashers", targetAmount: 30, rewardDiamonds: 8 },
 ];
 
 export const QUEST_LABELS: Record<QuestType, string> = {

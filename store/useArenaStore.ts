@@ -125,6 +125,8 @@ export type RunStats = {
   enemiesDefeated: number;
   goldCollected: number;
   diamondsCollected: number;
+  purpleDiamondsCollected: number;
+  bossesKilled: number;
 };
 
 export type MatchBuffs = {
@@ -135,7 +137,12 @@ export type MatchBuffs = {
   skillDamageMultiplier: number;
 };
 
-export type GameState = "menu" | "playing" | "gameover" | "level_up";
+export type GameState =
+  | "menu"
+  | "playing"
+  | "gameover"
+  | "victory"
+  | "level_up";
 
 const DEFAULT_BUFFS: MatchBuffs = {
   attackSpeed: 1,
@@ -149,6 +156,8 @@ const EMPTY_RUN_STATS: RunStats = {
   enemiesDefeated: 0,
   goldCollected: 0,
   diamondsCollected: 0,
+  purpleDiamondsCollected: 0,
+  bossesKilled: 0,
 };
 
 /** Estado volátil da partida atual (não persistido). */
@@ -175,6 +184,8 @@ export type ArenaStoreState = {
   shakeFrames: number;
   /** Tempo vivo na partida atual (segundos). */
   timeAlive: number;
+  /** Relógio da partida em ms (mesmo usado por skills/combate). */
+  gameClockMs: number;
   currentXp: number;
   xpToNextLevel: number;
   matchLevel: number;
@@ -204,17 +215,30 @@ export type ArenaStoreState = {
   bossesKilled: number;
   /** Cooldown (ms) até a próxima invasão de boss na horda. */
   invasionBossCooldownMs: number;
+  /**
+   * Até quando (game clock ms) o alerta de boss na horda permanece ativo.
+   * 0 = sem alerta.
+   */
+  bossHordeAlertUntil: number;
   /** Missões ativas da partida atual. */
   activeQuests: ActiveQuest[];
   /** Partida pausada (ESC) — trava física/tempo. */
   isPaused: boolean;
   startGame: () => void;
   setGameOver: () => void;
+  /** Vitória da fase (ex.: bosses do catálogo derrotados). */
+  setVictory: () => void;
   /** Volta ao menu mantendo o progresso persistente (claim & exit). */
   exitMatch: () => void;
   togglePause: () => void;
   recordEnemyDefeats: (count: number) => void;
-  recordLootCollected: (gold: number, diamonds: number) => void;
+  recordLootCollected: (
+    gold: number,
+    diamonds: number,
+    purpleDiamonds?: number,
+  ) => void;
+  /** Dispara alerta visual de boss surpresa na horda (2s). */
+  triggerBossHordeAlert: (durationMs?: number) => void;
   /** Incrementa progresso das quests a partir de eventos de combate. */
   progressQuests: (events: QuestProgressEvent[]) => void;
   /**
@@ -280,6 +304,8 @@ function rollLevelUpOptions(
   matchSkills: MatchSkillsData,
   matchBuffs: MatchBuffs,
   activeRunSkills: SpecialSkillKey[],
+  timeAlive: number,
+  matchLevel: number,
 ): MatchUpgrade[] {
   const game = useGameStore.getState();
   const stats = game.getEffectiveStats();
@@ -290,6 +316,8 @@ function rollLevelUpOptions(
     activeRunSkills,
     effectiveRange: stats.attackRange * matchBuffs.attackRange,
     effectiveCooldownMs: stats.attackCooldownMs / matchBuffs.attackSpeed,
+    timeAlive,
+    matchLevel,
   });
 }
 
@@ -316,6 +344,8 @@ function enterLevelUp(
       state.matchSkills,
       state.matchBuffs,
       state.activeRunSkills,
+      state.timeAlive,
+      matchLevel,
     ),
   });
 }
@@ -337,6 +367,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   ricochetPathEffects: [],
   shakeFrames: 0,
   timeAlive: 0,
+  gameClockMs: 0,
   currentXp: 0,
   xpToNextLevel: BASE_XP_TO_LEVEL,
   matchLevel: 1,
@@ -351,11 +382,17 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   bossesSpawned: 0,
   bossesKilled: 0,
   invasionBossCooldownMs: 0,
+  bossHordeAlertUntil: 0,
   activeQuests: [],
   isPaused: false,
 
   startGame: () => {
-    const stats = useGameStore.getState().getEffectiveStats();
+    const game = useGameStore.getState();
+    const stats = game.getEffectiveStats();
+    const startingGoldBonus = game.getStartingGoldBonus();
+    if (startingGoldBonus > 0) {
+      game.addGold(startingGoldBonus, { applyIncome: false });
+    }
     const { playerX, playerY } = get();
     const w = typeof window !== "undefined" ? window.innerWidth : 800;
     const h = typeof window !== "undefined" ? window.innerHeight : 600;
@@ -374,6 +411,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       ricochetPathEffects: [],
       shakeFrames: 0,
       timeAlive: 0,
+      gameClockMs: 0,
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
@@ -388,6 +426,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
+      bossHordeAlertUntil: 0,
       activeQuests: createRandomQuests(2),
       isPaused: false,
       playerRotation: -Math.PI / 2,
@@ -410,9 +449,29 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       ricochetPathEffects: [],
       shakeFrames: 0,
       levelUpOptions: [],
-      bossesSpawned: 0,
-      bossesKilled: 0,
-      invasionBossCooldownMs: 0,
+      bossHordeAlertUntil: 0,
+      activeQuests: [],
+      isPaused: false,
+      activeSkillPulse: createActiveSkillPulseState(),
+      lightningProjectiles: [],
+      skillVfxEffects: [],
+    }),
+
+  setVictory: () =>
+    set({
+      gameState: "victory",
+      enemies: [],
+      drops: [],
+      projectiles: [],
+      lastAttackTime: 0,
+      lastPunchSide: "right",
+      lastRicochetTime: 0,
+      activeAttacks: [],
+      floatingTexts: [],
+      ricochetPathEffects: [],
+      shakeFrames: 0,
+      levelUpOptions: [],
+      bossHordeAlertUntil: 0,
       activeQuests: [],
       isPaused: false,
       activeSkillPulse: createActiveSkillPulseState(),
@@ -435,12 +494,14 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       ricochetPathEffects: [],
       shakeFrames: 0,
       timeAlive: 0,
+      gameClockMs: 0,
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
+      bossHordeAlertUntil: 0,
       activeQuests: [],
       isPaused: false,
       playerRotation: -Math.PI / 2,
@@ -471,15 +532,23 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     }));
   },
 
-  recordLootCollected: (gold, diamonds) => {
-    if (gold <= 0 && diamonds <= 0) return;
+  recordLootCollected: (gold, diamonds, purpleDiamonds = 0) => {
+    if (gold <= 0 && diamonds <= 0 && purpleDiamonds <= 0) return;
     set((s) => ({
       runStats: {
         ...s.runStats,
         goldCollected: s.runStats.goldCollected + gold,
         diamondsCollected: s.runStats.diamondsCollected + diamonds,
+        purpleDiamondsCollected:
+          s.runStats.purpleDiamondsCollected + purpleDiamonds,
       },
     }));
+  },
+
+  triggerBossHordeAlert: (durationMs = 2_000) => {
+    const now =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    set({ bossHordeAlertUntil: now + durationMs });
   },
 
   progressQuests: (events) => {
@@ -838,6 +907,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       ricochetPathEffects: [],
       shakeFrames: 0,
       timeAlive: 0,
+      gameClockMs: 0,
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
@@ -852,5 +922,6 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
+      bossHordeAlertUntil: 0,
     }),
 }));

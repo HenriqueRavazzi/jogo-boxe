@@ -25,6 +25,10 @@ import {
   RICOCHET_ACTIVE_MS,
 } from "@/src/game/systems/ActiveSkillsSystem";
 import { runSpawner } from "@/src/game/systems/Spawner";
+import {
+  isHardOrInfernalDifficulty,
+  type MilestoneProgressEvent,
+} from "@/lib/milestoneQuests";
 import { useArenaStore, type ActiveAttack } from "@/store/useArenaStore";
 import { clampGameSpeed, useGameStore } from "@/store/useGameStore";
 
@@ -151,6 +155,10 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const gameSpeed = clampGameSpeed(game.gameSpeedMultiplier);
       // Física, spawn, timeAlive e timers usam dt em segundos (escalado)
       const dt = realDt * gameSpeed;
+      // Reinicia o relógio local quando a arena foi resetada (novo start)
+      if (arena.timeAlive <= 0) {
+        gameClockMs = 0;
+      }
       gameClockMs += realDt * 1000 * gameSpeed;
       const gameNow = gameClockMs;
       /** Segundos vivos — valor único usado no spawn e na store neste frame. */
@@ -267,6 +275,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         incomeMultiplier: game.incomeMultiplier,
         goldDropMultiplier: difficulty.goldDropMultiplier,
         bossesKilled: arena.bossesKilled,
+        diamondLuckBonus: game.getDiamondLuckBonus(),
       });
       const newDrops = dropResult.drops;
       const dropsWithNew = [...arena.drops, ...newDrops];
@@ -276,6 +285,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         playerX: cx,
         playerY: cy,
         playerRadius: PLAYER_RADIUS,
+        magnetRadiusMultiplier: game.getMagnetRadiusMultiplier(),
         dt,
         now: gameNow,
       });
@@ -294,15 +304,65 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const defeatedThisFrame = combat.killSites.length;
       if (defeatedThisFrame > 0) {
         useArenaStore.getState().recordEnemyDefeats(defeatedThisFrame);
+        let mobs = 0;
+        let bosses = 0;
+        for (const site of combat.killSites) {
+          if (site.enemyType === "boss") bosses += 1;
+          else mobs += 1;
+        }
+        game.recordLifetimeKills(mobs, bosses);
       }
-      if (loot.collectedGold > 0 || loot.collectedDiamonds > 0) {
+      if (loot.collectedGold > 0 || loot.collectedDiamonds > 0 || loot.collectedPurpleDiamonds > 0) {
         useArenaStore
           .getState()
-          .recordLootCollected(loot.collectedGold, loot.collectedDiamonds);
+          .recordLootCollected(
+            loot.collectedGold,
+            loot.collectedDiamonds,
+            loot.collectedPurpleDiamonds,
+          );
       }
 
       if (combat.questEvents.length > 0) {
         useArenaStore.getState().progressQuests(combat.questEvents);
+      }
+
+      // Missões de marco (persistentes no save)
+      const milestoneBatch: MilestoneProgressEvent[] = [
+        ...combat.milestoneEvents,
+      ];
+      if (loot.collectedGold > 0) {
+        milestoneBatch.push({
+          type: "gold_collected",
+          amount: loot.collectedGold,
+        });
+      }
+      if (loot.collectedDiamonds > 0) {
+        milestoneBatch.push({
+          type: "diamonds_collected",
+          amount: loot.collectedDiamonds,
+        });
+      }
+      const bossesKilledPreview =
+        arena.bossesKilled + dropResult.bossesKilledThisBatch;
+      if (dropResult.bossesKilledThisBatch > 0) {
+        milestoneBatch.push({
+          type: "bosses_in_run",
+          amount: bossesKilledPreview,
+        });
+      }
+      const selectedDiff = game.getSelectedDifficulty();
+      if (
+        selectedDiff &&
+        isHardOrInfernalDifficulty(selectedDiff.name) &&
+        Math.floor(nextTimeAlive) > Math.floor(arena.timeAlive)
+      ) {
+        milestoneBatch.push({
+          type: "survive_hard_seconds",
+          amount: Math.floor(nextTimeAlive),
+        });
+      }
+      if (milestoneBatch.length > 0) {
+        game.progressMilestoneQuests(milestoneBatch);
       }
 
       const hasBossAlive = livingEnemies.some((e) => e.type === "boss");
@@ -348,6 +408,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ricochetPathEffects,
         shakeFrames,
         timeAlive: nextTimeAlive,
+        gameClockMs: gameNow,
         bossesSpawned: spawn.bossesSpawned,
         bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
         invasionBossCooldownMs: spawn.invasionBossCooldownMs,
@@ -356,8 +417,30 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         skillVfxEffects,
       });
 
+      if (spawn.hordeBossInvaded) {
+        useArenaStore.getState().triggerBossHordeAlert(2_000);
+      }
+
+      const bossesKilledNow =
+        arena.bossesKilled + dropResult.bossesKilledThisBatch;
+      if (dropResult.bossesKilledThisBatch > 0) {
+        useArenaStore.setState((s) => ({
+          runStats: {
+            ...s.runStats,
+            bossesKilled:
+              s.runStats.bossesKilled + dropResult.bossesKilledThisBatch,
+          },
+        }));
+      }
+
       if (combat.player.hp <= 0) {
         useArenaStore.getState().setGameOver();
+      } else if (dropResult.bossesKilledThisBatch > 0) {
+        const bossCatalogCount = game.enemyTypes.filter((t) => t.isBoss).length;
+        const victoryTarget = Math.max(1, bossCatalogCount);
+        if (bossesKilledNow >= victoryTarget) {
+          useArenaStore.getState().setVictory();
+        }
       }
 
       if (dropResult.totalXp > 0) {

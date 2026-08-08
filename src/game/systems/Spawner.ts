@@ -126,6 +126,8 @@ export type SpawnerResult = {
   spawnIntervalMs: number;
   bossesSpawned: number;
   invasionBossCooldownMs: number;
+  /** True se um boss surgiu via invasão na horda (não o agendado de 240s). */
+  hordeBossInvaded: boolean;
 };
 
 /** Intervalo mínimo entre invasões de boss na horda (ms). */
@@ -371,6 +373,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
   const spawned: EnemyData[] = [];
   let count = currentEnemyCount;
   let bossesAlive = aliveBossCount;
+  let hordeBossInvaded = false;
 
   const expectedBosses = Math.floor(
     timeAliveInSeconds / BOSS_INTERVAL_SECONDS,
@@ -426,6 +429,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       count += 1;
       bossesAlive += 1;
       invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
+      hordeBossInvaded = true;
     }
 
     for (let i = 0; i < batchAmount && count < MAX_ENEMIES; i++) {
@@ -454,5 +458,6 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     spawnIntervalMs,
     bossesSpawned,
     invasionBossCooldownMs,
+    hordeBossInvaded,
   };
 }

@@ -18,6 +18,33 @@ import {
   isSkillUpgradeType,
 } from "@/db/schema";
 import {
+  MAX_ASCENSION_PASSIVE_LEVEL,
+  calcAscensionShardsGained,
+  getAscensionPassiveCostAt,
+  getDiamondLuckBonus as diamondLuckBonusAt,
+  getMagnetRadiusMultiplier as magnetRadiusMulAt,
+  getStartingGoldBonus as startingGoldBonusAt,
+  normalizeAscensionPassives,
+  type AscensionPassiveId,
+  type AscensionPassivesData,
+} from "@/lib/ascensionPassives";
+import {
+  canMeetAdvancedSkillUnlock,
+  getAdvancedSkillUnlockRequirements as advancedSkillUnlockRequirementsOf,
+  type AdvancedSkillUnlockRequirements,
+} from "@/lib/advancedSkillUnlock";
+import {
+  applyMilestoneProgress,
+  canClaimMilestone,
+  createDefaultMilestoneQuests,
+  getMilestoneQuestDef,
+  normalizeMilestoneQuests,
+  type MilestoneProgressEvent,
+  type MilestoneQuestId,
+  type MilestoneQuestRewards,
+  type MilestoneQuestsState,
+} from "@/lib/milestoneQuests";
+import {
   DIFFICULTY_STAT_SCALE,
   FALLBACK_DIFFICULTIES,
   FALLBACK_ENEMY_TYPES,
@@ -130,6 +157,16 @@ export type GameStoreState = {
    * e inimigos mais fortes (formas geométricas).
    */
   prestigeLevel: number;
+  /** Ascension Shards (moeda da loja de passivas permanentes). */
+  ascensionShards: number;
+  /** Passivas permanentes — não resetam no prestígio. */
+  ascensionPassives: AscensionPassivesData;
+  /** Missões de marco / conquistas (persistidas no save). */
+  milestoneQuests: MilestoneQuestsState;
+  /** Abates cumulativos de mobs (não-boss). */
+  totalMobsKilled: number;
+  /** Abates cumulativos de bosses. */
+  totalBossesKilled: number;
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
   /** Lista de dificuldades do Neon. */
@@ -162,9 +199,19 @@ export type GameStoreState = {
   addGold: (baseAmount: number, options?: { applyIncome?: boolean }) => void;
   addGems: (amount: number) => void;
   addPurpleDiamonds: (amount: number) => void;
+  /** Aplica eventos de progresso nas missões de marco. */
+  progressMilestoneQuests: (events: MilestoneProgressEvent[]) => void;
+  /** Resgata recompensa de missão concluída. */
+  claimMilestoneQuest: (id: MilestoneQuestId) => MilestoneQuestRewards | null;
   unlockSkill: (nodeId: SkillNodeId, cost: number) => boolean;
   /** Desbloqueia skill avançada na base (Diamantes Normais / gems). */
   unlockAdvancedSkill: (skillType: SkillUpgradeType) => boolean;
+  getAdvancedSkillUnlockRequirements: (
+    skillType: SkillUpgradeType,
+  ) => AdvancedSkillUnlockRequirements;
+  canUnlockAdvancedSkill: (skillType: SkillUpgradeType) => boolean;
+  /** Soma abates cumulativos (mobs / bosses) no save. */
+  recordLifetimeKills: (mobs: number, bosses?: number) => void;
   getAdvancedSkillUnlockCost: (skillType: SkillUpgradeType) => number;
   /**
    * Upgrade de um atributo granular da skill (Diamantes Roxos + sync DB).
@@ -190,6 +237,17 @@ export type GameStoreState = {
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
   getPrestigeMultiplier: () => number;
+  /** Compra nível de passiva permanente com Ascension Shards. */
+  upgradeAscensionPassive: (id: AscensionPassiveId) => boolean;
+  getAscensionPassiveCost: (id: AscensionPassiveId) => number;
+  /** Multiplicador de raio de coleta (Ímã Primordial). */
+  getMagnetRadiusMultiplier: () => number;
+  /** Ouro bônus ao iniciar run (Herança de Ouro). */
+  getStartingGoldBonus: () => number;
+  /** Bônus absoluto na chance de diamante (Sorte do Campeão). */
+  getDiamondLuckBonus: () => number;
+  /** Shards que seriam ganhos se ascender agora. */
+  previewAscensionShards: () => number;
   upgradeHP: () => boolean;
   upgradeDamage: () => boolean;
   upgradeAttackSpeed: () => boolean;
@@ -330,13 +388,6 @@ const CRIT_CHANCE_COST_BASE = 65;
 const CRIT_DAMAGE_COST_BASE = 70;
 /** Custo base por atributo de skill (Diamantes Roxos). */
 const PURPLE_SKILL_STAT_COST_BASE = 3;
-/** Custo em diamantes normais para desbloquear skill avançada. */
-const ADVANCED_SKILL_UNLOCK_COST: Record<SkillUpgradeType, number> = {
-  ricochet: 20,
-  ice: 15,
-  fire: 15,
-  lightning: 18,
-};
 /** Custo base em diamantes do 1º nível de bônus de XP. */
 const XP_BONUS_COST_BASE = 5;
 const XP_BONUS_COST_GROWTH = 1.5;
@@ -673,6 +724,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   metaLifeStealLevel: defaults.metaLifeStealLevel,
   metaSkillRegenLevel: defaults.metaSkillRegenLevel,
   prestigeLevel: defaults.prestigeLevel ?? 0,
+  ascensionShards: defaults.ascensionShards ?? 0,
+  ascensionPassives: normalizeAscensionPassives(defaults.ascensionPassives),
+  milestoneQuests: createDefaultMilestoneQuests(),
+  totalMobsKilled: defaults.totalMobsKilled ?? 0,
+  totalBossesKilled: defaults.totalBossesKilled ?? 0,
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
@@ -727,6 +783,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaLifeStealLevel: n.metaLifeStealLevel,
       metaSkillRegenLevel: n.metaSkillRegenLevel,
       prestigeLevel: Math.max(0, Math.floor(n.prestigeLevel ?? 0)),
+      ascensionShards: Math.max(0, Math.floor(n.ascensionShards ?? 0)),
+      ascensionPassives: normalizeAscensionPassives(n.ascensionPassives),
+      milestoneQuests: applyMilestoneProgress(
+        normalizeMilestoneQuests(n.milestoneQuests),
+        [
+          {
+            type: "prestige_level",
+            amount: Math.max(0, Math.floor(n.prestigeLevel ?? 0)),
+          },
+        ],
+      ),
+      totalMobsKilled: Math.max(0, Math.floor(n.totalMobsKilled ?? 0)),
+      totalBossesKilled: Math.max(0, Math.floor(n.totalBossesKilled ?? 0)),
     });
     if (refund > 0) {
       void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
@@ -779,6 +848,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaLifeStealLevel: s.metaLifeStealLevel,
       metaSkillRegenLevel: s.metaSkillRegenLevel,
       prestigeLevel: s.prestigeLevel,
+      ascensionShards: s.ascensionShards,
+      ascensionPassives: normalizeAscensionPassives(s.ascensionPassives),
+      milestoneQuests: normalizeMilestoneQuests(s.milestoneQuests),
+      totalMobsKilled: Math.max(0, Math.floor(s.totalMobsKilled)),
+      totalBossesKilled: Math.max(0, Math.floor(s.totalBossesKilled)),
     };
   },
 
@@ -856,10 +930,56 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     );
   },
 
+  previewAscensionShards: () => {
+    const s = get();
+    return calcAscensionShardsGained({
+      maxHpLevel: s.maxHpLevel,
+      baseDamageLevel: s.baseDamageLevel,
+      armTier: s.armTier,
+      xpBonusLevel: s.xpBonusLevel,
+      gold: s.gold,
+      prestigeLevel: s.prestigeLevel,
+    });
+  },
+
+  getMagnetRadiusMultiplier: () =>
+    magnetRadiusMulAt(get().ascensionPassives.magnetRadius),
+
+  getStartingGoldBonus: () =>
+    startingGoldBonusAt(get().ascensionPassives.startingGold),
+
+  getDiamondLuckBonus: () =>
+    diamondLuckBonusAt(get().ascensionPassives.diamondLuck),
+
+  getAscensionPassiveCost: (id) => {
+    const level = get().ascensionPassives[id] ?? 0;
+    if (level >= MAX_ASCENSION_PASSIVE_LEVEL) return Number.POSITIVE_INFINITY;
+    return getAscensionPassiveCostAt(level);
+  },
+
+  upgradeAscensionPassive: (id) => {
+    const current = get().ascensionPassives[id] ?? 0;
+    if (current >= MAX_ASCENSION_PASSIVE_LEVEL) return false;
+    const cost = getAscensionPassiveCostAt(current);
+    if (get().ascensionShards < cost) return false;
+
+    set((s) => ({
+      ascensionShards: s.ascensionShards - cost,
+      ascensionPassives: {
+        ...s.ascensionPassives,
+        [id]: current + 1,
+      },
+    }));
+
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return true;
+  },
+
   /**
-   * Ascensão: +1 prestige; reseta ouro + upgrades de ouro + skills granulares.
-   * Mantém diamantes, roxos (com reembolso do investimento roxo), desbloqueios,
-   * meta tree, skill tree verde e o próprio nível de prestígio.
+   * Ascensão: +1 prestige + Ascension Shards; reseta ouro/upgrades/skills granulares.
+   * Mantém diamantes, meta, passivas de Ascensão e shards acumulados.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -867,9 +987,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const invested = getTotalPurpleSkillInvestment(get().skills);
     const refund = Math.floor(invested * SKILL_TREE_RESPEC_REFUND_RATE);
     const fresh = createDefaultSaveData();
+    const current = get();
+    const shardsGained = calcAscensionShardsGained({
+      maxHpLevel: current.maxHpLevel,
+      baseDamageLevel: current.baseDamageLevel,
+      armTier: current.armTier,
+      xpBonusLevel: current.xpBonusLevel,
+      gold: current.gold,
+      prestigeLevel: current.prestigeLevel,
+    });
 
     set((s) => ({
       prestigeLevel: s.prestigeLevel + 1,
+      ascensionShards: s.ascensionShards + shardsGained,
       gold: fresh.gold,
       purpleDiamonds: s.purpleDiamonds + refund,
       maxHpLevel: fresh.maxHpLevel,
@@ -892,6 +1022,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         fire: { ...DEFAULT_SKILLS_DATA.fire },
         lightning: { ...DEFAULT_SKILLS_DATA.lightning },
       },
+      milestoneQuests: applyMilestoneProgress(s.milestoneQuests, [
+        { type: "prestige_level", amount: s.prestigeLevel + 1 },
+      ]),
     }));
 
     void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
@@ -906,6 +1039,44 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((s) => ({
       purpleDiamonds: Math.max(0, s.purpleDiamonds + amount),
     })),
+
+  progressMilestoneQuests: (events) => {
+    if (events.length === 0) return;
+    set((s) => ({
+      milestoneQuests: applyMilestoneProgress(s.milestoneQuests, events),
+    }));
+  },
+
+  claimMilestoneQuest: (id) => {
+    const state = get().milestoneQuests;
+    if (!canClaimMilestone(state, id)) return null;
+    const def = getMilestoneQuestDef(id);
+    if (!def) return null;
+    const rewards = def.rewards;
+
+    set((s) => ({
+      milestoneQuests: {
+        ...s.milestoneQuests,
+        [id]: {
+          ...(s.milestoneQuests[id] ?? { current: def.target, claimed: false }),
+          current: Math.max(
+            s.milestoneQuests[id]?.current ?? 0,
+            def.target,
+          ),
+          claimed: true,
+        },
+      },
+      gold: s.gold + rewards.gold,
+      gems: s.gems + rewards.gems,
+      purpleDiamonds: s.purpleDiamonds + rewards.purpleDiamonds,
+      ascensionShards: s.ascensionShards + rewards.ascensionShards,
+    }));
+
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return rewards;
+  },
 
   /** Skills custam diamantes (gems), não ouro. Só altera gems + skillTree. */
   unlockSkill: (nodeId, cost) => {
@@ -929,21 +1100,57 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return getPurpleSkillCostAt(level);
   },
 
+  getAdvancedSkillUnlockRequirements: (skillType) =>
+    advancedSkillUnlockRequirementsOf(skillType),
+
+  /** @deprecated Preferir getAdvancedSkillUnlockRequirements — retorna só diamantes. */
   getAdvancedSkillUnlockCost: (skillType) =>
-    ADVANCED_SKILL_UNLOCK_COST[skillType],
+    advancedSkillUnlockRequirementsOf(skillType).diamondCost,
+
+  canUnlockAdvancedSkill: (skillType) => {
+    if (get().unlockedSkills[skillType]) return false;
+    const s = get();
+    return canMeetAdvancedSkillUnlock(skillType, {
+      gold: s.gold,
+      gems: s.gems,
+      totalMobsKilled: s.totalMobsKilled,
+      totalBossesKilled: s.totalBossesKilled,
+    });
+  },
+
+  recordLifetimeKills: (mobs, bosses = 0) => {
+    const addMobs = Math.max(0, Math.floor(mobs));
+    const addBosses = Math.max(0, Math.floor(bosses));
+    if (addMobs <= 0 && addBosses <= 0) return;
+    set((s) => ({
+      totalMobsKilled: s.totalMobsKilled + addMobs,
+      totalBossesKilled: s.totalBossesKilled + addBosses,
+    }));
+  },
 
   /**
-   * Desbloqueia skill avançada na base com Diamantes Normais.
+   * Desbloqueia skill avançada: ouro + diamantes + marcos de abates.
    * Necessário para a carta aparecer na roleta in-game.
    */
   unlockAdvancedSkill: (skillType) => {
     if (get().unlockedSkills[skillType]) return false;
-    const cost = ADVANCED_SKILL_UNLOCK_COST[skillType];
-    if (get().gems < cost) return false;
+    const req = advancedSkillUnlockRequirementsOf(skillType);
+    const s = get();
+    if (
+      !canMeetAdvancedSkillUnlock(skillType, {
+        gold: s.gold,
+        gems: s.gems,
+        totalMobsKilled: s.totalMobsKilled,
+        totalBossesKilled: s.totalBossesKilled,
+      })
+    ) {
+      return false;
+    }
 
-    set((s) => ({
-      gems: s.gems - cost,
-      unlockedSkills: { ...s.unlockedSkills, [skillType]: true },
+    set((state) => ({
+      gold: state.gold - req.goldCost,
+      gems: state.gems - req.diamondCost,
+      unlockedSkills: { ...state.unlockedSkills, [skillType]: true },
     }));
 
     void import("@/lib/syncWithDB").then(({ syncWithDB }) => {

@@ -8,6 +8,7 @@ import {
   type ArmSide,
 } from "@/src/game/entities/Player";
 import type { QuestProgressEvent } from "@/lib/quests";
+import type { MilestoneProgressEvent } from "@/lib/milestoneQuests";
 import { getLifeStealRatio, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
 import {
   getMetaLifeStealRatio,
@@ -139,6 +140,8 @@ export type CombatSystemResult = {
   contactHits: number;
   /** Eventos para progresso de quests in-game. */
   questEvents: QuestProgressEvent[];
+  /** Eventos para missões de marco persistentes. */
+  milestoneEvents: MilestoneProgressEvent[];
   /** Facing atual do jogador (atan2); inalterado se não atacou neste frame. */
   playerRotation: number;
   /** Projéteis após update + novos disparos. */
@@ -278,6 +281,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     rewards: Enemy["rewards"];
   }[] = [];
   const questEvents: QuestProgressEvent[] = [];
+  const milestoneEvents: MilestoneProgressEvent[] = [];
   const skillVfx: SkillVfxEffect[] = [];
 
   const pushKillQuests = (enemyType: Enemy["type"]) => {
@@ -289,6 +293,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   };
 
+  // Atualizado após runActiveSkills — usado em pushKill via closure.
+  let ricochetWindowActive = false;
+
   const pushKill = (enemy: Enemy) => {
     kills += 1;
     killSites.push({
@@ -298,6 +305,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       rewards: { ...enemy.rewards },
     });
     pushKillQuests(enemy.type);
+    if (enemy.hasStatus("burn", now) || enemy.isBurning) {
+      milestoneEvents.push({ type: "kill_with_fire", amount: 1 });
+    }
+    if (ricochetWindowActive) {
+      milestoneEvents.push({ type: "kill_with_ricochet", amount: 1 });
+    }
   };
 
   const effectiveRange = baseRange * matchBuffs.attackRange;
@@ -315,10 +328,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     effectiveRange,
   });
   skillVfx.push(...activeSkills.newSkillVfx);
-  const ricochetWindowActive = isRicochetActive(
-    activeSkills.pulseState,
-    now,
-  );
+  ricochetWindowActive = isRicochetActive(activeSkills.pulseState, now);
   if (activeSkills.questFreeze > 0) {
     questEvents.push({
       type: "inflict_freeze",
@@ -799,6 +809,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     killSites,
     contactHits,
     questEvents,
+    milestoneEvents,
     playerRotation,
     projectiles,
     activeSkillPulse: activeSkills.pulseState,

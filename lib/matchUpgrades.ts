@@ -45,16 +45,23 @@ export type MatchUpgrade = {
 };
 
 /**
- * Pesos da roleta (somam 100):
- * Comum 50% · Incomum 28% · Raro 15% · Épico 6% · Lendário 1%
+ * Pesos base da roleta (somam ~100.5 → normalizados):
+ * Comum ~50% · Incomum ~25% · Raro ~15% · Épico ~8% · Lendário ~2.5%
  */
-const RARITY_TABLE: { rarity: Rarity; weight: number }[] = [
+const BASE_RARITY_TABLE: { rarity: Rarity; weight: number }[] = [
   { rarity: "common", weight: 50 },
-  { rarity: "uncommon", weight: 28 },
+  { rarity: "uncommon", weight: 25 },
   { rarity: "rare", weight: 15 },
-  { rarity: "epic", weight: 6 },
-  { rarity: "legendary", weight: 1 },
+  { rarity: "epic", weight: 8 },
+  { rarity: "legendary", weight: 2.5 },
 ];
+
+/** Teto do bônus de sorte (15 pontos percentuais redistribuídos). */
+const MAX_LUCK_BONUS = 0.15;
+/** +3% de luckBonus por minuto sobrevivido. */
+const LUCK_PER_MINUTE = 0.03;
+/** +2.5% de luckBonus a cada 5 níveis de arena. */
+const LUCK_PER_FIVE_LEVELS = 0.025;
 
 /**
  * Magnitude do buff por raridade (diferença de poder clara).
@@ -188,25 +195,91 @@ export type GenerateUpgradeOptionsContext = {
   effectiveRange?: number;
   /** Cooldown efetivo atual em ms (base / buff de velocidade). */
   effectiveCooldownMs?: number;
+  /** Segundos vivos na run — escala pity de raridade. */
+  timeAlive?: number;
+  /** Nível atual da arena — escala pity de raridade. */
+  matchLevel?: number;
 };
 
 /** Máximo de habilidades especiais distintas por partida. */
 export const MAX_ACTIVE_RUN_SKILLS = 2;
 
 /**
- * Roleta por faixas cumulativas: Math.random() em [0, 1) vs pesos normalizados.
+ * Bônus de sorte (0–0.15) a partir do tempo e do nível.
+ * Em runs longas (~5 min + nível alto) chega ao teto e empurra Épico/Lendário.
  */
-function rollRarity(): Rarity {
-  const total = RARITY_TABLE.reduce((sum, r) => sum + r.weight, 0);
-  const roll = Math.random(); // 0 ≤ roll < 1
-  let cumulative = 0;
+export function computeRarityLuckBonus(
+  timeAliveSec = 0,
+  matchLevel = 1,
+): number {
+  const fromTime = (Math.max(0, timeAliveSec) / 60) * LUCK_PER_MINUTE;
+  const fromLevel =
+    (Math.max(0, matchLevel - 1) / 5) * LUCK_PER_FIVE_LEVELS;
+  return Math.min(MAX_LUCK_BONUS, fromTime + fromLevel);
+}
 
-  for (const entry of RARITY_TABLE) {
+/**
+ * Redistribui pesos: tira de Comum/Incomum e soma em Épico/Lendário.
+ * `luckBonus` 0.15 ≈ +15 pontos percentuais no topo.
+ */
+export function getRarityWeights(
+  luckBonus = 0,
+): { rarity: Rarity; weight: number }[] {
+  const table = BASE_RARITY_TABLE.map((e) => ({ ...e }));
+  const byRarity = Object.fromEntries(
+    table.map((e) => [e.rarity, e]),
+  ) as Record<Rarity, { rarity: Rarity; weight: number }>;
+
+  const points = Math.max(0, Math.min(MAX_LUCK_BONUS, luckBonus)) * 100;
+  if (points <= 0) return table;
+
+  const commonFloor = 20;
+  const uncommonFloor = 10;
+  const fromCommon = Math.min(
+    Math.max(0, byRarity.common.weight - commonFloor),
+    points * 0.6,
+  );
+  const fromUncommon = Math.min(
+    Math.max(0, byRarity.uncommon.weight - uncommonFloor),
+    points - fromCommon,
+  );
+  const removed = fromCommon + fromUncommon;
+
+  byRarity.common.weight -= fromCommon;
+  byRarity.uncommon.weight -= fromUncommon;
+  // 55% → Épico, 45% → Lendário
+  byRarity.epic.weight += removed * 0.55;
+  byRarity.legendary.weight += removed * 0.45;
+
+  return table;
+}
+
+/**
+ * Roleta por faixas cumulativas com pesos dinâmicos (pity).
+ */
+function rollRarity(luckBonus = 0, avoid?: Rarity): Rarity {
+  const weights = getRarityWeights(luckBonus);
+  const total = weights.reduce((sum, r) => sum + r.weight, 0);
+  const roll = Math.random();
+  let cumulative = 0;
+  let picked: Rarity = "legendary";
+
+  for (const entry of weights) {
     cumulative += entry.weight / total;
-    if (roll < cumulative) return entry.rarity;
+    if (roll < cumulative) {
+      picked = entry.rarity;
+      break;
+    }
   }
 
-  return "legendary";
+  // Evita terceira carta com a mesma raridade das duas anteriores (leve re-roll).
+  if (avoid && picked === avoid) {
+    const high: Rarity[] = ["rare", "epic", "legendary"];
+    const alt = high.filter((r) => r !== avoid);
+    picked = alt[Math.floor(Math.random() * alt.length)] ?? picked;
+  }
+
+  return picked;
 }
 
 function createStatUpgrade(
@@ -333,9 +406,10 @@ export function getEligibleStatCategories(ctx?: {
 }
 
 /**
- * Gera N cartas com raridade ponderada e categorias distintas.
+ * Gera N cartas com raridade ponderada (pity por tempo/nível) e categorias distintas.
  * Por slot: 15% tenta skill especial elegível; senão, upgrade de status.
  * No máx. MAX_ACTIVE_RUN_SKILLS skills novas por run — depois só upgrades delas.
+ * Nunca repete a mesma categoria/`type` na mesma tela.
  */
 export function generateUpgradeOptions(
   count = 3,
@@ -344,6 +418,7 @@ export function generateUpgradeOptions(
   const unlocked = ctx?.unlockedSkills;
   const matchSkills = ctx?.matchSkills;
   const skills = ctx?.skills;
+  const luckBonus = computeRarityLuckBonus(ctx?.timeAlive, ctx?.matchLevel);
 
   const activeFromCtx = ctx?.activeRunSkills ?? [];
   const activeFromLevels = SPECIAL_SKILL_KEYS.filter(
@@ -366,11 +441,22 @@ export function generateUpgradeOptions(
   }
 
   const selectedCards: MatchUpgrade[] = [];
+  const usedCategories = new Set<UpgradeCategory>();
+  const usedTypes = new Set<UpgradeType>();
   let specialPool = [...eligibleSpecials];
   let statPool = getEligibleStatCategories(ctx);
+  let attempts = 0;
+  const maxAttempts = count * 8;
 
-  while (selectedCards.length < count) {
-    const rarity = rollRarity();
+  while (selectedCards.length < count && attempts < maxAttempts) {
+    attempts += 1;
+    // Se as 2 primeiras têm a mesma raridade, evita repetir na 3ª.
+    const sameRarityTwice =
+      selectedCards.length === 2 &&
+      selectedCards[0]!.rarity === selectedCards[1]!.rarity
+        ? selectedCards[0]!.rarity
+        : undefined;
+    const rarity = rollRarity(luckBonus, sameRarityTwice);
     let picked: MatchUpgrade | null = null;
 
     const canRollSpecial =
@@ -398,7 +484,15 @@ export function generateUpgradeOptions(
       break;
     }
 
-    if (picked) selectedCards.push(picked);
+    if (
+      picked &&
+      !usedCategories.has(picked.category) &&
+      !usedTypes.has(picked.type)
+    ) {
+      usedCategories.add(picked.category);
+      usedTypes.add(picked.type);
+      selectedCards.push(picked);
+    }
   }
 
   return selectedCards;
