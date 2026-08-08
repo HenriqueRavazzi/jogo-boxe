@@ -30,6 +30,7 @@ import {
   type MilestoneProgressEvent,
 } from "@/lib/milestoneQuests";
 import { useArenaStore, type ActiveAttack } from "@/store/useArenaStore";
+import { getSkillGoldIncomeMultiplier } from "@/lib/skillTree";
 import { clampGameSpeed, useGameStore } from "@/store/useGameStore";
 
 const PLAYER_RADIUS = 18;
@@ -272,7 +273,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       // Drops: ouro + diamantes conforme rewards do enemy_types
       const difficulty = game.getDifficultyMultipliers();
       const dropResult = createDropsFromKills(combat.killSites, gameNow, {
-        incomeMultiplier: game.incomeMultiplier,
+        incomeMultiplier:
+          game.incomeMultiplier * getSkillGoldIncomeMultiplier(game.skillTree),
         goldDropMultiplier: difficulty.goldDropMultiplier,
         bossesKilled: arena.bossesKilled,
         diamondLuckBonus: game.getDiamondLuckBonus(),
@@ -594,7 +596,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         lightningProjectiles,
         activeSkillPulse,
       } = useArenaStore.getState();
-      const arms = useGameStore.getState().arms;
+      const arms = useGameStore.getState().getEffectiveStats().arms;
       const now = gameClockMs;
 
       ctx.fillStyle = "#0f1419";

@@ -9,7 +9,7 @@ import {
 } from "@/src/game/entities/Player";
 import type { QuestProgressEvent } from "@/lib/quests";
 import type { MilestoneProgressEvent } from "@/lib/milestoneQuests";
-import { getLifeStealRatio, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
+import { getLifeStealRatio, getSkillDamageTakenMultiplier, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
 import {
   getMetaLifeStealRatio,
   getMetaSkillRegenHealing,
@@ -272,6 +272,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       DEFAULT_KNOCKBACK) *
     (matchBuffs.knockbackMultiplier ?? 1);
   const difficulty = gameState.getDifficultyMultipliers();
+  const damageTakenMul = getSkillDamageTakenMultiplier(gameState.skillTree);
   void contactDamage; // legado: dano melee vem de enemy.attackDamage
 
   let contactHits = 0;
@@ -459,7 +460,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   }
 
   if (meleeDamageDealt > 0) {
-    player.takeDamage(meleeDamageDealt);
+    player.takeDamage(meleeDamageDealt * damageTakenMul);
   }
 
   // Projéteis em voo: move + colisão com o jogador
@@ -478,7 +479,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
     const hitDist = Math.hypot(nx - player.x, ny - player.y);
     if (hitDist <= player.radius + p.radius) {
-      player.takeDamage(p.damage);
+      player.takeDamage(p.damage * damageTakenMul);
       contactHits += 1;
       continue;
     }

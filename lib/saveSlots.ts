@@ -173,6 +173,17 @@ export function normalizeSaveData(
   for (const id of Object.keys(skillTree) as (keyof typeof skillTree)[]) {
     if (rawTree[id]) skillTree[id] = true;
   }
+  // Nós novos intercalados: quem já passou deles mantém a cadeia coerente
+  if (
+    skillTree.node_life_steal_2 ||
+    skillTree.node_fortitude ||
+    skillTree.node_life_steal_3
+  ) {
+    skillTree.node_thick_skin = true;
+  }
+  if (skillTree.node_life_steal_3) {
+    skillTree.node_fortitude = true;
+  }
 
   const unlockedSkills = normalizeUnlocked(data.unlockedSkills);
   // Migração: nós removidos da árvore → preserva desbloqueios em Skills Roxas

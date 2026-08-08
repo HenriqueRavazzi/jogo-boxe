@@ -64,10 +64,23 @@ import {
 import {
   DEFAULT_SKILL_TREE,
   getLifeStealLevel,
+  getLifeStealRatio,
+  getSkillCritChanceBonus,
+  getSkillCritDamageBonus,
+  getSkillDamageTakenMultiplier,
+  getSkillExtraArms,
+  getSkillGoldIncomeMultiplier,
+  getSkillKnockbackBonus,
+  getSkillMagnetRadiusMultiplier,
   getSkillNode,
   type SkillNodeId,
   type SkillTreeState,
 } from "@/lib/skillTree";
+
+export {
+  getSkillDamageTakenMultiplier,
+  getSkillGoldIncomeMultiplier,
+};
 
 export {
   getArmDistribution,
@@ -486,8 +499,8 @@ const CRIT_DAMAGE_COST_BASE = 70;
 /** Custo base por atributo de skill (Diamantes Roxos). */
 const PURPLE_SKILL_STAT_COST_BASE = 3;
 /** Custo base em diamantes do 1º nível de bônus de XP. */
-const XP_BONUS_COST_BASE = 5;
-const XP_BONUS_COST_GROWTH = 1.5;
+const XP_BONUS_COST_BASE = 40;
+const XP_BONUS_COST_GROWTH = 1.85;
 
 export function getMetaLifeStealRatio(level: number): number {
   return (
@@ -681,21 +694,23 @@ const xpBonusCostAt = getXpBonusCostAt;
 
 function skillHpBonus(tree: SkillTreeState): number {
   let bonus = 0;
-  if (tree.node_hp_1) bonus += 25;
-  if (tree.node_hp_2) bonus += 50;
-  if (tree.node_iron_guard) bonus += 40;
+  if (tree.node_hp_1) bonus += 30;
+  if (tree.node_hp_2) bonus += 60;
+  if (tree.node_iron_guard) bonus += 50;
+  if (tree.node_fortitude) bonus += 120;
   return bonus;
 }
 
 function skillDamageBonus(tree: SkillTreeState): number {
   let bonus = 0;
-  if (tree.node_dmg_1) bonus += 5;
-  if (tree.node_dmg_2) bonus += 10;
+  if (tree.node_dmg_1) bonus += 6;
+  if (tree.node_dmg_2) bonus += 12;
+  if (tree.node_dmg_3) bonus += 22;
   return bonus;
 }
 
 function skillRangeBonus(tree: SkillTreeState): number {
-  return tree.node_range_focus ? 25 : 0;
+  return tree.node_range_focus ? 30 : 0;
 }
 
 function skillCooldownReduction(tree: SkillTreeState): number {
@@ -703,6 +718,7 @@ function skillCooldownReduction(tree: SkillTreeState): number {
   if (tree.node_spark_ignition) reduction += 50;
   if (tree.node_spark_burst) reduction += 75;
   if (tree.node_spark_fury) reduction += 100;
+  if (tree.node_spark_overdrive) reduction += 90;
   return reduction;
 }
 
@@ -1055,7 +1071,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   getMagnetRadiusMultiplier: () =>
-    magnetRadiusMulAt(get().ascensionPassives.magnetRadius),
+    magnetRadiusMulAt(get().ascensionPassives.magnetRadius) *
+    getSkillMagnetRadiusMultiplier(get().skillTree),
 
   getStartingGoldBonus: () =>
     startingGoldBonusAt(get().ascensionPassives.startingGold),
@@ -1415,7 +1432,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const s = get();
     return (
       getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
-      Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL
+      Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL +
+      getSkillKnockbackBonus(s.skillTree)
     );
   },
 
@@ -1425,10 +1443,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getCritDamageUpgradeCost: () =>
     getCritDamageCostAt(get().critDamageLevel, get().prestigeLevel),
 
-  getCritChance: () => getCritChanceAt(get().critChanceLevel),
+  getCritChance: () =>
+    Math.min(
+      MAX_CRIT_CHANCE,
+      getCritChanceAt(get().critChanceLevel) +
+        getSkillCritChanceBonus(get().skillTree),
+    ),
 
   getCritDamageMultiplier: () =>
-    getCritDamageMultiplierAt(get().critDamageLevel),
+    getCritDamageMultiplierAt(get().critDamageLevel) +
+    getSkillCritDamageBonus(get().skillTree),
 
   getXpBonusUpgradeCost: () => {
     const level = get().xpBonusLevel;
@@ -1494,12 +1518,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         Math.round(goldCooldown - skillCd),
       ),
       xpMultiplier: xpMultiplierAt(s.xpBonusLevel) * prestigeMul,
-      arms: s.arms,
+      arms: s.arms + getSkillExtraArms(tree),
       lifeStealLevel,
-      lifeStealPercent: lifeStealLevel * 0.01 + metaLifeSteal,
+      lifeStealPercent: getLifeStealRatio(tree) + metaLifeSteal,
       metaSkillRegenLevel: s.metaSkillRegenLevel,
-      critChance: getCritChanceAt(s.critChanceLevel),
-      critDamageMultiplier: getCritDamageMultiplierAt(s.critDamageLevel),
+      critChance: Math.min(
+        MAX_CRIT_CHANCE,
+        getCritChanceAt(s.critChanceLevel) + getSkillCritChanceBonus(tree),
+      ),
+      critDamageMultiplier:
+        getCritDamageMultiplierAt(s.critDamageLevel) +
+        getSkillCritDamageBonus(tree),
       ricochetUnlocked: s.unlockedSkills.ricochet,
       ricochetCooldown: Math.max(
         2_000,
@@ -1509,7 +1538,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       bounceDamagePercent: 0.6 + s.skills.ricochet.damage * 0.15,
       knockbackPower:
         getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
-        Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL,
+        Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL +
+        getSkillKnockbackBonus(tree),
       skillBonus: {
         hp: skillHp,
         damage: skillDmg,
