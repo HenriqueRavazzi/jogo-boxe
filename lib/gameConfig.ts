@@ -23,6 +23,24 @@ export type DifficultyMultipliers = {
   goldDropMultiplier: number;
 };
 
+/**
+ * Escala de HP/dano por dificuldade (Easy/Medium/Hard/Insane).
+ * Aplicada no spawn: floor(hpBase × hp) e damage × dmg.
+ */
+export const DIFFICULTY_STAT_SCALE: Record<
+  string,
+  { hp: number; damage: number }
+> = {
+  Easy: { hp: 1.0, damage: 1.0 },
+  Medium: { hp: 1.3, damage: 1.2 },
+  Hard: { hp: 1.8, damage: 1.5 },
+  Insane: { hp: 2.5, damage: 2.0 },
+  Fácil: { hp: 1.0, damage: 1.0 },
+  Médio: { hp: 1.3, damage: 1.2 },
+  Difícil: { hp: 1.8, damage: 1.5 },
+  Infernal: { hp: 2.5, damage: 2.0 },
+};
+
 /** Comportamento de IA / combate derivado do nome + isBoss. */
 export type EnemyBehaviorKind = "normal" | "dasher" | "ranged" | "boss";
 
@@ -72,34 +90,34 @@ export const FALLBACK_DIFFICULTIES: DifficultyConfig[] = [
   {
     id: 1,
     name: "Fácil",
-    enemyHpMultiplier: 0.8,
-    enemyDamageMultiplier: 0.8,
-    enemySpeedMultiplier: 0.8,
-    goldDropMultiplier: 0.8,
+    enemyHpMultiplier: 1.0,
+    enemyDamageMultiplier: 1.0,
+    enemySpeedMultiplier: 1.0,
+    goldDropMultiplier: 1.0,
   },
   {
     id: 2,
     name: "Médio",
-    enemyHpMultiplier: 1,
-    enemyDamageMultiplier: 1,
-    enemySpeedMultiplier: 1,
-    goldDropMultiplier: 1,
+    enemyHpMultiplier: 1.3,
+    enemyDamageMultiplier: 1.2,
+    enemySpeedMultiplier: 1.1,
+    goldDropMultiplier: 1.15,
   },
   {
     id: 3,
     name: "Difícil",
-    enemyHpMultiplier: 1.5,
+    enemyHpMultiplier: 1.8,
     enemyDamageMultiplier: 1.5,
-    enemySpeedMultiplier: 1.5,
-    goldDropMultiplier: 1.5,
+    enemySpeedMultiplier: 1.25,
+    goldDropMultiplier: 1.35,
   },
   {
     id: 4,
     name: "Infernal",
-    enemyHpMultiplier: 3,
-    enemyDamageMultiplier: 3,
-    enemySpeedMultiplier: 3,
-    goldDropMultiplier: 3,
+    enemyHpMultiplier: 2.5,
+    enemyDamageMultiplier: 2.0,
+    enemySpeedMultiplier: 1.4,
+    goldDropMultiplier: 1.6,
   },
 ];
 
@@ -109,6 +127,14 @@ export const NEUTRAL_DIFFICULTY: DifficultyMultipliers = {
   enemySpeedMultiplier: 1,
   goldDropMultiplier: 1,
 };
+
+/** Resolve multiplicadores a partir do nome da dificuldade selecionada. */
+export function resolveDifficultyStatScale(
+  name: string | null | undefined,
+): { hp: number; damage: number } {
+  if (!name) return { hp: 1, damage: 1 };
+  return DIFFICULTY_STAT_SCALE[name] ?? { hp: 1, damage: 1 };
+}
 
 export function resolveEnemyBehaviorKind(
   name: string,
@@ -126,7 +152,7 @@ export const FALLBACK_ENEMY_TYPES: EnemyTypeConfig[] = [
     id: 1,
     name: "Zumbi Fraco",
     isBoss: false,
-    hpBase: 25,
+    hpBase: 40,
     speed: 1.8,
     damage: 1,
     attackSpeed: 1000,
@@ -143,7 +169,7 @@ export const FALLBACK_ENEMY_TYPES: EnemyTypeConfig[] = [
     id: 2,
     name: "Rato Corredor",
     isBoss: false,
-    hpBase: 15,
+    hpBase: 25,
     speed: 3.2,
     damage: 0.8,
     attackSpeed: 800,
@@ -160,7 +186,7 @@ export const FALLBACK_ENEMY_TYPES: EnemyTypeConfig[] = [
     id: 3,
     name: "Esqueleto Guerreiro",
     isBoss: false,
-    hpBase: 60,
+    hpBase: 90,
     speed: 2,
     damage: 1.5,
     attackSpeed: 1000,
@@ -177,7 +203,7 @@ export const FALLBACK_ENEMY_TYPES: EnemyTypeConfig[] = [
     id: 4,
     name: "Arqueiro Sombrio (Ranged)",
     isBoss: false,
-    hpBase: 40,
+    hpBase: 60,
     speed: 1.5,
     damage: 1.8,
     attackSpeed: 2000,
@@ -194,7 +220,7 @@ export const FALLBACK_ENEMY_TYPES: EnemyTypeConfig[] = [
     id: 5,
     name: "Brutamontes (Tank)",
     isBoss: false,
-    hpBase: 180,
+    hpBase: 250,
     speed: 1.1,
     damage: 2.5,
     attackSpeed: 1200,

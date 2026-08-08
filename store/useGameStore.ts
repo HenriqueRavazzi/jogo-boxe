@@ -16,6 +16,7 @@ import {
   isSkillUpgradeType,
 } from "@/db/schema";
 import {
+  DIFFICULTY_STAT_SCALE,
   FALLBACK_DIFFICULTIES,
   FALLBACK_ENEMY_TYPES,
   FALLBACK_GAME_SETTINGS,
@@ -705,9 +706,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getDifficultyMultipliers: () => {
     const selected = get().getSelectedDifficulty();
     if (!selected) return { ...NEUTRAL_DIFFICULTY };
+    const scale = DIFFICULTY_STAT_SCALE[selected.name];
     return {
-      enemyHpMultiplier: selected.enemyHpMultiplier,
-      enemyDamageMultiplier: selected.enemyDamageMultiplier,
+      // HP/dano: tabela canônica (Easy→Insane); speed/gold do DB/config
+      enemyHpMultiplier: scale?.hp ?? selected.enemyHpMultiplier,
+      enemyDamageMultiplier: scale?.damage ?? selected.enemyDamageMultiplier,
       enemySpeedMultiplier: selected.enemySpeedMultiplier,
       goldDropMultiplier: selected.goldDropMultiplier,
     };

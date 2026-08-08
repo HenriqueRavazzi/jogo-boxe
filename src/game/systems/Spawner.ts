@@ -12,6 +12,7 @@ import {
   type EnemyData,
   type EnemyType,
 } from "@/src/game/entities/Enemy";
+import { useGameStore } from "@/store/useGameStore";
 
 export const BASE_ENEMY_HP = 30;
 /** Ciclo de escalonamento da horda (segundos). */
@@ -228,20 +229,25 @@ function scaleFromType(
   difficulty?: DifficultySpawnMultipliers,
   overflow = 0,
 ) {
-  const hpMul = difficulty?.enemyHpMultiplier || 1;
-  const dmgMul = difficulty?.enemyDamageMultiplier || 1;
-  const spdMul = difficulty?.enemySpeedMultiplier || 1;
+  // Preferência: multiplicadores injetados; senão, dificuldade selecionada na store
+  const fromStore = useGameStore.getState().getDifficultyMultipliers();
+  const hpMul =
+    difficulty?.enemyHpMultiplier ?? fromStore.enemyHpMultiplier ?? 1;
+  const dmgMul =
+    difficulty?.enemyDamageMultiplier ?? fromStore.enemyDamageMultiplier ?? 1;
+  const spdMul =
+    difficulty?.enemySpeedMultiplier ?? fromStore.enemySpeedMultiplier ?? 1;
 
   const powerMul = getEnemyPowerMultiplier(timeAlive);
   const overflowHp = Math.pow(BOSS_OVERFLOW_HP_GROWTH, overflow);
   const overflowDmg = Math.pow(BOSS_OVERFLOW_DAMAGE_GROWTH, overflow);
 
-  // HP: base × (1 + 0.5 × powerLevel) — sobe a cada 3 ciclos de densidade
-  const scaledHp = Math.floor(config.hpBase * powerMul * hpMul);
+  // HP: floor(hp_base × difficulty.hp × powerMul) — Infernal: 25 × 2.5 = 62
+  const scaledHp = Math.floor(config.hpBase * hpMul * powerMul);
 
-  // Dano: mesma curva escalonada de poder
+  // Dano: damage × difficulty.damage × powerMul
   const scaledDamage =
-    config.damage * powerMul * dmgMul * overflowDmg;
+    config.damage * dmgMul * powerMul * overflowDmg;
 
   const speedPx = Math.min(
     160 * Math.max(1, spdMul),

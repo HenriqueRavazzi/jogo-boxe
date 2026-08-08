@@ -497,10 +497,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     const damage =
       enemy.projectileDamage > 0
         ? enemy.projectileDamage
-        : Math.max(
-            0.5,
-            enemy.attackDamage * 1.5 * difficulty.enemyDamageMultiplier,
-          );
+        : Math.max(0.5, enemy.attackDamage * 1.5);
 
     projectiles.push({
       id: crypto.randomUUID(),

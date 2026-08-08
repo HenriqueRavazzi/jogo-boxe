@@ -23,31 +23,31 @@ const DEFAULT_SETTINGS = {
 const DIFFICULTY_ROWS = [
   {
     name: "Fácil",
-    enemyHpMultiplier: 0.8,
-    enemyDamageMultiplier: 0.8,
-    enemySpeedMultiplier: 0.8,
-    goldDropMultiplier: 0.8,
-  },
-  {
-    name: "Médio",
     enemyHpMultiplier: 1.0,
     enemyDamageMultiplier: 1.0,
     enemySpeedMultiplier: 1.0,
     goldDropMultiplier: 1.0,
   },
   {
+    name: "Médio",
+    enemyHpMultiplier: 1.3,
+    enemyDamageMultiplier: 1.2,
+    enemySpeedMultiplier: 1.1,
+    goldDropMultiplier: 1.15,
+  },
+  {
     name: "Difícil",
-    enemyHpMultiplier: 1.5,
+    enemyHpMultiplier: 1.8,
     enemyDamageMultiplier: 1.5,
-    enemySpeedMultiplier: 1.5,
-    goldDropMultiplier: 1.5,
+    enemySpeedMultiplier: 1.25,
+    goldDropMultiplier: 1.35,
   },
   {
     name: "Infernal",
-    enemyHpMultiplier: 3.0,
-    enemyDamageMultiplier: 3.0,
-    enemySpeedMultiplier: 3.0,
-    goldDropMultiplier: 3.0,
+    enemyHpMultiplier: 2.5,
+    enemyDamageMultiplier: 2.0,
+    enemySpeedMultiplier: 1.4,
+    goldDropMultiplier: 1.6,
   },
 ] as const;
 

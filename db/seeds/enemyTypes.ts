@@ -26,7 +26,7 @@ export const COMMON_ENEMY_TYPE_SEEDS: EnemyTypeSeedRow[] = [
   {
     name: "Zumbi Fraco",
     isBoss: false,
-    hpBase: 25,
+    hpBase: 40,
     speed: 1.8,
     damage: 1.0,
     attackSpeed: 1000,
@@ -41,7 +41,7 @@ export const COMMON_ENEMY_TYPE_SEEDS: EnemyTypeSeedRow[] = [
   {
     name: "Rato Corredor",
     isBoss: false,
-    hpBase: 15,
+    hpBase: 25,
     speed: 3.2,
     damage: 0.8,
     attackSpeed: 800,
@@ -56,7 +56,7 @@ export const COMMON_ENEMY_TYPE_SEEDS: EnemyTypeSeedRow[] = [
   {
     name: "Esqueleto Guerreiro",
     isBoss: false,
-    hpBase: 60,
+    hpBase: 90,
     speed: 2.0,
     damage: 1.5,
     attackSpeed: 1000,
@@ -71,7 +71,7 @@ export const COMMON_ENEMY_TYPE_SEEDS: EnemyTypeSeedRow[] = [
   {
     name: "Arqueiro Sombrio (Ranged)",
     isBoss: false,
-    hpBase: 40,
+    hpBase: 60,
     speed: 1.5,
     damage: 1.8,
     attackSpeed: 2000,
@@ -86,7 +86,7 @@ export const COMMON_ENEMY_TYPE_SEEDS: EnemyTypeSeedRow[] = [
   {
     name: "Brutamontes (Tank)",
     isBoss: false,
-    hpBase: 180,
+    hpBase: 250,
     speed: 1.1,
     damage: 2.5,
     attackSpeed: 1200,
