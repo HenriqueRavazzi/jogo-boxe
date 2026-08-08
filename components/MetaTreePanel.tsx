@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import {
   Flame,
+  Gauge,
   Gem,
   Heart,
   HeartPulse,
@@ -15,6 +16,7 @@ import {
   formatLevelLabel,
   getMetaTreeMaxLevel,
   isLevelCapped,
+  META_ATTACK_SPEED_PCT_PER_LEVEL,
   META_DAMAGE_PCT_PER_LEVEL,
   META_HP_PCT_PER_LEVEL,
   META_LIFE_STEAL_MAX_RATIO,
@@ -24,6 +26,7 @@ import {
   META_SKILL_REGEN_DAMAGE_RATIO,
   META_SKILL_REGEN_HIT_HEAL,
   META_SKILL_REGEN_MAX_RATIO,
+  metaAttackSpeedMultiplier,
   metaDamageMultiplier,
   metaHpMultiplier,
   useGameStore,
@@ -62,6 +65,17 @@ const CARDS: MetaCardDef[] = [
       return level <= 0
         ? `+${Math.round(META_HP_PCT_PER_LEVEL * 100)}% HP / nv. (máx +${Math.round(META_HP_PCT_PER_LEVEL * 40 * 100)}%)`
         : `+${pct}% HP máx. (+${Math.round(META_HP_PCT_PER_LEVEL * 100)}%/nv)`;
+    },
+  },
+  {
+    type: "metaAttackSpeedLevel",
+    title: "Vel. Ataque",
+    icon: <Gauge className="h-4 w-4" aria-hidden />,
+    bonusLabel: (level) => {
+      const pct = Math.round((metaAttackSpeedMultiplier(level) - 1) * 100);
+      return level <= 0
+        ? `+${Math.round(META_ATTACK_SPEED_PCT_PER_LEVEL * 100)}% APS / nv. (máx +40%)`
+        : `+${pct}% velocidade de ataque (+${Math.round(META_ATTACK_SPEED_PCT_PER_LEVEL * 100)}%/nv)`;
     },
   },
   {
@@ -109,6 +123,7 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
   const levels = {
     metaDamageLevel: useGameStore((s) => s.metaDamageLevel),
     metaHpLevel: useGameStore((s) => s.metaHpLevel),
+    metaAttackSpeedLevel: useGameStore((s) => s.metaAttackSpeedLevel),
     metaLifeStealLevel: useGameStore((s) => s.metaLifeStealLevel),
     metaSkillRegenLevel: useGameStore((s) => s.metaSkillRegenLevel),
     metaParryChance: useGameStore((s) => s.metaParryChance),

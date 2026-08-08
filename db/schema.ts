@@ -146,6 +146,8 @@ export type MetaTreeData = {
   metaSkillRegenLevel: number;
   /** Níveis de chance de parry automático (0–50). */
   metaParryChance: number;
+  /** Velocidade de ataque permanente (0–10 → até +40% APS). */
+  metaAttackSpeedLevel: number;
 };
 
 export type MetaTreeUpgradeType = keyof MetaTreeData;
@@ -157,6 +159,7 @@ export const DEFAULT_META_TREE: MetaTreeData = {
   metaLifeStealLevel: 0,
   metaSkillRegenLevel: 0,
   metaParryChance: 0,
+  metaAttackSpeedLevel: 0,
 };
 
 /** Progresso persistido (ouro, gemas, upgrades) — espelha o useGameStore. */
@@ -204,6 +207,8 @@ export type SaveData = {
   metaSkillRegenLevel: number;
   /** Níveis de chance de parry automático (Diamantes). */
   metaParryChance: number;
+  /** Velocidade de ataque permanente (Diamantes). */
+  metaAttackSpeedLevel: number;
   /** Nível de Ascensão / Prestígio (bônus permanente + mundo mais difícil). */
   prestigeLevel: number;
   /** Moeda de Ascensão (shards) — gasta na loja de passivas permanentes. */

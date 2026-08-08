@@ -197,6 +197,8 @@ export type GameStoreState = {
   metaSkillRegenLevel: number;
   /** Níveis de chance de parry automático (Diamantes). */
   metaParryChance: number;
+  /** Velocidade de ataque permanente (Diamantes). */
+  metaAttackSpeedLevel: number;
   /**
    * Nível de Ascensão. Cada nível: +15% dano/ouro/XP passivos
    * e inimigos mais fortes (formas geométricas).
@@ -570,7 +572,9 @@ export const MAX_META_PARRY_LEVEL = 50;
 export const MAX_META_LIFE_STEAL_LEVEL = 10;
 /** Regen de skill: máx. 10 níveis → 5% dano skill. */
 export const MAX_META_SKILL_REGEN_LEVEL = 10;
-/** Por nó: dano/vida 40; life steal 10; skill regen 10; parry 50. */
+/** Velocidade de ataque: máx. 10 níveis → +40% APS. */
+export const MAX_META_ATTACK_SPEED_LEVEL = 10;
+/** Por nó: dano/vida 40; AS/life steal/skill regen 10; parry 50. */
 export const MAX_META_TREE_LEVELS: Record<
   MetaTreeUpgradeType,
   number
@@ -581,6 +585,7 @@ export const MAX_META_TREE_LEVELS: Record<
   metaLifeStealLevel: MAX_META_LIFE_STEAL_LEVEL,
   metaSkillRegenLevel: MAX_META_SKILL_REGEN_LEVEL,
   metaParryChance: MAX_META_PARRY_LEVEL,
+  metaAttackSpeedLevel: MAX_META_ATTACK_SPEED_LEVEL,
 };
 
 /** Custo base de Dano/Vida (mais caro, mais impacto). */
@@ -597,6 +602,8 @@ export const META_PARRY_COST_GROWTH = 1.34;
 export const META_DAMAGE_PCT_PER_LEVEL = 0.025;
 /** +% HP máx. por nível de diamante (aditivo; nv.40 → +120%). */
 export const META_HP_PCT_PER_LEVEL = 0.03;
+/** +% velocidade de ataque (APS) por nível; nv.10 → +40%. */
+export const META_ATTACK_SPEED_PCT_PER_LEVEL = 0.04;
 /** @deprecated flat — prefer META_DAMAGE_PCT_PER_LEVEL */
 export const META_DAMAGE_PER_LEVEL = 6;
 /** @deprecated flat — prefer META_HP_PCT_PER_LEVEL */
@@ -627,6 +634,15 @@ export function metaDamageMultiplier(level: number): number {
 
 export function metaHpMultiplier(level: number): number {
   return 1 + Math.max(0, Math.floor(level)) * META_HP_PCT_PER_LEVEL;
+}
+
+/** Multiplicador de APS (cooldown ÷ este valor). */
+export function metaAttackSpeedMultiplier(level: number): number {
+  const capped = Math.min(
+    MAX_META_ATTACK_SPEED_LEVEL,
+    Math.max(0, Math.floor(level)),
+  );
+  return 1 + capped * META_ATTACK_SPEED_PCT_PER_LEVEL;
 }
 
 export function isLevelCapped(level: number, maxLevel: number): boolean {
@@ -711,6 +727,7 @@ function getMetaTreeLevel(
     metaLifeStealLevel: number;
     metaSkillRegenLevel: number;
     metaParryChance: number;
+    metaAttackSpeedLevel: number;
   },
   type: MetaTreeUpgradeType,
 ): number {
@@ -1021,6 +1038,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   metaLifeStealLevel: defaults.metaLifeStealLevel,
   metaSkillRegenLevel: defaults.metaSkillRegenLevel,
   metaParryChance: defaults.metaParryChance,
+  metaAttackSpeedLevel: defaults.metaAttackSpeedLevel ?? 0,
   prestigeLevel: defaults.prestigeLevel ?? 0,
   ascensionShards: defaults.ascensionShards ?? 0,
   ascensionPassives: normalizeAscensionPassives(defaults.ascensionPassives),
@@ -1111,6 +1129,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaParryChance: Math.min(
         MAX_META_PARRY_LEVEL,
         Math.max(0, Math.floor(n.metaParryChance ?? 0)),
+      ),
+      metaAttackSpeedLevel: Math.min(
+        MAX_META_ATTACK_SPEED_LEVEL,
+        Math.max(0, Math.floor(n.metaAttackSpeedLevel ?? 0)),
       ),
       prestigeLevel: Math.max(0, Math.floor(n.prestigeLevel ?? 0)),
       ascensionShards: Math.max(0, Math.floor(n.ascensionShards ?? 0)),
@@ -1204,6 +1226,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaLifeStealLevel: s.metaLifeStealLevel,
       metaSkillRegenLevel: s.metaSkillRegenLevel,
       metaParryChance: s.metaParryChance,
+      metaAttackSpeedLevel: s.metaAttackSpeedLevel,
       prestigeLevel: s.prestigeLevel,
       ascensionShards: s.ascensionShards,
       ascensionPassives: normalizeAscensionPassives(s.ascensionPassives),
@@ -1960,6 +1983,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const goldDmgMul = goldDamageMultiplier(s.baseDamageLevel);
     const metaHpMul = metaHpMultiplier(s.metaHpLevel);
     const metaDmgMul = metaDamageMultiplier(s.metaDamageLevel);
+    const metaAsMul = metaAttackSpeedMultiplier(s.metaAttackSpeedLevel);
     const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
     const goldCooldown = cooldownAtLevel(
       s.attackSpeedLevel,
@@ -1985,7 +2009,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ),
       attackCooldownMs: Math.max(
         MIN_ATTACK_COOLDOWN_MS,
-        Math.round(cooldownBeforeTeam / team.attackSpeedMultiplier),
+        Math.round(
+          cooldownBeforeTeam /
+            (team.attackSpeedMultiplier * metaAsMul),
+        ),
       ),
       xpMultiplier:
         xpMultiplierAt(s.xpBonusLevel) *

@@ -110,6 +110,7 @@ export async function GET() {
       "metaLifeStealLevel",
       "metaSkillRegenLevel",
       "metaParryChance",
+      "metaAttackSpeedLevel",
       "prestigeLevel",
       "ascensionShards",
       "ascensionPassives",

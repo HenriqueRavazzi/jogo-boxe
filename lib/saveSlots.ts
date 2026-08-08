@@ -157,6 +157,15 @@ function normalizeMetaTree(
         Math.floor(data.metaParryChance ?? DEFAULT_META_TREE.metaParryChance),
       ),
     ),
+    metaAttackSpeedLevel: Math.min(
+      10,
+      Math.max(
+        0,
+        Math.floor(
+          data.metaAttackSpeedLevel ?? DEFAULT_META_TREE.metaAttackSpeedLevel,
+        ),
+      ),
+    ),
   };
 }
 

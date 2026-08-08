@@ -26,6 +26,11 @@ export type StageDef = {
   bossSpawnProgress: number;
   /** Multiplicador de HP/dano/velocidade dos inimigos nesta fase. */
   difficultyMul: number;
+  /**
+   * Multiplicador extra só no chefe (early game mais fraco).
+   * Comuns usam só `difficultyMul`.
+   */
+  bossStatMul: number;
 };
 
 const STAGE_NAMES: string[] = [
@@ -89,6 +94,8 @@ function buildStage(n: number): StageDef {
   const bossSpawnProgress = 0.65;
   // Dificuldade sobe ~9% por fase (fase 15 ≈ 2.26×, fase 50 ≈ 5.4×)
   const difficultyMul = 1 + (n - 1) * 0.09;
+  // Chefe early bem mais fraco: fase 1 ≈ 0.38×, fase 10 ≈ 0.83×, fase 15+ ≈ 1×
+  const bossStatMul = Math.min(1, 0.38 + (n - 1) * 0.05);
   // Estimativa de tempo só para UI (não define vitória)
   const durationSeconds = Math.max(
     40,
@@ -103,6 +110,7 @@ function buildStage(n: number): StageDef {
     enemyTierCap,
     bossSpawnProgress,
     difficultyMul,
+    bossStatMul,
   };
 }
 
@@ -141,4 +149,19 @@ export function getStageClearRewards(stageNumber: number): {
 /** Total de inimigos da fase (comuns + chefe). */
 export function getStageTotalEnemies(stage: StageDef): number {
   return stage.enemyCount + 1;
+}
+
+/**
+ * Índice do chefe da fase (0 = mais fraco).
+ * Fases 1–12: Boss 1 · 13–28: Boss 2 · 29+: Titã de Magma.
+ */
+export function getStageBossIndex(
+  stageNumber: number,
+  bossCatalogSize: number,
+): number {
+  if (bossCatalogSize <= 1) return 0;
+  const n = Math.max(1, Math.floor(stageNumber));
+  if (n >= 29) return Math.min(2, bossCatalogSize - 1);
+  if (n >= 13) return Math.min(1, bossCatalogSize - 1);
+  return 0;
 }

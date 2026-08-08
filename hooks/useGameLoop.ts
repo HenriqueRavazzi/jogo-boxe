@@ -384,6 +384,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
               commonsSpawned: arena.stageCommonsSpawned,
               bossSpawnProgress: arena.runStage.bossSpawnProgress,
               difficultyMul: arena.runStage.difficultyMul,
+              bossStatMul: arena.runStage.bossStatMul,
+              stageNumber: arena.runStage.stageNumber,
               spawnPaceMul: stagePace,
             }
           : null;

@@ -7,6 +7,7 @@ import {
   rewardsFromConfig,
   type EnemyTypeConfig,
 } from "@/lib/gameConfig";
+import { getStageBossIndex } from "@/lib/stages";
 import {
   Enemy,
   type EnemyData,
@@ -158,6 +159,9 @@ export type SpawnerInput = {
     /** 0–1: progresso da cota para spawn do chefe. */
     bossSpawnProgress: number;
     difficultyMul: number;
+    /** Multiplicador só do chefe (early nerf). */
+    bossStatMul: number;
+    stageNumber: number;
     /** Escala de ritmo de spawn (maior = mais rápido). */
     spawnPaceMul?: number;
   } | null;
@@ -489,11 +493,21 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       count < MAX_ENEMIES &&
       bosses.length > 0
     ) {
-      const stageBossIndex = Math.min(
-        bosses.length - 1,
-        Math.max(0, Math.floor(stage.enemyTierCap / 4) - 1),
+      const stageBossIndex = getStageBossIndex(
+        stage.stageNumber,
+        bosses.length,
       );
       const { config, overflow } = pickBossConfig(bosses, stageBossIndex);
+      const bossMul = Math.max(0.2, stage.bossStatMul ?? 1);
+      const bossDifficulty: DifficultySpawnMultipliers = {
+        enemyHpMultiplier:
+          (mergedDifficulty?.enemyHpMultiplier ?? 1) * bossMul,
+        enemyDamageMultiplier:
+          (mergedDifficulty?.enemyDamageMultiplier ?? 1) * bossMul,
+        enemySpeedMultiplier:
+          (mergedDifficulty?.enemySpeedMultiplier ?? 1) *
+          Math.sqrt(bossMul),
+      };
       spawned.push(
         spawnFromConfig(
           canvasWidth,
@@ -501,7 +515,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
           config,
           timeAliveInSeconds,
           matchLevel,
-          mergedDifficulty,
+          bossDifficulty,
           overflow,
         ),
       );
