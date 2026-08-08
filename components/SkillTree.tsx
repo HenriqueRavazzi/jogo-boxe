@@ -4,12 +4,12 @@ import { Check, Gem, Lock, Sparkles, Unlock } from "lucide-react";
 import {
   SKILL_BRANCHES,
   SKILL_NODES,
-  canUnlockSkill,
   type SkillNodeDef,
 } from "@/lib/skillTree";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
   MAX_UPGRADE_LEVELS,
+  getPrestigeCostMultiplier,
   getXpMultiplier,
   useGameStore,
 } from "@/store/useGameStore";
@@ -58,10 +58,12 @@ export function SkillTree({ onClose }: SkillTreeProps) {
   const gems = useGameStore((s) => s.gems);
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const skillTree = useGameStore((s) => s.skillTree);
+  const prestigeLevel = useGameStore((s) => s.prestigeLevel);
   const xpBonusLevel = useGameStore((s) => s.xpBonusLevel);
   const unlockSkill = useGameStore((s) => s.unlockSkill);
   const upgradeXpBonus = useGameStore((s) => s.upgradeXpBonus);
   const getXpBonusUpgradeCost = useGameStore((s) => s.getXpBonusUpgradeCost);
+  const prestigeCostMul = getPrestigeCostMultiplier(prestigeLevel);
 
   const xpCost = getXpBonusUpgradeCost();
   const xpCap = MAX_UPGRADE_LEVELS.xpBonus;
@@ -215,18 +217,34 @@ export function SkillTree({ onClose }: SkillTreeProps) {
                         )}
                         <SkillNodeButton
                           node={node}
-                          unlocked={skillTree[node.id]}
-                          available={canUnlockSkill(
-                            skillTree,
-                            node.id,
-                            gems,
+                          cost={Math.max(
+                            1,
+                            Math.floor(node.cost * prestigeCostMul),
                           )}
+                          unlocked={skillTree[node.id]}
+                          available={
+                            !skillTree[node.id] &&
+                            (!node.requires || skillTree[node.requires]) &&
+                            gems >=
+                              Math.max(
+                                1,
+                                Math.floor(node.cost * prestigeCostMul),
+                              )
+                          }
                           locked={
                             !skillTree[node.id] &&
                             !!node.requires &&
                             !skillTree[node.requires]
                           }
-                          onUnlock={() => void handleUnlock(node.id, node.cost)}
+                          onUnlock={() =>
+                            void handleUnlock(
+                              node.id,
+                              Math.max(
+                                1,
+                                Math.floor(node.cost * prestigeCostMul),
+                              ),
+                            )
+                          }
                         />
                       </div>
                     ))}
@@ -243,12 +261,14 @@ export function SkillTree({ onClose }: SkillTreeProps) {
 
 function SkillNodeButton({
   node,
+  cost,
   unlocked,
   available,
   locked,
   onUnlock,
 }: {
   node: SkillNodeDef;
+  cost: number;
   unlocked: boolean;
   available: boolean;
   locked: boolean;
@@ -288,7 +308,7 @@ function SkillNodeButton({
         ) : (
           <>
             <Gem className="h-3.5 w-3.5 text-cyan-300" />
-            {node.cost.toLocaleString("pt-BR")} Diamantes
+            {cost.toLocaleString("pt-BR")} Diamantes
           </>
         )}
       </p>

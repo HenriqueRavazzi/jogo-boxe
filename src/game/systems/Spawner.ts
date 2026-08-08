@@ -42,12 +42,23 @@ export const COMMON_SPAWN_WEIGHTS: Record<
   ranged: 0.2,
 };
 
-const BASE_INTERVAL = 1000; // 1s inicial (horda densa desde o começo)
+const BASE_INTERVAL = 1000; // ritmo padrão após o ramp dos primeiros 60s
+/** Intervalo no instante t=0 — dá respiração no início. */
+const EARLY_SPAWN_INTERVAL_MS = 3000;
+/** Segundos para interpolar EARLY → BASE_INTERVAL. */
+const EARLY_INTERVAL_RAMP_SECONDS = 60;
+/** Lote fixo em 1 durante este período (segundos). */
+const EARLY_BATCH_LOCK_SECONDS = 45;
+/** Após isto, a curva de horda acelera de verdade. */
+const HORDE_RAMP_UNLOCK_SECONDS = 90;
 const MIN_INTERVAL = 180; // frenesi máximo
-const BASE_AMOUNT = 2; // lote inicial por tick
-/** Crescimento do lote por ciclo de 30s. */
+const BASE_AMOUNT = 2; // lote padrão por tick (após o início)
+/** Crescimento do lote por ciclo de 30s (só após HORDE_RAMP_UNLOCK). */
 const AMOUNT_PER_CYCLE = 2;
 export const MAX_ENEMIES = 140;
+
+/** Nomes dos inimigos fracos liberados no início da partida. */
+const EARLY_GAME_ENEMY_NAMES = new Set(["Zumbi Fraco", "Rato Corredor"]);
 
 /**
  * Ciclo de escalonamento: floor(timeAlive / 30).
@@ -78,20 +89,41 @@ export function getEnemyPowerMultiplier(timeAliveSeconds: number): number {
 }
 
 export function getSpawnIntervalMs(timeAlive: number): number {
-  const scalingCycle = getScalingCycle(timeAlive);
-  // Intervalo cai mais rápido (×0.45 por ciclo) → pressão cedo
-  return Math.max(
-    MIN_INTERVAL,
-    BASE_INTERVAL / (1 + scalingCycle * 0.45),
-  );
+  const t = Math.max(0, timeAlive);
+
+  // 0→60s: 3000ms → 1000ms (linear)
+  if (t < EARLY_INTERVAL_RAMP_SECONDS) {
+    const u = t / EARLY_INTERVAL_RAMP_SECONDS;
+    return (
+      EARLY_SPAWN_INTERVAL_MS +
+      (BASE_INTERVAL - EARLY_SPAWN_INTERVAL_MS) * u
+    );
+  }
+
+  const scalingCycle = getScalingCycle(t);
+  // Até 90s: pressão sobe devagar; depois ×0.45 por ciclo (ritmo padrão)
+  const cyclePressure =
+    t < HORDE_RAMP_UNLOCK_SECONDS
+      ? scalingCycle * 0.18
+      : scalingCycle * 0.45;
+
+  return Math.max(MIN_INTERVAL, BASE_INTERVAL / (1 + cyclePressure));
 }
 
 /**
- * Quantidade de inimigos comuns por tick — sobe a cada ciclo de 30s.
- * Ciclo 0 → 2, ciclo 1 → 4, ciclo 2 → 6…
+ * Quantidade de inimigos comuns por tick.
+ * 0–45s: sempre 1 · 45–90s: suave · depois: +2 por ciclo de 30s.
  */
 export function getSpawnAmount(timeAlive: number): number {
-  const scalingCycle = getScalingCycle(timeAlive);
+  const t = Math.max(0, timeAlive);
+  if (t < EARLY_BATCH_LOCK_SECONDS) return 1;
+
+  const scalingCycle = getScalingCycle(t);
+  if (t < HORDE_RAMP_UNLOCK_SECONDS) {
+    // Ramp suave: no máx. 2 antes do minuto e meio
+    return Math.min(2, 1 + Math.floor(scalingCycle * 0.5));
+  }
+
   return BASE_AMOUNT + scalingCycle * AMOUNT_PER_CYCLE;
 }
 
@@ -180,9 +212,22 @@ export function availableCommonTypes(
   types: EnemyTypeConfig[],
   timeAliveSeconds: number,
 ): EnemyTypeConfig[] {
-  return commonTypes(types).filter(
+  const unlocked = commonTypes(types).filter(
     (e) => timeAliveSeconds >= e.unlockTime,
   );
+
+  // Primeiros 45s: só Zumbi Fraco e Rato Corredor (respiração inicial)
+  if (timeAliveSeconds < EARLY_BATCH_LOCK_SECONDS) {
+    const early = unlocked.filter((e) => EARLY_GAME_ENEMY_NAMES.has(e.name));
+    if (early.length > 0) return early;
+    // Fallback: unlockTime 0 e não-ranged
+    const soft = unlocked.filter(
+      (e) => e.unlockTime <= 0 && e.kind !== "ranged",
+    );
+    if (soft.length > 0) return soft;
+  }
+
+  return unlocked;
 }
 
 function bossTypes(types: EnemyTypeConfig[]): EnemyTypeConfig[] {
@@ -244,12 +289,12 @@ function scaleFromType(
   const overflowHp = Math.pow(BOSS_OVERFLOW_HP_GROWTH, overflow);
   const overflowDmg = Math.pow(BOSS_OVERFLOW_DAMAGE_GROWTH, overflow);
 
-  // HP: floor(hp_base × difficulty.hp × powerMul) — Infernal: 25 × 2.5 = 62
+  // HP: floor(hp_base × difficulty.hp × powerMul)
+  // Ex. Infernal: 40 × 2.5 × 1 = 100 (antes do prestige/overflow)
   const scaledHp = Math.floor(config.hpBase * hpMul * powerMul);
 
-  // Dano: damage × difficulty.damage × powerMul
-  const scaledDamage =
-    config.damage * dmgMul * powerMul * overflowDmg;
+  // Dano: damage × difficulty.damage × powerMul (proporcional ao HP)
+  const scaledDamage = config.damage * dmgMul * powerMul * overflowDmg;
 
   const speedPx = Math.min(
     160 * Math.max(1, spdMul),

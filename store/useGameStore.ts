@@ -29,7 +29,6 @@ import {
   type AscensionPassivesData,
 } from "@/lib/ascensionPassives";
 import {
-  canMeetAdvancedSkillUnlock,
   getAdvancedSkillUnlockRequirements as advancedSkillUnlockRequirementsOf,
   type AdvancedSkillUnlockRequirements,
 } from "@/lib/advancedSkillUnlock";
@@ -62,8 +61,8 @@ import {
 } from "@/lib/saveSlots";
 import {
   DEFAULT_SKILL_TREE,
-  canUnlockSkill,
   getLifeStealLevel,
+  getSkillNode,
   type SkillNodeId,
   type SkillTreeState,
 } from "@/lib/skillTree";
@@ -311,6 +310,40 @@ const ARMS_MIN = 2;
 
 /** Crescimento de custo meta (ouro/diamantes): base × 1.25^nível. */
 export const UPGRADE_COST_GROWTH = 1.25;
+/** Multiplicador extra por nível de prestígio: ×1.25^prestigeLevel. */
+export const PRESTIGE_COST_GROWTH = 1.25;
+
+/** ×1.25^n — encarece upgrades conforme a Ascensão. */
+export function getPrestigeCostMultiplier(prestigeLevel: number): number {
+  return Math.pow(
+    PRESTIGE_COST_GROWTH,
+    Math.max(0, Math.floor(prestigeLevel)),
+  );
+}
+
+/**
+ * Custo exponencial com prestígio:
+ * floor(base × growth^nível × 1.25^prestigeLevel)
+ */
+export function getUpgradeCost(
+  baseCost: number,
+  currentLevel: number,
+  prestigeLevel = 0,
+  growthRate: number = UPGRADE_COST_GROWTH,
+): number {
+  return Math.max(
+    1,
+    Math.floor(
+      baseCost *
+        Math.pow(growthRate, Math.max(0, currentLevel)) *
+        getPrestigeCostMultiplier(prestigeLevel),
+    ),
+  );
+}
+
+export function getMetaTreeCostAt(level: number, prestigeLevel = 0): number {
+  return getUpgradeCost(META_TREE_COST_BASE, level, prestigeLevel);
+}
 
 /**
  * Margem meta vs in-game: ouro cobre só parte do caminho até o hard cap;
@@ -392,20 +425,6 @@ const PURPLE_SKILL_STAT_COST_BASE = 3;
 const XP_BONUS_COST_BASE = 5;
 const XP_BONUS_COST_GROWTH = 1.5;
 
-/** Custo exponencial controlado: floor(base × 1.25^currentLevel). */
-export function getUpgradeCost(baseCost: number, currentLevel: number): number {
-  return Math.max(
-    1,
-    Math.floor(
-      baseCost * Math.pow(UPGRADE_COST_GROWTH, Math.max(0, currentLevel)),
-    ),
-  );
-}
-
-export function getMetaTreeCostAt(level: number): number {
-  return getUpgradeCost(META_TREE_COST_BASE, level);
-}
-
 export function getMetaLifeStealRatio(level: number): number {
   return (
     Math.max(0, level) * (META_LIFE_STEAL_PERCENT_PER_LEVEL / 100)
@@ -439,20 +458,26 @@ function getMetaTreeLevel(
   return state[type];
 }
 
-/** Custo de um atributo: floor(base × 1.25^nívelAtual). */
-export function getPurpleSkillCostAt(level: number): number {
-  return getUpgradeCost(PURPLE_SKILL_STAT_COST_BASE, level);
+/** Custo de um atributo: floor(base × 1.25^nível × prestígio). */
+export function getPurpleSkillCostAt(
+  level: number,
+  prestigeLevel = 0,
+): number {
+  return getUpgradeCost(PURPLE_SKILL_STAT_COST_BASE, level, prestigeLevel);
 }
 
 /**
  * Soma dos custos pagos para chegar ao nível `level`
  * (níveis 0→1 + 1→2 + … + (level-1)→level).
  */
-export function getPurpleSkillSpentForLevel(level: number): number {
+export function getPurpleSkillSpentForLevel(
+  level: number,
+  prestigeLevel = 0,
+): number {
   const lv = Math.max(0, Math.floor(level));
   let total = 0;
   for (let i = 0; i < lv; i++) {
-    total += getPurpleSkillCostAt(i);
+    total += getPurpleSkillCostAt(i, prestigeLevel);
   }
   return total;
 }
@@ -461,12 +486,16 @@ export function getPurpleSkillSpentForLevel(level: number): number {
 export const SKILL_TREE_RESPEC_REFUND_RATE = 1;
 
 /** Total de diamantes roxos investidos em todos os atributos granulares. */
-export function getTotalPurpleSkillInvestment(skills: SkillsData): number {
+export function getTotalPurpleSkillInvestment(
+  skills: SkillsData,
+  prestigeLevel = 0,
+): number {
   let total = 0;
   for (const skillId of Object.keys(SKILL_STAT_KEYS) as SkillUpgradeType[]) {
     for (const statKey of SKILL_STAT_KEYS[skillId]) {
       total += getPurpleSkillSpentForLevel(
         getSkillStatLevel(skills, skillId, statKey),
+        prestigeLevel,
       );
     }
   }
@@ -488,7 +517,10 @@ export function getSkillStatLevel(
 /**
  * Corta atributos acima do teto e devolve diamantes roxos do excedente.
  */
-export function clampSkillsToMaxLevel(skills: SkillsData): {
+export function clampSkillsToMaxLevel(
+  skills: SkillsData,
+  prestigeLevel = 0,
+): {
   skills: SkillsData;
   refund: number;
 } {
@@ -506,8 +538,11 @@ export function clampSkillsToMaxLevel(skills: SkillsData): {
       const raw = Math.max(0, Math.floor(Number(row[statKey]) || 0));
       if (raw > MAX_PURPLE_SKILL_STAT_LEVEL) {
         refund +=
-          getPurpleSkillSpentForLevel(raw) -
-          getPurpleSkillSpentForLevel(MAX_PURPLE_SKILL_STAT_LEVEL);
+          getPurpleSkillSpentForLevel(raw, prestigeLevel) -
+          getPurpleSkillSpentForLevel(
+            MAX_PURPLE_SKILL_STAT_LEVEL,
+            prestigeLevel,
+          );
         row[statKey] = MAX_PURPLE_SKILL_STAT_LEVEL;
       }
     }
@@ -527,8 +562,8 @@ export function getKnockbackPowerAt(
   );
 }
 
-export function getKnockbackCostAt(level: number): number {
-  return getUpgradeCost(KNOCKBACK_COST_BASE, level);
+export function getKnockbackCostAt(level: number, prestigeLevel = 0): number {
+  return getUpgradeCost(KNOCKBACK_COST_BASE, level, prestigeLevel);
 }
 
 /** Chance crítica: 5% + 2%/nível, teto 75%. */
@@ -550,12 +585,12 @@ export function getCritDamageMultiplierAt(critDamageLevel: number): number {
   return CRIT_DAMAGE_BASE + level * CRIT_DAMAGE_PER_LEVEL;
 }
 
-export function getCritChanceCostAt(level: number): number {
-  return getUpgradeCost(CRIT_CHANCE_COST_BASE, level);
+export function getCritChanceCostAt(level: number, prestigeLevel = 0): number {
+  return getUpgradeCost(CRIT_CHANCE_COST_BASE, level, prestigeLevel);
 }
 
-export function getCritDamageCostAt(level: number): number {
-  return getUpgradeCost(CRIT_DAMAGE_COST_BASE, level);
+export function getCritDamageCostAt(level: number, prestigeLevel = 0): number {
+  return getUpgradeCost(CRIT_DAMAGE_COST_BASE, level, prestigeLevel);
 }
 
 /** Multiplicador de XP: nível 0 = 1.0, nível 1 = 1.1, … (+10% por nível). */
@@ -567,12 +602,12 @@ export function getXpMultiplier(level: number): number {
   return 1 + capped * 0.1;
 }
 
-export function getXpBonusCostAt(level: number): number {
-  return Math.max(
-    1,
-    Math.floor(
-      XP_BONUS_COST_BASE * Math.pow(XP_BONUS_COST_GROWTH, Math.max(0, level)),
-    ),
+export function getXpBonusCostAt(level: number, prestigeLevel = 0): number {
+  return getUpgradeCost(
+    XP_BONUS_COST_BASE,
+    level,
+    prestigeLevel,
+    XP_BONUS_COST_GROWTH,
   );
 }
 
@@ -750,7 +785,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   hydrateFromSave: (saveId, data, saveName) => {
     const n = normalizeSaveData(data);
-    const { skills, refund } = clampSkillsToMaxLevel(normalizeSkills(n.skills));
+    const prestige = Math.max(0, Math.floor(n.prestigeLevel ?? 0));
+    const { skills, refund } = clampSkillsToMaxLevel(
+      normalizeSkills(n.skills),
+      prestige,
+    );
     set({
       activeSaveId: saveId,
       activeSaveName: saveName ?? null,
@@ -817,7 +856,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getSaveSnapshot: () => {
     const s = get();
-    const { skills } = clampSkillsToMaxLevel(normalizeSkills(s.skills));
+    const { skills } = clampSkillsToMaxLevel(
+      normalizeSkills(s.skills),
+      s.prestigeLevel,
+    );
     return {
       gold: s.gold,
       gems: s.gems,
@@ -984,7 +1026,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
 
-    const invested = getTotalPurpleSkillInvestment(get().skills);
+    const invested = getTotalPurpleSkillInvestment(
+      get().skills,
+      get().prestigeLevel,
+    );
     const refund = Math.floor(invested * SKILL_TREE_RESPEC_REFUND_RATE);
     const fresh = createDefaultSaveData();
     const current = get();
@@ -1079,10 +1124,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   /** Skills custam diamantes (gems), não ouro. Só altera gems + skillTree. */
-  unlockSkill: (nodeId, cost) => {
+  unlockSkill: (nodeId, _cost) => {
     const current = get();
-    if (!canUnlockSkill(current.skillTree, nodeId, current.gems)) return false;
-    if (cost > current.gems) return false;
+    const node = getSkillNode(nodeId);
+    const cost = Math.max(
+      1,
+      Math.floor(
+        node.cost * getPrestigeCostMultiplier(current.prestigeLevel),
+      ),
+    );
+    if (current.skillTree[nodeId]) return false;
+    if (node.requires && !current.skillTree[node.requires]) return false;
+    if (current.gems < cost) return false;
 
     set((state) => ({
       gems: state.gems - cost,
@@ -1097,25 +1150,33 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }
     const level = getSkillStatLevel(get().skills, skillId, statKey);
     if (level >= MAX_PURPLE_SKILL_STAT_LEVEL) return Number.POSITIVE_INFINITY;
-    return getPurpleSkillCostAt(level);
+    return getPurpleSkillCostAt(level, get().prestigeLevel);
   },
 
-  getAdvancedSkillUnlockRequirements: (skillType) =>
-    advancedSkillUnlockRequirementsOf(skillType),
+  getAdvancedSkillUnlockRequirements: (skillType) => {
+    const base = advancedSkillUnlockRequirementsOf(skillType);
+    const mul = getPrestigeCostMultiplier(get().prestigeLevel);
+    return {
+      ...base,
+      goldCost: Math.max(1, Math.floor(base.goldCost * mul)),
+      diamondCost: Math.max(1, Math.floor(base.diamondCost * mul)),
+    };
+  },
 
   /** @deprecated Preferir getAdvancedSkillUnlockRequirements — retorna só diamantes. */
   getAdvancedSkillUnlockCost: (skillType) =>
-    advancedSkillUnlockRequirementsOf(skillType).diamondCost,
+    get().getAdvancedSkillUnlockRequirements(skillType).diamondCost,
 
   canUnlockAdvancedSkill: (skillType) => {
     if (get().unlockedSkills[skillType]) return false;
     const s = get();
-    return canMeetAdvancedSkillUnlock(skillType, {
-      gold: s.gold,
-      gems: s.gems,
-      totalMobsKilled: s.totalMobsKilled,
-      totalBossesKilled: s.totalBossesKilled,
-    });
+    const req = get().getAdvancedSkillUnlockRequirements(skillType);
+    return (
+      s.gold >= req.goldCost &&
+      s.gems >= req.diamondCost &&
+      s.totalMobsKilled >= req.requiredMobs &&
+      s.totalBossesKilled >= req.requiredBosses
+    );
   },
 
   recordLifetimeKills: (mobs, bosses = 0) => {
@@ -1134,15 +1195,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
    */
   unlockAdvancedSkill: (skillType) => {
     if (get().unlockedSkills[skillType]) return false;
-    const req = advancedSkillUnlockRequirementsOf(skillType);
+    const req = get().getAdvancedSkillUnlockRequirements(skillType);
     const s = get();
     if (
-      !canMeetAdvancedSkillUnlock(skillType, {
-        gold: s.gold,
-        gems: s.gems,
-        totalMobsKilled: s.totalMobsKilled,
-        totalBossesKilled: s.totalBossesKilled,
-      })
+      s.gold < req.goldCost ||
+      s.gems < req.diamondCost ||
+      s.totalMobsKilled < req.requiredMobs ||
+      s.totalBossesKilled < req.requiredBosses
     ) {
       return false;
     }
@@ -1172,7 +1231,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const currentLevel = getSkillStatLevel(get().skills, skillId, statKey);
     if (currentLevel >= MAX_PURPLE_SKILL_STAT_LEVEL) return false;
 
-    const cost = getPurpleSkillCostAt(currentLevel);
+    const cost = getPurpleSkillCostAt(currentLevel, get().prestigeLevel);
     if (get().purpleDiamonds < cost) return false;
 
     set((s) => {
@@ -1195,10 +1254,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return true;
   },
 
-  getPurpleSkillInvestment: () => getTotalPurpleSkillInvestment(get().skills),
+  getPurpleSkillInvestment: () =>
+    getTotalPurpleSkillInvestment(get().skills, get().prestigeLevel),
 
   enforcePurpleSkillCap: () => {
-    const { skills, refund } = clampSkillsToMaxLevel(get().skills);
+    const { skills, refund } = clampSkillsToMaxLevel(
+      get().skills,
+      get().prestigeLevel,
+    );
     if (refund <= 0) return 0;
     set((s) => ({
       skills,
@@ -1215,7 +1278,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
    * Desbloqueios (diamantes normais) e a skill tree verde não são afetados.
    */
   resetSkillTree: () => {
-    const invested = getTotalPurpleSkillInvestment(get().skills);
+    const invested = getTotalPurpleSkillInvestment(
+      get().skills,
+      get().prestigeLevel,
+    );
     if (invested <= 0) return 0;
 
     const refund = Math.floor(invested * SKILL_TREE_RESPEC_REFUND_RATE);
@@ -1235,28 +1301,44 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return refund;
   },
 
-  getHpUpgradeCost: () => getUpgradeCost(UPGRADE_COST_BASE, get().maxHpLevel),
+  getHpUpgradeCost: () =>
+    getUpgradeCost(UPGRADE_COST_BASE, get().maxHpLevel, get().prestigeLevel),
 
   getDamageUpgradeCost: () =>
-    getUpgradeCost(UPGRADE_COST_BASE, get().baseDamageLevel),
+    getUpgradeCost(
+      UPGRADE_COST_BASE,
+      get().baseDamageLevel,
+      get().prestigeLevel,
+    ),
 
   getAttackSpeedUpgradeCost: () =>
-    getUpgradeCost(ATTACK_SPEED_COST_BASE, get().attackSpeedLevel),
+    getUpgradeCost(
+      ATTACK_SPEED_COST_BASE,
+      get().attackSpeedLevel,
+      get().prestigeLevel,
+    ),
 
   getRangeUpgradeCost: () =>
-    getUpgradeCost(RANGE_COST_BASE, get().rangeLevel),
+    getUpgradeCost(RANGE_COST_BASE, get().rangeLevel, get().prestigeLevel),
 
   getIncomeUpgradeCost: () => {
     const incomeLevel = Math.max(
       0,
       Math.round((get().incomeMultiplier - 1) / INCOME_STEP),
     );
-    return getUpgradeCost(INCOME_COST_BASE, incomeLevel);
+    return getUpgradeCost(INCOME_COST_BASE, incomeLevel, get().prestigeLevel);
   },
 
-  getArmsUpgradeCost: () => get().armsNextCost,
+  getArmsUpgradeCost: () =>
+    Math.max(
+      1,
+      Math.floor(
+        get().armsNextCost * getPrestigeCostMultiplier(get().prestigeLevel),
+      ),
+    ),
 
-  getKnockbackUpgradeCost: () => getKnockbackCostAt(get().knockbackLevel),
+  getKnockbackUpgradeCost: () =>
+    getKnockbackCostAt(get().knockbackLevel, get().prestigeLevel),
 
   getKnockbackPower: () => {
     const s = get();
@@ -1266,9 +1348,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     );
   },
 
-  getCritChanceUpgradeCost: () => getCritChanceCostAt(get().critChanceLevel),
+  getCritChanceUpgradeCost: () =>
+    getCritChanceCostAt(get().critChanceLevel, get().prestigeLevel),
 
-  getCritDamageUpgradeCost: () => getCritDamageCostAt(get().critDamageLevel),
+  getCritDamageUpgradeCost: () =>
+    getCritDamageCostAt(get().critDamageLevel, get().prestigeLevel),
 
   getCritChance: () => getCritChanceAt(get().critChanceLevel),
 
@@ -1280,20 +1364,20 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (isLevelCapped(level, MAX_UPGRADE_LEVELS.xpBonus)) {
       return Number.POSITIVE_INFINITY;
     }
-    return xpBonusCostAt(level);
+    return xpBonusCostAt(level, get().prestigeLevel);
   },
 
   getXpMultiplier: () =>
     xpMultiplierAt(get().xpBonusLevel) * get().getPrestigeMultiplier(),
 
   getMetaTreeUpgradeCost: (type) =>
-    getMetaTreeCostAt(getMetaTreeLevel(get(), type)),
+    getMetaTreeCostAt(getMetaTreeLevel(get(), type), get().prestigeLevel),
 
   upgradeMetaTree: (type) => {
     const current = getMetaTreeLevel(get(), type);
     const maxLevel = getMetaTreeMaxLevel(type);
     if (isLevelCapped(current, maxLevel)) return false;
-    const cost = getMetaTreeCostAt(current);
+    const cost = getMetaTreeCostAt(current, get().prestigeLevel);
     if (get().gems < cost) return false;
     set((s) => ({
       gems: s.gems - cost,
@@ -1465,10 +1549,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
    * Em ambos: próximo custo × 1.4
    */
   upgradeArms: () => {
+    const baseStored = get().armsNextCost;
     const cost = get().getArmsUpgradeCost();
     if (get().gold < cost) return false;
 
-    const nextCost = Math.floor(cost * ARMS_COST_GROWTH);
+    const nextCost = Math.floor(baseStored * ARMS_COST_GROWTH);
 
     set((s) => {
       if (s.arms < ARMS_MAX) {

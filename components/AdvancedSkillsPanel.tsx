@@ -155,10 +155,15 @@ function StatProgressBar({
 function skillInvested(
   skills: ReturnType<typeof useGameStore.getState>["skills"],
   skillType: SkillUpgradeType,
+  prestigeLevel = 0,
 ): number {
   return SKILL_STAT_KEYS[skillType].reduce(
     (sum, key) =>
-      sum + getPurpleSkillSpentForLevel(getSkillStatLevel(skills, skillType, key)),
+      sum +
+      getPurpleSkillSpentForLevel(
+        getSkillStatLevel(skills, skillType, key),
+        prestigeLevel,
+      ),
     0,
   );
 }
@@ -173,6 +178,7 @@ function SkillDetailModal({
   const titleId = useId();
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const skills = useGameStore((s) => s.skills);
+  const prestigeLevel = useGameStore((s) => s.prestigeLevel);
   const upgradeSkillStat = useGameStore((s) => s.upgradeSkillStat);
   const getSkillStatUpgradeCost = useGameStore(
     (s) => s.getSkillStatUpgradeCost,
@@ -182,7 +188,7 @@ function SkillDetailModal({
     getSkillMetaCap(skills[card.type]),
   );
   const statKeys = SKILL_STAT_KEYS[card.type];
-  const invested = skillInvested(skills, card.type);
+  const invested = skillInvested(skills, card.type, prestigeLevel);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
