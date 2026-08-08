@@ -239,6 +239,10 @@ export type ArenaStoreState = {
   runStage: StageDef | null;
   /** Chefe da fase já foi derrotado (modo stage). */
   stageBossDefeated: boolean;
+  /** Comuns já spawnados nesta fase (cota). */
+  stageCommonsSpawned: number;
+  /** Inimigos derrotados nesta fase (comuns + chefe). */
+  stageEnemiesDefeated: number;
   /** Recompensa da última vitória de fase (null em derrota / endless). */
   stageClearReward: {
     stageNumber: number;
@@ -411,6 +415,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   runStageNumber: 1,
   runStage: null,
   stageBossDefeated: false,
+  stageCommonsSpawned: 0,
+  stageEnemiesDefeated: 0,
   stageClearReward: null,
 
   startGame: () => {
@@ -473,6 +479,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       runStageNumber,
       runStage,
       stageBossDefeated: false,
+      stageCommonsSpawned: 0,
+      stageEnemiesDefeated: 0,
       stageClearReward: null,
     });
   },
@@ -578,6 +586,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       currentHp: useGameStore.getState().getEffectiveStats().maxHp,
       stageClearReward: null,
       stageBossDefeated: false,
+      stageCommonsSpawned: 0,
+      stageEnemiesDefeated: 0,
     }),
 
   togglePause: () => {

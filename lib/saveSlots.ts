@@ -120,17 +120,43 @@ function normalizeMetaTree(
   data: Partial<MetaTreeData> & Partial<SaveData>,
 ): MetaTreeData {
   return {
-    metaDamageLevel:
-      data.metaDamageLevel ?? DEFAULT_META_TREE.metaDamageLevel,
-    metaKnockbackLevel:
-      data.metaKnockbackLevel ?? DEFAULT_META_TREE.metaKnockbackLevel,
-    metaHpLevel: data.metaHpLevel ?? DEFAULT_META_TREE.metaHpLevel,
-    metaLifeStealLevel:
-      data.metaLifeStealLevel ?? DEFAULT_META_TREE.metaLifeStealLevel,
-    metaSkillRegenLevel:
-      data.metaSkillRegenLevel ?? DEFAULT_META_TREE.metaSkillRegenLevel,
-    metaParryChance:
-      data.metaParryChance ?? DEFAULT_META_TREE.metaParryChance,
+    metaDamageLevel: Math.min(
+      40,
+      Math.max(0, Math.floor(data.metaDamageLevel ?? DEFAULT_META_TREE.metaDamageLevel)),
+    ),
+    metaKnockbackLevel: Math.max(
+      0,
+      Math.floor(data.metaKnockbackLevel ?? DEFAULT_META_TREE.metaKnockbackLevel),
+    ),
+    metaHpLevel: Math.min(
+      40,
+      Math.max(0, Math.floor(data.metaHpLevel ?? DEFAULT_META_TREE.metaHpLevel)),
+    ),
+    metaLifeStealLevel: Math.min(
+      10,
+      Math.max(
+        0,
+        Math.floor(
+          data.metaLifeStealLevel ?? DEFAULT_META_TREE.metaLifeStealLevel,
+        ),
+      ),
+    ),
+    metaSkillRegenLevel: Math.min(
+      10,
+      Math.max(
+        0,
+        Math.floor(
+          data.metaSkillRegenLevel ?? DEFAULT_META_TREE.metaSkillRegenLevel,
+        ),
+      ),
+    ),
+    metaParryChance: Math.min(
+      50,
+      Math.max(
+        0,
+        Math.floor(data.metaParryChance ?? DEFAULT_META_TREE.metaParryChance),
+      ),
+    ),
   };
 }
 

@@ -15,13 +15,17 @@ import {
   formatLevelLabel,
   getMetaTreeMaxLevel,
   isLevelCapped,
-  META_DAMAGE_PER_LEVEL,
-  META_HP_PER_LEVEL,
+  META_DAMAGE_PCT_PER_LEVEL,
+  META_HP_PCT_PER_LEVEL,
+  META_LIFE_STEAL_MAX_RATIO,
   META_LIFE_STEAL_PERCENT_PER_LEVEL,
   META_PARRY_BASE_CHANCE,
   META_PARRY_CHANCE_PER_LEVEL,
   META_SKILL_REGEN_DAMAGE_RATIO,
   META_SKILL_REGEN_HIT_HEAL,
+  META_SKILL_REGEN_MAX_RATIO,
+  metaDamageMultiplier,
+  metaHpMultiplier,
   useGameStore,
 } from "@/store/useGameStore";
 
@@ -42,29 +46,49 @@ const CARDS: MetaCardDef[] = [
     type: "metaDamageLevel",
     title: "Dano",
     icon: <Swords className="h-4 w-4" aria-hidden />,
-    bonusLabel: (level) => `+${level * META_DAMAGE_PER_LEVEL} dano base`,
+    bonusLabel: (level) => {
+      const pct = Math.round((metaDamageMultiplier(level) - 1) * 100);
+      return level <= 0
+        ? `+${Math.round(META_DAMAGE_PCT_PER_LEVEL * 100)}% dano / nv. (máx +${Math.round(META_DAMAGE_PCT_PER_LEVEL * 40 * 100)}%)`
+        : `+${pct}% dano base (+${Math.round(META_DAMAGE_PCT_PER_LEVEL * 100)}%/nv)`;
+    },
   },
   {
     type: "metaHpLevel",
     title: "Vida",
     icon: <Heart className="h-4 w-4" aria-hidden />,
-    bonusLabel: (level) => `+${level * META_HP_PER_LEVEL} HP máx.`,
+    bonusLabel: (level) => {
+      const pct = Math.round((metaHpMultiplier(level) - 1) * 100);
+      return level <= 0
+        ? `+${Math.round(META_HP_PCT_PER_LEVEL * 100)}% HP / nv. (máx +${Math.round(META_HP_PCT_PER_LEVEL * 40 * 100)}%)`
+        : `+${pct}% HP máx. (+${Math.round(META_HP_PCT_PER_LEVEL * 100)}%/nv)`;
+    },
   },
   {
     type: "metaLifeStealLevel",
     title: "Roubo de Vida",
     icon: <HeartPulse className="h-4 w-4" aria-hidden />,
-    bonusLabel: (level) =>
-      `+${(level * META_LIFE_STEAL_PERCENT_PER_LEVEL).toFixed(1)}% do dano físico`,
+    bonusLabel: (level) => {
+      const total = Math.min(
+        META_LIFE_STEAL_MAX_RATIO * 100,
+        level * META_LIFE_STEAL_PERCENT_PER_LEVEL,
+      );
+      return `+${total.toFixed(1)}% do dano (máx ${META_LIFE_STEAL_MAX_RATIO * 100}%)`;
+    },
   },
   {
     type: "metaSkillRegenLevel",
     title: "Regen. de Skill",
     icon: <Flame className="h-4 w-4" aria-hidden />,
-    bonusLabel: (level) =>
-      `+${(level * META_SKILL_REGEN_DAMAGE_RATIO * 100).toFixed(0)}% dano skill · +${(
+    bonusLabel: (level) => {
+      const skillPct = Math.min(
+        META_SKILL_REGEN_MAX_RATIO * 100,
+        level * META_SKILL_REGEN_DAMAGE_RATIO * 100,
+      );
+      return `+${skillPct.toFixed(1)}% dano skill (máx ${META_SKILL_REGEN_MAX_RATIO * 100}%) · +${(
         level * META_SKILL_REGEN_HIT_HEAL
-      ).toFixed(1)} HP/hit`,
+      ).toFixed(1)} HP/hit`;
+    },
   },
   {
     type: "metaParryChance",
@@ -104,6 +128,10 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
           Árvore de Atributos (Diamantes)
         </p>
       )}
+      <p className="mb-3 px-1 text-[11px] leading-snug text-zinc-500">
+        Upgrades permanentes mais caros e potentes. Roubo de vida até 10%; regen
+        de skill até 5%.
+      </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {CARDS.map((card) => {
           const level = levels[card.type];

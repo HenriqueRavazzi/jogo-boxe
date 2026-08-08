@@ -150,11 +150,16 @@ export type SpawnerInput = {
   difficulty?: DifficultySpawnMultipliers;
   /** Catálogo do Neon / fallback. */
   enemyTypes?: EnemyTypeConfig[];
-  /** Campanha: limita pool de comuns e agenda 1 chefe no horário da fase. */
+  /** Campanha: cota finita + chefe por progresso da cota. */
   stageCampaign?: {
     enemyTierCap: number;
-    bossSpawnTime: number | null;
+    enemyCount: number;
+    commonsSpawned: number;
+    /** 0–1: progresso da cota para spawn do chefe. */
+    bossSpawnProgress: number;
     difficultyMul: number;
+    /** Escala de ritmo de spawn (maior = mais rápido). */
+    spawnPaceMul?: number;
   } | null;
 };
 
@@ -166,6 +171,8 @@ export type SpawnerResult = {
   invasionBossCooldownMs: number;
   /** True se um boss surgiu via invasão na horda (não o agendado de 240s). */
   hordeBossInvaded: boolean;
+  /** Comuns spawnados neste tick (campanha). */
+  commonsSpawnedDelta: number;
 };
 
 /** Intervalo mínimo entre invasões de boss na horda (ms). */
@@ -398,7 +405,7 @@ function spawnFromConfig(
 
 /**
  * Spawner: comuns por unlock_time; bosses agendados (240s) + invasões na horda.
- * Em campanha de fase: pool limitada por enemyTierCap e 1 chefe no horário da fase.
+ * Em campanha: cota finita de comuns + 1 chefe; para quando a cota acaba.
  */
 export function runSpawner(input: SpawnerInput): SpawnerResult {
   const {
@@ -419,9 +426,11 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
   const timeAliveInSeconds =
     timeAlive > 10_000 ? timeAlive / 1000 : timeAlive;
 
+  // Em fase: libera o pool do tier inteiro (sem trava dos primeiros 45s).
+  const unlockTimeForPool = stage ? 1e9 : timeAliveInSeconds;
   const availableTypes = availableCommonTypes(
     types,
-    timeAliveInSeconds,
+    unlockTimeForPool,
     stage?.enemyTierCap,
   );
   const aliveBossCount =
@@ -433,11 +442,17 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     (input.invasionBossCooldownMs ?? 0) - dt * 1000,
   );
   let spawnAccumulatorMs = input.spawnAccumulatorMs + dt * 1000;
-  const spawnIntervalMs = getSpawnIntervalMs(timeAliveInSeconds);
+  const paceMul = Math.max(1, stage?.spawnPaceMul ?? 1);
+  const spawnIntervalMs = Math.max(
+    280,
+    Math.floor(getSpawnIntervalMs(timeAliveInSeconds) / paceMul),
+  );
   const spawned: EnemyData[] = [];
   let count = currentEnemyCount;
   let bossesAlive = aliveBossCount;
   let hordeBossInvaded = false;
+  let commonsSpawnedDelta = 0;
+  let commonsSpawned = stage?.commonsSpawned ?? 0;
 
   const stageDiffMul = stage?.difficultyMul ?? 1;
   const mergedDifficulty: DifficultySpawnMultipliers | undefined = difficulty
@@ -459,12 +474,18 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       : undefined;
 
   if (stage) {
-    // Campanha: um chefe no horário da fase (sem invasões / ciclo 240s)
-    const bossAt = stage.bossSpawnTime;
+    const quota = Math.max(1, Math.floor(stage.enemyCount));
+    const progress =
+      quota > 0 ? Math.min(1, commonsSpawned / quota) : 1;
+    const bossThreshold = Math.min(
+      1,
+      Math.max(0.05, stage.bossSpawnProgress),
+    );
+
+    // Chefe: após atingir a fração da cota (toda fase tem chefe)
     if (
-      bossAt != null &&
       bossesSpawned < 1 &&
-      timeAliveInSeconds >= bossAt &&
+      progress >= bossThreshold &&
       count < MAX_ENEMIES &&
       bosses.length > 0
     ) {
@@ -488,12 +509,44 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       bossesAlive += 1;
       count += 1;
     }
+
+    // Comuns até a cota; ritmo sobe com a fase
+    const remainingQuota = Math.max(0, quota - commonsSpawned);
+    while (
+      remainingQuota - commonsSpawnedDelta > 0 &&
+      spawnAccumulatorMs >= spawnIntervalMs &&
+      count < MAX_ENEMIES
+    ) {
+      spawnAccumulatorMs -= spawnIntervalMs;
+      const batchCap = Math.min(
+        remainingQuota - commonsSpawnedDelta,
+        Math.max(1, Math.ceil(getSpawnAmount(timeAliveInSeconds) * paceMul)),
+      );
+      for (let i = 0; i < batchCap && count < MAX_ENEMIES; i++) {
+        const config = rollCommonConfig(availableTypes);
+        spawned.push(
+          spawnFromConfig(
+            canvasWidth,
+            canvasHeight,
+            config,
+            timeAliveInSeconds,
+            matchLevel,
+            mergedDifficulty,
+          ),
+        );
+        count += 1;
+        commonsSpawnedDelta += 1;
+      }
+    }
+
+    if (commonsSpawned + commonsSpawnedDelta >= quota) {
+      spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
+    }
   } else {
     const expectedBosses = Math.floor(
       timeAliveInSeconds / BOSS_INTERVAL_SECONDS,
     );
 
-    // Boss agendado (a cada 240s) — não pausa a horda
     if (expectedBosses > bossesSpawned && count < MAX_ENEMIES) {
       const bossCount = bossesSpawned;
       const { config, overflow } = pickBossConfig(bosses, bossCount);
@@ -513,59 +566,57 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       count += 1;
       invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
     }
-  }
 
-  while (spawnAccumulatorMs >= spawnIntervalMs && count < MAX_ENEMIES) {
-    spawnAccumulatorMs -= spawnIntervalMs;
-    const batchAmount = getSpawnAmount(timeAliveInSeconds);
+    while (spawnAccumulatorMs >= spawnIntervalMs && count < MAX_ENEMIES) {
+      spawnAccumulatorMs -= spawnIntervalMs;
+      const batchAmount = getSpawnAmount(timeAliveInSeconds);
 
-    // Invasão: só no Endless (campanha usa chefe único da fase)
-    const canInvade =
-      !stage &&
-      invasionBossCooldownMs <= 0 &&
-      bossesAlive < MAX_ALIVE_BOSSES &&
-      bosses.length > 0 &&
-      count < MAX_ENEMIES;
-    if (
-      canInvade &&
-      Math.random() < getHordeBossInvasionChance(timeAliveInSeconds)
-    ) {
-      const { config, overflow } = pickBossConfig(bosses, bossesSpawned);
-      spawned.push(
-        spawnFromConfig(
-          canvasWidth,
-          canvasHeight,
-          config,
-          timeAliveInSeconds,
-          matchLevel,
-          mergedDifficulty,
-          overflow,
-        ),
-      );
-      count += 1;
-      bossesAlive += 1;
-      invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
-      hordeBossInvaded = true;
+      const canInvade =
+        invasionBossCooldownMs <= 0 &&
+        bossesAlive < MAX_ALIVE_BOSSES &&
+        bosses.length > 0 &&
+        count < MAX_ENEMIES;
+      if (
+        canInvade &&
+        Math.random() < getHordeBossInvasionChance(timeAliveInSeconds)
+      ) {
+        const { config, overflow } = pickBossConfig(bosses, bossesSpawned);
+        spawned.push(
+          spawnFromConfig(
+            canvasWidth,
+            canvasHeight,
+            config,
+            timeAliveInSeconds,
+            matchLevel,
+            mergedDifficulty,
+            overflow,
+          ),
+        );
+        count += 1;
+        bossesAlive += 1;
+        invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
+        hordeBossInvaded = true;
+      }
+
+      for (let i = 0; i < batchAmount && count < MAX_ENEMIES; i++) {
+        const config = rollCommonConfig(availableTypes);
+        spawned.push(
+          spawnFromConfig(
+            canvasWidth,
+            canvasHeight,
+            config,
+            timeAliveInSeconds,
+            matchLevel,
+            mergedDifficulty,
+          ),
+        );
+        count += 1;
+      }
     }
 
-    for (let i = 0; i < batchAmount && count < MAX_ENEMIES; i++) {
-      const config = rollCommonConfig(availableTypes);
-      spawned.push(
-        spawnFromConfig(
-          canvasWidth,
-          canvasHeight,
-          config,
-          timeAliveInSeconds,
-          matchLevel,
-          mergedDifficulty,
-        ),
-      );
-      count += 1;
+    if (count >= MAX_ENEMIES) {
+      spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
     }
-  }
-
-  if (count >= MAX_ENEMIES) {
-    spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
   }
 
   return {
@@ -575,5 +626,6 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     bossesSpawned,
     invasionBossCooldownMs,
     hordeBossInvaded,
+    commonsSpawnedDelta,
   };
 }

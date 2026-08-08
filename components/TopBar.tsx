@@ -24,6 +24,9 @@ export function TopBar() {
   const runStage = useArenaStore((s) => s.runStage);
   const timeAlive = useArenaStore((s) => s.timeAlive);
   const stageBossDefeated = useArenaStore((s) => s.stageBossDefeated);
+  const stageEnemiesDefeated = useArenaStore((s) => s.stageEnemiesDefeated);
+  const stageCommonsSpawned = useArenaStore((s) => s.stageCommonsSpawned);
+  const bossesSpawned = useArenaStore((s) => s.bossesSpawned);
   const maxHp = getMaxHp();
   const hpPercent = Math.max(0, Math.min(100, (currentHp / maxHp) * 100));
   const xpPercent = Math.max(
@@ -103,13 +106,14 @@ export function TopBar() {
           <div className="rounded-lg bg-black/55 px-3 py-1.5 text-[11px] font-semibold text-sky-200/90 shadow-lg backdrop-blur-sm">
             Fase {runStage.stageNumber}: {runStage.name}
             <span className="ml-1.5 tabular-nums text-zinc-400">
-              {Math.min(Math.floor(timeAlive), runStage.durationSeconds)}/
-              {runStage.durationSeconds}s
-              {runStage.bossSpawnTime != null
-                ? stageBossDefeated
-                  ? " · chefe ✓"
-                  : " · chefe"
-                : ""}
+              {stageEnemiesDefeated}/{runStage.enemyCount + 1}
+              {stageBossDefeated
+                ? " · chefe ✓"
+                : bossesSpawned >= 1 ||
+                    stageCommonsSpawned >=
+                      runStage.enemyCount * runStage.bossSpawnProgress
+                  ? " · chefe!"
+                  : " · chefe"}
             </span>
           </div>
         ) : null}

@@ -372,12 +372,19 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const hasBossAlive = livingEnemies.some((e) => e.type === "boss");
       const aliveBossCount = livingEnemies.filter((e) => e.type === "boss")
         .length;
+      const stagePace =
+        arena.runMode === "stage" && arena.runStage
+          ? 1 + (arena.runStage.stageNumber - 1) * 0.035
+          : 1;
       const stageCampaign =
         arena.runMode === "stage" && arena.runStage
           ? {
               enemyTierCap: arena.runStage.enemyTierCap,
-              bossSpawnTime: arena.runStage.bossSpawnTime,
+              enemyCount: arena.runStage.enemyCount,
+              commonsSpawned: arena.stageCommonsSpawned,
+              bossSpawnProgress: arena.runStage.bossSpawnProgress,
               difficultyMul: arena.runStage.difficultyMul,
+              spawnPaceMul: stagePace,
             }
           : null;
       const spawn = runSpawner({
@@ -413,19 +420,27 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         nextHp = Math.min(stats.maxHp, nextHp + teamRegen * dt);
       }
 
+      const nextCommonsSpawned =
+        arena.stageCommonsSpawned + (spawn.commonsSpawnedDelta ?? 0);
+      const defeatedThisTick = combat.killSites.length;
+      const nextStageDefeated =
+        arena.stageEnemiesDefeated + defeatedThisTick;
+
       const stageBossDefeated =
         arena.stageBossDefeated ||
         (arena.runMode === "stage" &&
           dropResult.bossesKilledThisBatch > 0);
 
+      const nextEnemies =
+        spawn.spawned.length > 0
+          ? [...livingEnemies, ...spawn.spawned]
+          : livingEnemies;
+
       useArenaStore.setState({
         playerX: cx,
         playerY: cy,
         playerRotation: combat.playerRotation,
-        enemies:
-          spawn.spawned.length > 0
-            ? [...livingEnemies, ...spawn.spawned]
-            : livingEnemies,
+        enemies: nextEnemies,
         drops: loot.drops,
         projectiles: combat.projectiles,
         currentHp: nextHp,
@@ -442,6 +457,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
         invasionBossCooldownMs: spawn.invasionBossCooldownMs,
         stageBossDefeated,
+        stageCommonsSpawned: nextCommonsSpawned,
+        stageEnemiesDefeated: nextStageDefeated,
         activeSkillPulse: combat.activeSkillPulse,
         lightningProjectiles: combat.lightningProjectiles,
         skillVfxEffects,
@@ -465,10 +482,10 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         useArenaStore.getState().setGameOver();
       } else if (arena.runMode === "stage" && arena.runStage) {
         const stage = arena.runStage;
-        const survived = nextTimeAlive >= stage.durationSeconds;
-        const bossOk =
-          stage.bossSpawnTime == null || stageBossDefeated;
-        if (survived && bossOk) {
+        const commonsDone = nextCommonsSpawned >= stage.enemyCount;
+        const bossSpawnedOk = spawn.bossesSpawned >= 1;
+        const fieldClear = nextEnemies.length === 0;
+        if (commonsDone && bossSpawnedOk && stageBossDefeated && fieldClear) {
           useArenaStore.getState().setVictory();
         }
       }

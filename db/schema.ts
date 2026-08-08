@@ -288,9 +288,11 @@ export const stages = pgTable("stages", {
   stageNumber: integer("stage_number").primaryKey(),
   name: varchar("name", { length: 64 }).notNull(),
   durationSeconds: integer("duration_seconds").notNull(),
+  enemyCount: integer("enemy_count").notNull().default(20),
   enemyTierCap: integer("enemy_tier_cap").notNull(),
-  /** Null = fase sem chefe obrigatório. */
-  bossSpawnTime: integer("boss_spawn_time"),
+  /** Fração 0–1 da cota para spawn do chefe (obrigatório em toda fase). */
+  bossSpawnProgress: real("boss_spawn_progress").notNull().default(0.65),
+  difficultyMul: real("difficulty_mul").notNull().default(1),
 });
 
 /**

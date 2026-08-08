@@ -519,7 +519,20 @@ export function getMetaTreeCostAt(
       META_PARRY_COST_GROWTH,
     );
   }
-  return getUpgradeCost(META_TREE_COST_BASE, level, prestigeLevel);
+  if (type === "metaLifeStealLevel" || type === "metaSkillRegenLevel") {
+    return getUpgradeCost(
+      META_UTILITY_COST_BASE,
+      level,
+      prestigeLevel,
+      META_UTILITY_COST_GROWTH,
+    );
+  }
+  return getUpgradeCost(
+    META_TREE_COST_BASE,
+    level,
+    prestigeLevel,
+    META_TREE_COST_GROWTH,
+  );
 }
 
 /**
@@ -553,7 +566,11 @@ export const MAX_META_TREE_LEVEL = 20;
 export const MAX_META_DAMAGE_HP_LEVEL = 40;
 /** Teto de chance de parry (Diamantes). */
 export const MAX_META_PARRY_LEVEL = 50;
-/** Por nó: dano/vida com teto 40; parry 50; demais mantêm limite. */
+/** Roubo de vida: máx. 10 níveis → 10% total. */
+export const MAX_META_LIFE_STEAL_LEVEL = 10;
+/** Regen de skill: máx. 10 níveis → 5% dano skill. */
+export const MAX_META_SKILL_REGEN_LEVEL = 10;
+/** Por nó: dano/vida 40; life steal 10; skill regen 10; parry 50. */
 export const MAX_META_TREE_LEVELS: Record<
   MetaTreeUpgradeType,
   number
@@ -561,26 +578,56 @@ export const MAX_META_TREE_LEVELS: Record<
   metaDamageLevel: MAX_META_DAMAGE_HP_LEVEL,
   metaHpLevel: MAX_META_DAMAGE_HP_LEVEL,
   metaKnockbackLevel: MAX_META_TREE_LEVEL,
-  metaLifeStealLevel: MAX_META_TREE_LEVEL,
-  metaSkillRegenLevel: MAX_META_TREE_LEVEL,
+  metaLifeStealLevel: MAX_META_LIFE_STEAL_LEVEL,
+  metaSkillRegenLevel: MAX_META_SKILL_REGEN_LEVEL,
   metaParryChance: MAX_META_PARRY_LEVEL,
 };
-export const META_TREE_COST_BASE = 5;
+
+/** Custo base de Dano/Vida (mais caro, mais impacto). */
+export const META_TREE_COST_BASE = 18;
+export const META_TREE_COST_GROWTH = 1.28;
+/** Life steal / skill regen: ainda mais caros. */
+export const META_UTILITY_COST_BASE = 28;
+export const META_UTILITY_COST_GROWTH = 1.38;
 /** Parry: custo base alto e crescimento íngreme (até nível 50). */
-export const META_PARRY_COST_BASE = 35;
-export const META_PARRY_COST_GROWTH = 1.32;
-/** Buff permanente por nível (Diamantes) — reforçado. */
+export const META_PARRY_COST_BASE = 40;
+export const META_PARRY_COST_GROWTH = 1.34;
+
+/** +% dano base por nível de diamante (aditivo; nv.40 → +100%). */
+export const META_DAMAGE_PCT_PER_LEVEL = 0.025;
+/** +% HP máx. por nível de diamante (aditivo; nv.40 → +120%). */
+export const META_HP_PCT_PER_LEVEL = 0.03;
+/** @deprecated flat — prefer META_DAMAGE_PCT_PER_LEVEL */
 export const META_DAMAGE_PER_LEVEL = 6;
+/** @deprecated flat — prefer META_HP_PCT_PER_LEVEL */
 export const META_HP_PER_LEVEL = 30;
 export const META_KNOCKBACK_PER_LEVEL = 1.5;
-/** Pontos percentuais por nível (0.5 → 0.5%). */
-export const META_LIFE_STEAL_PERCENT_PER_LEVEL = 0.5;
-export const META_SKILL_REGEN_DAMAGE_RATIO = 0.01;
-export const META_SKILL_REGEN_HIT_HEAL = 0.5;
+
+/** Pontos percentuais por nível (1.0 → 1%); teto 10% no total. */
+export const META_LIFE_STEAL_PERCENT_PER_LEVEL = 1;
+export const META_LIFE_STEAL_MAX_RATIO = 0.1;
+
+/**
+ * Fração do dano de skill convertida em cura por nível (0.5% / nv.).
+ * Teto total 5% no nível máximo.
+ */
+export const META_SKILL_REGEN_DAMAGE_RATIO = 0.005;
+export const META_SKILL_REGEN_MAX_RATIO = 0.05;
+/** HP fixo por hit de skill por nível (secundário). */
+export const META_SKILL_REGEN_HIT_HEAL = 0.4;
+
 /** Chance base de parry (sempre ativa). */
 export const META_PARRY_BASE_CHANCE = 0.01;
-/** +0.1% de chance de parry por nível (nível 50 → +5%). */
-export const META_PARRY_CHANCE_PER_LEVEL = 0.001;
+/** +0.12% de chance de parry por nível (nível 50 → +6%). */
+export const META_PARRY_CHANCE_PER_LEVEL = 0.0012;
+
+export function metaDamageMultiplier(level: number): number {
+  return 1 + Math.max(0, Math.floor(level)) * META_DAMAGE_PCT_PER_LEVEL;
+}
+
+export function metaHpMultiplier(level: number): number {
+  return 1 + Math.max(0, Math.floor(level)) * META_HP_PCT_PER_LEVEL;
+}
 
 export function isLevelCapped(level: number, maxLevel: number): boolean {
   return Number.isFinite(maxLevel) && level >= maxLevel;
@@ -616,12 +663,17 @@ const XP_BONUS_COST_BASE = 40;
 const XP_BONUS_COST_GROWTH = 1.85;
 
 export function getMetaLifeStealRatio(level: number): number {
-  return (
-    Math.max(0, level) * (META_LIFE_STEAL_PERCENT_PER_LEVEL / 100)
+  const capped = Math.min(
+    MAX_META_LIFE_STEAL_LEVEL,
+    Math.max(0, Math.floor(level)),
+  );
+  return Math.min(
+    META_LIFE_STEAL_MAX_RATIO,
+    capped * (META_LIFE_STEAL_PERCENT_PER_LEVEL / 100),
   );
 }
 
-/** Chance efetiva de parry: 1% base + 0.1% × nível (teto 50). */
+/** Chance efetiva de parry: 1% base + 0.12% × nível (teto 50). */
 export function getMetaParryChance(level: number): number {
   const capped = Math.min(
     MAX_META_PARRY_LEVEL,
@@ -637,10 +689,17 @@ export function getMetaSkillRegenHealing(
   skillHitsLanded: number,
 ): number {
   if (level <= 0) return 0;
+  const capped = Math.min(
+    MAX_META_SKILL_REGEN_LEVEL,
+    Math.max(0, Math.floor(level)),
+  );
+  const damageRatio = Math.min(
+    META_SKILL_REGEN_MAX_RATIO,
+    META_SKILL_REGEN_DAMAGE_RATIO * capped,
+  );
   return (
-    Math.max(0, skillDamageDealt) *
-      (META_SKILL_REGEN_DAMAGE_RATIO * level) +
-    Math.max(0, skillHitsLanded) * (META_SKILL_REGEN_HIT_HEAL * level)
+    Math.max(0, skillDamageDealt) * damageRatio +
+    Math.max(0, skillHitsLanded) * (META_SKILL_REGEN_HIT_HEAL * capped)
   );
 }
 
@@ -1041,8 +1100,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         MAX_META_DAMAGE_HP_LEVEL,
         Math.max(0, Math.floor(n.metaHpLevel ?? 0)),
       ),
-      metaLifeStealLevel: n.metaLifeStealLevel,
-      metaSkillRegenLevel: n.metaSkillRegenLevel,
+      metaLifeStealLevel: Math.min(
+        MAX_META_LIFE_STEAL_LEVEL,
+        Math.max(0, Math.floor(n.metaLifeStealLevel ?? 0)),
+      ),
+      metaSkillRegenLevel: Math.min(
+        MAX_META_SKILL_REGEN_LEVEL,
+        Math.max(0, Math.floor(n.metaSkillRegenLevel ?? 0)),
+      ),
       metaParryChance: Math.min(
         MAX_META_PARRY_LEVEL,
         Math.max(0, Math.floor(n.metaParryChance ?? 0)),
@@ -1893,8 +1958,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     const goldHpMul = goldHpMultiplier(s.maxHpLevel);
     const goldDmgMul = goldDamageMultiplier(s.baseDamageLevel);
-    const metaHp = Math.max(0, s.metaHpLevel) * META_HP_PER_LEVEL;
-    const metaDamage = Math.max(0, s.metaDamageLevel) * META_DAMAGE_PER_LEVEL;
+    const metaHpMul = metaHpMultiplier(s.metaHpLevel);
+    const metaDmgMul = metaDamageMultiplier(s.metaDamageLevel);
     const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
     const goldCooldown = cooldownAtLevel(
       s.attackSpeedLevel,
@@ -1907,9 +1972,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     );
 
     const hpFoundation =
-      cfg.baseHp + (skillHp + metaHp) * prestigeMul;
+      (cfg.baseHp + skillHp * prestigeMul) * metaHpMul;
     const damageFoundation =
-      (s.baseDamage + skillDmg + metaDamage + team.flatDamage) * prestigeMul;
+      (s.baseDamage + skillDmg + team.flatDamage) * prestigeMul * metaDmgMul;
 
     return {
       maxHp: Math.round(hpFoundation * goldHpMul + team.maxHpBonus),

@@ -7,16 +7,24 @@ export const ENDLESS_UNLOCK_STAGE = 15;
 export type StageDef = {
   stageNumber: number;
   name: string;
-  /** Tempo de sobrevivência para limpar a fase. */
-  durationSeconds: number;
   /**
-   * Quantos inimigos comuns (ordenados por unlockTime) podem spawnar.
+   * Estimativa de duração (s) só para UI / pacing do spawner.
+   * A fase só termina ao eliminar todos os inimigos da cota.
+   */
+  durationSeconds: number;
+  /** Quantidade de inimigos comuns a spawnar (cresce por fase). */
+  enemyCount: number;
+  /**
+   * Quantos tipos comuns (ordenados por unlockTime) podem spawnar.
    * Cresce ao longo da campanha.
    */
   enemyTierCap: number;
-  /** Segundo em que o chefe da fase aparece; null = sem chefe obrigatório. */
-  bossSpawnTime: number | null;
-  /** Multiplicador leve de HP/dano dos inimigos nesta fase. */
+  /**
+   * Fração da cota de comuns (0–1) a partir da qual o chefe nasce.
+   * Sempre definido — toda fase tem chefe.
+   */
+  bossSpawnProgress: number;
+  /** Multiplicador de HP/dano/velocidade dos inimigos nesta fase. */
   difficultyMul: number;
 };
 
@@ -74,20 +82,26 @@ const STAGE_NAMES: string[] = [
 ];
 
 function buildStage(n: number): StageDef {
-  const durationSeconds = 50 + n * 7;
-  const enemyTierCap = Math.min(23, 2 + Math.floor((n - 1) * 0.42));
-  const hasBoss = n >= 3;
-  const bossSpawnTime = hasBoss
-    ? Math.max(20, Math.floor(durationSeconds * 0.62))
-    : null;
-  const difficultyMul = 1 + (n - 1) * 0.045;
+  // Cota cresce de forma clara: fase 1 ≈ 14, fase 15 ≈ 70, fase 50 ≈ 210
+  const enemyCount = 10 + n * 4;
+  const enemyTierCap = Math.min(23, 2 + Math.floor((n - 1) * 0.45));
+  // Todas as fases têm chefe (surge após ~65% da cota)
+  const bossSpawnProgress = 0.65;
+  // Dificuldade sobe ~9% por fase (fase 15 ≈ 2.26×, fase 50 ≈ 5.4×)
+  const difficultyMul = 1 + (n - 1) * 0.09;
+  // Estimativa de tempo só para UI (não define vitória)
+  const durationSeconds = Math.max(
+    40,
+    Math.round(enemyCount * (1.8 - Math.min(0.6, n * 0.008))),
+  );
 
   return {
     stageNumber: n,
     name: STAGE_NAMES[n - 1] ?? `Fase ${n}`,
     durationSeconds,
+    enemyCount,
     enemyTierCap,
-    bossSpawnTime,
+    bossSpawnProgress,
     difficultyMul,
   };
 }
@@ -122,4 +136,9 @@ export function getStageClearRewards(stageNumber: number): {
     gold: 80 + n * 35,
     gems: 2 + Math.floor(n / 3),
   };
+}
+
+/** Total de inimigos da fase (comuns + chefe). */
+export function getStageTotalEnemies(stage: StageDef): number {
+  return stage.enemyCount + 1;
 }

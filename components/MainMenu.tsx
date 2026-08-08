@@ -274,10 +274,9 @@ export function MainMenu({
                   )}
                 </select>
                 <p className="mt-2 text-[11px] leading-snug text-zinc-400">
-                  {stagePreview.name} · {stagePreview.durationSeconds}s
-                  {stagePreview.bossSpawnTime != null
-                    ? ` · chefe ~${stagePreview.bossSpawnTime}s`
-                    : " · sem chefe"}
+                  {stagePreview.name} · {stagePreview.enemyCount} inimigos · +chefe
+                  {" · "}
+                  {stagePreview.difficultyMul.toFixed(2)}× diff
                   {" · "}
                   limpa até {maxStageCleared}/{TOTAL_STAGES}
                 </p>

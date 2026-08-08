@@ -36,6 +36,8 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const runMode = useArenaStore((s) => s.runMode);
   const runStage = useArenaStore((s) => s.runStage);
   const stageBossDefeated = useArenaStore((s) => s.stageBossDefeated);
+  const stageEnemiesDefeated = useArenaStore((s) => s.stageEnemiesDefeated);
+  const stageCommonsSpawned = useArenaStore((s) => s.stageCommonsSpawned);
 
   const skillTree = useGameStore((s) => s.skillTree);
   const maxHpLevel = useGameStore((s) => s.maxHpLevel);
@@ -87,16 +89,23 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
         ? [
             {
               label: "Fase",
-              value: `${runStage.stageNumber}/${runStage.durationSeconds}s`,
+              value: String(runStage.stageNumber),
+            },
+            {
+              label: "Abates",
+              value: `${stageEnemiesDefeated}/${runStage.enemyCount + 1}`,
+            },
+            {
+              label: "Spawn",
+              value: `${stageCommonsSpawned}/${runStage.enemyCount}`,
             },
             {
               label: "Chefe",
-              value:
-                runStage.bossSpawnTime == null
-                  ? "—"
-                  : stageBossDefeated
-                    ? "OK"
-                    : `${runStage.bossSpawnTime}s`,
+              value: stageBossDefeated ? "OK" : "vivo/pendente",
+            },
+            {
+              label: "Diff",
+              value: `${runStage.difficultyMul.toFixed(2)}×`,
             },
           ]
         : []),
