@@ -10,6 +10,10 @@ import {
   Swords,
 } from "lucide-react";
 import {
+  GOLD_DAMAGE_PCT_PER_LEVEL,
+  GOLD_HP_PCT_PER_LEVEL,
+  goldDamageMultiplier,
+  goldHpMultiplier,
   INCOME_STEP,
   MAX_CRIT_CHANCE,
   MAX_UPGRADE_LEVELS,
@@ -106,6 +110,13 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
     </div>
   );
 
+  const hpBonusPct = Math.round((goldHpMultiplier(maxHpLevel) - 1) * 100);
+  const dmgBonusPct = Math.round(
+    (goldDamageMultiplier(baseDamageLevel) - 1) * 100,
+  );
+  const hpPctLabel = `${Math.round(GOLD_HP_PCT_PER_LEVEL * 100)}%`;
+  const dmgPctLabel = `${Math.round(GOLD_DAMAGE_PCT_PER_LEVEL * 100)}%`;
+
   const grid = (
     <div
       className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${embedded ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}
@@ -113,7 +124,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
         title={`Max HP: ${formatLevelLabel(maxHpLevel, MAX_UPGRADE_LEVELS.hp)}`}
-        subtitle={`HP atual: ${getMaxHp()}`}
+        subtitle={`HP atual: ${getMaxHp()} · +${hpBonusPct}% (+${hpPctLabel}/nv)`}
         plan={planFor("hp")}
         quantity={quantity}
         atMax={hpAtMax}
@@ -122,7 +133,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<Swords className="h-5 w-5 text-amber-400" />}
         title={`Dano: ${getBaseDamage()}`}
-        subtitle={formatLevelLabel(baseDamageLevel, MAX_UPGRADE_LEVELS.damage)}
+        subtitle={`${formatLevelLabel(baseDamageLevel, MAX_UPGRADE_LEVELS.damage)} · +${dmgBonusPct}% (+${dmgPctLabel}/nv)`}
         plan={planFor("damage")}
         quantity={quantity}
         atMax={damageAtMax}

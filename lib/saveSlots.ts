@@ -181,9 +181,7 @@ export function normalizeSaveData(
     skillLevels?: SkillsData | LegacyFlatSkillsData;
   },
 ): SaveData {
-  const level = data.baseDamageLevel ?? 1;
-  const baseDamage =
-    data.baseDamage ?? Math.round(10 + (level - 1) * 5);
+  const baseDamage = data.baseDamage ?? 10;
 
   const skills = normalizeSkills(
     data.skills ?? data.skillLevels ?? DEFAULT_SKILLS_DATA,

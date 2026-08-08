@@ -396,9 +396,29 @@ export type GameStoreState = {
   getBaseRange: () => number;
 };
 
-const HP_PER_LEVEL = 25;
-const DAMAGE_PER_LEVEL = 5;
+/** Bônus percentual de Max HP por nível de upgrade de ouro (aditivo). */
+export const GOLD_HP_PCT_PER_LEVEL = 0.08;
+/** Bônus percentual de dano por nível de upgrade de ouro (aditivo). */
+export const GOLD_DAMAGE_PCT_PER_LEVEL = 0.07;
+
+/** Multiplicador de HP vindo dos upgrades de ouro (nível 1 = 1×). */
+export function goldHpMultiplier(level: number): number {
+  return 1 + Math.max(0, Math.floor(level) - 1) * GOLD_HP_PCT_PER_LEVEL;
+}
+
+/** Multiplicador de dano vindo dos upgrades de ouro (nível 1 = 1×). */
+export function goldDamageMultiplier(level: number): number {
+  return 1 + Math.max(0, Math.floor(level) - 1) * GOLD_DAMAGE_PCT_PER_LEVEL;
+}
+
+/** Base de custo compartilhada (income/outros). */
 const UPGRADE_COST_BASE = 50;
+/**
+ * HP e dano: base menor + crescimento mais suave que 1.25,
+ * para o ouro render mais efeito por nível.
+ */
+const COMBAT_UPGRADE_COST_BASE = 40;
+const COMBAT_UPGRADE_COST_GROWTH = 1.18;
 const INCOME_COST_BASE = 75;
 /** Passo de renda por upgrade — menor = ouro de partida sobe mais devagar. */
 export const INCOME_STEP = 0.1;
@@ -1732,13 +1752,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   getHpUpgradeCost: () =>
-    getUpgradeCost(UPGRADE_COST_BASE, get().maxHpLevel, get().prestigeLevel),
+    getUpgradeCost(
+      COMBAT_UPGRADE_COST_BASE,
+      get().maxHpLevel,
+      get().prestigeLevel,
+      COMBAT_UPGRADE_COST_GROWTH,
+    ),
 
   getDamageUpgradeCost: () =>
     getUpgradeCost(
-      UPGRADE_COST_BASE,
+      COMBAT_UPGRADE_COST_BASE,
       get().baseDamageLevel,
       get().prestigeLevel,
+      COMBAT_UPGRADE_COST_GROWTH,
     ),
 
   getAttackSpeedUpgradeCost: () =>
@@ -1865,7 +1891,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       s.equippedTeamMemberIds,
     );
 
-    const goldHp = cfg.baseHp + (s.maxHpLevel - 1) * HP_PER_LEVEL;
+    const goldHpMul = goldHpMultiplier(s.maxHpLevel);
+    const goldDmgMul = goldDamageMultiplier(s.baseDamageLevel);
     const metaHp = Math.max(0, s.metaHpLevel) * META_HP_PER_LEVEL;
     const metaDamage = Math.max(0, s.metaDamageLevel) * META_DAMAGE_PER_LEVEL;
     const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
@@ -1879,13 +1906,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       Math.round(goldCooldown - skillCd * prestigeMul),
     );
 
+    const hpFoundation =
+      cfg.baseHp + (skillHp + metaHp) * prestigeMul;
+    const damageFoundation =
+      (s.baseDamage + skillDmg + metaDamage + team.flatDamage) * prestigeMul;
+
     return {
-      maxHp: Math.round(
-        goldHp + (skillHp + metaHp) * prestigeMul + team.maxHpBonus,
-      ),
-      damage: Math.round(
-        (s.baseDamage + skillDmg + metaDamage + team.flatDamage) * prestigeMul,
-      ),
+      maxHp: Math.round(hpFoundation * goldHpMul + team.maxHpBonus),
+      damage: Math.round(damageFoundation * goldDmgMul),
       attackRange: Math.min(
         MAX_ATTACK_RANGE,
         Math.round(goldRange + skillRange * prestigeMul),
@@ -1990,7 +2018,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         startLevel: s.maxHpLevel,
         gold,
         quantity,
-        getCostAt: (lv) => getUpgradeCost(UPGRADE_COST_BASE, lv, prestige),
+        getCostAt: (lv) =>
+          getUpgradeCost(
+            COMBAT_UPGRADE_COST_BASE,
+            lv,
+            prestige,
+            COMBAT_UPGRADE_COST_GROWTH,
+          ),
         canBuyAt: (lv) => !isLevelCapped(lv, MAX_UPGRADE_LEVELS.hp),
       });
     }
@@ -2000,7 +2034,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         startLevel: s.baseDamageLevel,
         gold,
         quantity,
-        getCostAt: (lv) => getUpgradeCost(UPGRADE_COST_BASE, lv, prestige),
+        getCostAt: (lv) =>
+          getUpgradeCost(
+            COMBAT_UPGRADE_COST_BASE,
+            lv,
+            prestige,
+            COMBAT_UPGRADE_COST_GROWTH,
+          ),
         canBuyAt: (lv) => !isLevelCapped(lv, MAX_UPGRADE_LEVELS.damage),
       });
     }
@@ -2069,7 +2109,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       set((s) => ({
         gold: s.gold - cost,
         baseDamageLevel: s.baseDamageLevel + n,
-        baseDamage: Math.round(s.baseDamage + DAMAGE_PER_LEVEL * n),
       }));
       return n;
     }
@@ -2135,16 +2174,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   upgradeDamage: () => {
-    if (isLevelCapped(get().baseDamageLevel, MAX_UPGRADE_LEVELS.damage))
-      return false;
-    const cost = get().getDamageUpgradeCost();
-    if (get().gold < cost) return false;
-    set((s) => ({
-      gold: s.gold - cost,
-      baseDamageLevel: s.baseDamageLevel + 1,
-      baseDamage: Math.round(s.baseDamage + DAMAGE_PER_LEVEL),
-    }));
-    return true;
+    return get().buyGoldUpgradeBulk("damage", 1) > 0;
   },
 
   upgradeAttackSpeed: () => {
