@@ -95,7 +95,7 @@ export type GameStoreState = {
   baseDamageLevel: number;
   /** Dano base absoluto (inteiro). */
   baseDamage: number;
-  /** Nível do upgrade de attack speed (0–6, +2% redução de CD por nível). */
+  /** Nível legado de attack speed (ouro); AS só via cartas in-run. */
   attackSpeedLevel: number;
   /** Nível do upgrade de range (0–6, +2% alcance por nível). */
   rangeLevel: number;
@@ -270,8 +270,10 @@ export const MAX_UPGRADE_LEVELS = {
   knockback: 30,
   /** 5% + 35×2% = 75%. */
   critChance: 35,
-  critDamage: Number.POSITIVE_INFINITY,
-  attackSpeed: 10,
+  /** Só via cartas in-run (`matchBuffs.critDamageMultiplier`). */
+  critDamage: 0,
+  /** Só via cartas in-run (`matchBuffs.attackSpeed`). */
+  attackSpeed: 0,
   range: 10,
   /** Bônus de XP com diamantes (+10%/nível). */
   xpBonus: 20,
@@ -702,7 +704,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       maxHpLevel: n.maxHpLevel,
       baseDamageLevel: n.baseDamageLevel,
       baseDamage: n.baseDamage,
-      attackSpeedLevel: n.attackSpeedLevel,
+      attackSpeedLevel: 0,
       rangeLevel: n.rangeLevel,
       arms: n.arms,
       armTier: n.armTier,
@@ -715,7 +717,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       knockbackLevel: n.knockbackLevel,
       baseKnockbackPower: n.baseKnockbackPower,
       critChanceLevel: n.critChanceLevel,
-      critDamageLevel: n.critDamageLevel,
+      critDamageLevel: 0,
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
       skills,
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
@@ -754,7 +756,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       maxHpLevel: s.maxHpLevel,
       baseDamageLevel: s.baseDamageLevel,
       baseDamage: s.baseDamage,
-      attackSpeedLevel: s.attackSpeedLevel,
+      attackSpeedLevel: 0,
       rangeLevel: s.rangeLevel,
       arms: s.arms,
       armTier: s.armTier,
@@ -767,7 +769,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       knockbackLevel: s.knockbackLevel,
       baseKnockbackPower: s.baseKnockbackPower,
       critChanceLevel: s.critChanceLevel,
-      critDamageLevel: s.critDamageLevel,
+      critDamageLevel: 0,
       skillTree: { ...s.skillTree },
       skills,
       unlockedSkills: { ...s.unlockedSkills },
@@ -850,7 +852,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       s.maxHpLevel >= 10 ||
       s.baseDamageLevel >= 8 ||
       s.armTier >= 2 ||
-      s.attackSpeedLevel >= MAX_UPGRADE_LEVELS.attackSpeed ||
       s.rangeLevel >= MAX_UPGRADE_LEVELS.range
     );
   },

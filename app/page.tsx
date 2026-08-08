@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ActiveSkillsHud } from "@/components/ActiveSkillsHud";
 import { BossHealthBar } from "@/components/BossHealthBar";
 import { GameCanvas } from "@/components/GameCanvas";
 import { GameOverModal } from "@/components/GameOverModal";
@@ -106,6 +107,7 @@ export default function Home() {
       {inMatch && (
         <>
           <BossHealthBar />
+          <ActiveSkillsHud />
           <InGameStats onExitMatch={() => void handleExitMatch()} />
           <QuestsPanel />
         </>
