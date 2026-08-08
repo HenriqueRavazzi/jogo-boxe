@@ -15,6 +15,7 @@ function columnsFromSave(saveData: SaveData) {
   return {
     saveData: normalized,
     purpleDiamonds: normalized.purpleDiamonds,
+    prestigeLevel: normalized.prestigeLevel ?? 0,
     skillsData: normalized.skills ?? DEFAULT_SKILLS_DATA,
   };
 }

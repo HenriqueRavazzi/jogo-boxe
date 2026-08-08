@@ -12,6 +12,7 @@ import {
   DEFAULT_META_TREE,
   DEFAULT_SKILLS_DATA,
   DEFAULT_UNLOCKED_SKILLS,
+  SKILL_STAT_KEYS,
   isSkillStatKey,
   isSkillUpgradeType,
 } from "@/db/schema";
@@ -123,6 +124,11 @@ export type GameStoreState = {
   metaHpLevel: number;
   metaLifeStealLevel: number;
   metaSkillRegenLevel: number;
+  /**
+   * Nível de Ascensão. Cada nível: +15% dano/ouro/XP passivos
+   * e inimigos mais fortes (formas geométricas).
+   */
+  prestigeLevel: number;
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
   /** Lista de dificuldades do Neon. */
@@ -165,6 +171,20 @@ export type GameStoreState = {
    */
   upgradeSkillStat: (skillId: string, statKey: string) => boolean;
   getSkillStatUpgradeCost: (skillId: string, statKey: string) => number;
+  /**
+   * Respec: zera stats granulares da árvore roxa e devolve diamantes roxos gastos.
+   * Retorna a quantidade reembolsada (0 se não havia investimento).
+   */
+  resetSkillTree: () => number;
+  /** Total de diamantes roxos investidos nos sub-níveis atuais. */
+  getPurpleSkillInvestment: () => number;
+  /**
+   * Ascensão: +1 prestige, reseta ouro/upgrades de base/skills granulares.
+   * Mantém diamantes, roxos, desbloqueios, meta tree e skill tree verde.
+   */
+  triggerPrestige: () => boolean;
+  canTriggerPrestige: () => boolean;
+  getPrestigeMultiplier: () => number;
   upgradeHP: () => boolean;
   upgradeDamage: () => boolean;
   upgradeAttackSpeed: () => boolean;
@@ -362,6 +382,35 @@ function getMetaTreeLevel(
 /** Custo de um atributo: floor(base × 1.25^nívelAtual). */
 export function getPurpleSkillCostAt(level: number): number {
   return getUpgradeCost(PURPLE_SKILL_STAT_COST_BASE, level);
+}
+
+/**
+ * Soma dos custos pagos para chegar ao nível `level`
+ * (níveis 0→1 + 1→2 + … + (level-1)→level).
+ */
+export function getPurpleSkillSpentForLevel(level: number): number {
+  const lv = Math.max(0, Math.floor(level));
+  let total = 0;
+  for (let i = 0; i < lv; i++) {
+    total += getPurpleSkillCostAt(i);
+  }
+  return total;
+}
+
+/** Fração devolvida no respec da árvore roxa (1 = 100%). */
+export const SKILL_TREE_RESPEC_REFUND_RATE = 1;
+
+/** Total de diamantes roxos investidos em todos os atributos granulares. */
+export function getTotalPurpleSkillInvestment(skills: SkillsData): number {
+  let total = 0;
+  for (const skillId of Object.keys(SKILL_STAT_KEYS) as SkillUpgradeType[]) {
+    for (const statKey of SKILL_STAT_KEYS[skillId]) {
+      total += getPurpleSkillSpentForLevel(
+        getSkillStatLevel(skills, skillId, statKey),
+      );
+    }
+  }
+  return total;
 }
 
 export function getSkillStatLevel(
@@ -576,6 +625,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   metaHpLevel: defaults.metaHpLevel,
   metaLifeStealLevel: defaults.metaLifeStealLevel,
   metaSkillRegenLevel: defaults.metaSkillRegenLevel,
+  prestigeLevel: defaults.prestigeLevel ?? 0,
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
@@ -625,6 +675,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaHpLevel: n.metaHpLevel,
       metaLifeStealLevel: n.metaLifeStealLevel,
       metaSkillRegenLevel: n.metaSkillRegenLevel,
+      prestigeLevel: Math.max(0, Math.floor(n.prestigeLevel ?? 0)),
     });
   },
 
@@ -667,6 +718,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaHpLevel: s.metaHpLevel,
       metaLifeStealLevel: s.metaLifeStealLevel,
       metaSkillRegenLevel: s.metaSkillRegenLevel,
+      prestigeLevel: s.prestigeLevel,
     };
   },
 
@@ -718,11 +770,75 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   addGold: (amount, options) => {
     const applyIncome = options?.applyIncome !== false;
+    const prestigeMul = get().getPrestigeMultiplier();
     set((s) => ({
       gold:
         s.gold +
-        Math.round(amount * (applyIncome ? s.incomeMultiplier : 1)),
+        Math.round(
+          amount * (applyIncome ? s.incomeMultiplier : 1) * prestigeMul,
+        ),
     }));
+  },
+
+  getPrestigeMultiplier: () => 1 + Math.max(0, get().prestigeLevel) * 0.15,
+
+  /**
+   * Liberado após progresso alto de base (fim de jogo / build madura).
+   */
+  canTriggerPrestige: () => {
+    const s = get();
+    if (!s.activeSaveId) return false;
+    return (
+      s.maxHpLevel >= 10 ||
+      s.baseDamageLevel >= 8 ||
+      s.armTier >= 2 ||
+      s.attackSpeedLevel >= MAX_UPGRADE_LEVELS.attackSpeed ||
+      s.rangeLevel >= MAX_UPGRADE_LEVELS.range
+    );
+  },
+
+  /**
+   * Ascensão: +1 prestige; reseta ouro + upgrades de ouro + skills granulares.
+   * Mantém diamantes, roxos (com reembolso do investimento roxo), desbloqueios,
+   * meta tree, skill tree verde e o próprio nível de prestígio.
+   */
+  triggerPrestige: () => {
+    if (!get().canTriggerPrestige()) return false;
+
+    const invested = getTotalPurpleSkillInvestment(get().skills);
+    const refund = Math.floor(invested * SKILL_TREE_RESPEC_REFUND_RATE);
+    const fresh = createDefaultSaveData();
+
+    set((s) => ({
+      prestigeLevel: s.prestigeLevel + 1,
+      gold: fresh.gold,
+      purpleDiamonds: s.purpleDiamonds + refund,
+      maxHpLevel: fresh.maxHpLevel,
+      baseDamageLevel: fresh.baseDamageLevel,
+      baseDamage: fresh.baseDamage,
+      attackSpeedLevel: fresh.attackSpeedLevel,
+      rangeLevel: fresh.rangeLevel,
+      arms: fresh.arms,
+      armTier: fresh.armTier,
+      armsNextCost: fresh.armsNextCost,
+      incomeMultiplier: fresh.incomeMultiplier,
+      xpBonusLevel: fresh.xpBonusLevel,
+      knockbackLevel: fresh.knockbackLevel,
+      baseKnockbackPower: fresh.baseKnockbackPower,
+      critChanceLevel: fresh.critChanceLevel,
+      critDamageLevel: fresh.critDamageLevel,
+      skills: {
+        ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
+        ice: { ...DEFAULT_SKILLS_DATA.ice },
+        fire: { ...DEFAULT_SKILLS_DATA.fire },
+        lightning: { ...DEFAULT_SKILLS_DATA.lightning },
+      },
+    }));
+
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return true;
   },
 
   addGems: (amount) => set((s) => ({ gems: s.gems + amount })),
@@ -811,6 +927,33 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return true;
   },
 
+  getPurpleSkillInvestment: () => getTotalPurpleSkillInvestment(get().skills),
+
+  /**
+   * Respec da árvore roxa: zera atributos granulares e devolve diamantes roxos.
+   * Desbloqueios (diamantes normais) e a skill tree verde não são afetados.
+   */
+  resetSkillTree: () => {
+    const invested = getTotalPurpleSkillInvestment(get().skills);
+    if (invested <= 0) return 0;
+
+    const refund = Math.floor(invested * SKILL_TREE_RESPEC_REFUND_RATE);
+    set((s) => ({
+      purpleDiamonds: s.purpleDiamonds + refund,
+      skills: {
+        ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
+        ice: { ...DEFAULT_SKILLS_DATA.ice },
+        fire: { ...DEFAULT_SKILLS_DATA.fire },
+        lightning: { ...DEFAULT_SKILLS_DATA.lightning },
+      },
+    }));
+
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return refund;
+  },
+
   getHpUpgradeCost: () => getUpgradeCost(UPGRADE_COST_BASE, get().maxHpLevel),
 
   getDamageUpgradeCost: () =>
@@ -853,7 +996,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getXpBonusUpgradeCost: () => xpBonusCostAt(get().xpBonusLevel),
 
-  getXpMultiplier: () => xpMultiplierAt(get().xpBonusLevel),
+  getXpMultiplier: () =>
+    xpMultiplierAt(get().xpBonusLevel) * get().getPrestigeMultiplier(),
 
   getMetaTreeUpgradeCost: (type) =>
     getMetaTreeCostAt(getMetaTreeLevel(get(), type)),
@@ -894,10 +1038,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       s.attackSpeedLevel,
       cfg.baseAttackSpeed,
     );
+    const prestigeMul = 1 + Math.max(0, s.prestigeLevel) * 0.15;
 
     return {
       maxHp: Math.round(goldHp + skillHp + metaHp),
-      damage: Math.round(s.baseDamage + skillDmg + metaDamage),
+      damage: Math.round((s.baseDamage + skillDmg + metaDamage) * prestigeMul),
       attackRange: Math.min(
         MAX_ATTACK_RANGE,
         Math.round(goldRange + skillRange),
@@ -906,7 +1051,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         MIN_ATTACK_COOLDOWN_MS,
         Math.round(goldCooldown - skillCd),
       ),
-      xpMultiplier: xpMultiplierAt(s.xpBonusLevel),
+      xpMultiplier: xpMultiplierAt(s.xpBonusLevel) * prestigeMul,
       arms: s.arms,
       lifeStealLevel,
       lifeStealPercent: lifeStealLevel * 0.01 + metaLifeSteal,
@@ -918,7 +1063,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         2_000,
         7_000 - s.skills.ricochet.cooldown * 500,
       ),
-      maxBounces: 2 + s.skills.ricochet.hits,
+      maxBounces: Math.min(5, 2 + s.skills.ricochet.hits),
       bounceDamagePercent: 0.6 + s.skills.ricochet.damage * 0.15,
       knockbackPower:
         getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +

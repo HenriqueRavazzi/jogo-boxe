@@ -1,6 +1,7 @@
 /** Entidade inimigo — atributos, chase, melee, ranged, status e desenho. */
 
 import type { EnemyRewards } from "@/lib/gameConfig";
+import { useGameStore } from "@/store/useGameStore";
 
 const EDGE_MARGIN = 24;
 const DEFAULT_HP = 30;
@@ -29,9 +30,17 @@ export type StatusEffect = {
   burnDpsPerStack?: number;
   /** Expiração individual de cada pilha de fogo (ms game clock). */
   burnStackExpires?: number[];
-  /** Fração de slow 0–1 (shock). */
+  /** Fração de slow 0–1 (shock / stun). */
   slowAmount?: number;
+  /** Debuff de gelo: inimigo toma mais dano do jogador. */
+  vulnerable?: boolean;
+  /** Multiplicador de dano recebido (ex.: 1.3 com gelo). */
+  damageTakenMultiplier?: number;
 };
+
+export const ICE_VULNERABILITY_MULTIPLIER = 1.3;
+/** Mini-stun do Raio (velocidade 0). */
+export const LIGHTNING_STUN_MS = 400;
 
 export const ENEMY_RADIUS: Record<EnemyType, number> = {
   normal: 12,
@@ -51,6 +60,120 @@ export const DEFAULT_ENEMY_REWARDS: EnemyRewards = {
   normalDiamondChance: 0.03,
   purpleDiamondChance: 0.001,
 };
+
+/**
+ * Desenha um polígono regular centrado em (x, y).
+ * `sides < 3` → círculo (tier orgânico / prestígio 0).
+ */
+export function drawPolygon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  sides: number,
+  color: string,
+  options?: {
+    strokeStyle?: string;
+    lineWidth?: number;
+    rotation?: number;
+  },
+): void {
+  ctx.beginPath();
+  if (sides < 3) {
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+  } else {
+    const rot = options?.rotation ?? -Math.PI / 2;
+    for (let i = 0; i < sides; i++) {
+      const angle = rot + (i * Math.PI * 2) / sides;
+      const px = x + Math.cos(angle) * radius;
+      const py = y + Math.sin(angle) * radius;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+  ctx.fillStyle = color;
+  ctx.fill();
+  if (options?.strokeStyle) {
+    ctx.strokeStyle = options.strokeStyle;
+    ctx.lineWidth = options.lineWidth ?? 2;
+    ctx.stroke();
+  }
+}
+
+/** Estrela pontiaguda (tiers poligonais superiores). */
+export function drawStar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  points: number,
+  color: string,
+  options?: {
+    strokeStyle?: string;
+    lineWidth?: number;
+    innerRatio?: number;
+  },
+): void {
+  const spikes = Math.max(3, points);
+  const inner = radius * (options?.innerRatio ?? 0.45);
+  const rot = -Math.PI / 2;
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? radius : inner;
+    const angle = rot + (i * Math.PI) / spikes;
+    const px = x + Math.cos(angle) * r;
+    const py = y + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  if (options?.strokeStyle) {
+    ctx.strokeStyle = options.strokeStyle;
+    ctx.lineWidth = options.lineWidth ?? 2;
+    ctx.stroke();
+  }
+}
+
+/**
+ * Forma do inimigo pelo nível de Ascensão:
+ * 0 círculo, 1 quadrado, 2 triângulo, 3 hexágono, 4 octógono, 5+ estrela.
+ */
+export function getPrestigeEnemySides(prestigeLevel: number): number {
+  const p = Math.max(0, Math.floor(prestigeLevel));
+  if (p <= 0) return 0;
+  if (p === 1) return 4;
+  if (p === 2) return 3;
+  if (p === 3) return 6;
+  if (p === 4) return 8;
+  return -1; // estrela
+}
+
+function fillEnemyBodyShape(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  color: string,
+  stroke?: { strokeStyle: string; lineWidth: number },
+): void {
+  const prestige = useGameStore.getState().prestigeLevel ?? 0;
+  const sides = getPrestigeEnemySides(prestige);
+  // Quadrados: scale levemente menor para bounding box similar ao círculo
+  const r = sides === 4 ? radius * 0.92 : radius;
+  const strokeOpts = stroke
+    ? { strokeStyle: stroke.strokeStyle, lineWidth: stroke.lineWidth }
+    : undefined;
+
+  if (sides < 0) {
+    const points = Math.min(8, 5 + (prestige - 5));
+    drawStar(ctx, x, y, r, points, color, strokeOpts);
+    return;
+  }
+  drawPolygon(ctx, x, y, r, sides, color, strokeOpts);
+}
 
 export type EnemyData = {
   id: string;
@@ -246,7 +369,7 @@ export class Enemy {
 
   /**
    * Aplica ou renova um status (mantém a expiração mais longa).
-   * Meta opcional: burnDps / burnStacks / slowAmount.
+   * Meta opcional: burn / slow / vulnerability.
    */
   applyStatus(
     type: StatusEffectType,
@@ -256,6 +379,8 @@ export class Enemy {
       burnStacks?: number;
       burnDpsPerStack?: number;
       slowAmount?: number;
+      vulnerable?: boolean;
+      damageTakenMultiplier?: number;
     },
   ): void {
     const existing = this.statusEffects.find((s) => s.type === type);
@@ -279,6 +404,15 @@ export class Enemy {
           meta.slowAmount,
         );
       }
+      if (meta?.vulnerable != null) {
+        existing.vulnerable = meta.vulnerable || existing.vulnerable;
+      }
+      if (meta?.damageTakenMultiplier != null) {
+        existing.damageTakenMultiplier = Math.max(
+          existing.damageTakenMultiplier ?? 1,
+          meta.damageTakenMultiplier,
+        );
+      }
       return;
     }
     this.statusEffects.push({
@@ -288,6 +422,8 @@ export class Enemy {
       burnStacks: meta?.burnStacks,
       burnDpsPerStack: meta?.burnDpsPerStack,
       slowAmount: meta?.slowAmount,
+      vulnerable: meta?.vulnerable,
+      damageTakenMultiplier: meta?.damageTakenMultiplier,
     });
   }
 
@@ -349,6 +485,31 @@ export class Enemy {
     return burn.burnStacks ?? 0;
   }
 
+  /** True enquanto congelado com debuff de vulnerabilidade do gelo. */
+  isVulnerable(now: number): boolean {
+    const freeze = this.statusEffects.find(
+      (s) => s.type === "freeze" && s.expiresAt > now,
+    );
+    return Boolean(freeze?.vulnerable);
+  }
+
+  /** Multiplicador de dano recebido (gelo vulnerável → 1.3×). */
+  getDamageTakenMultiplier(now: number): number {
+    const freeze = this.statusEffects.find(
+      (s) => s.type === "freeze" && s.expiresAt > now,
+    );
+    if (!freeze) return 1;
+    if (freeze.damageTakenMultiplier != null) {
+      return freeze.damageTakenMultiplier;
+    }
+    return freeze.vulnerable ? ICE_VULNERABILITY_MULTIPLIER : 1;
+  }
+
+  /** Mini-stun: velocidade 0 por durationMs (Raio). */
+  applyStun(now: number, durationMs = LIGHTNING_STUN_MS): void {
+    this.applyShockSlow(1, now, durationMs);
+  }
+
   applyShockSlow(
     slowAmount: number,
     now: number,
@@ -383,8 +544,12 @@ export class Enemy {
       this.burnAccumulatorMs += dt * 1000;
       while (this.burnAccumulatorMs >= BURN_TICK_MS) {
         this.burnAccumulatorMs -= BURN_TICK_MS;
-        // burnDamage = DPS → tick de 500ms aplica metade
-        this.hp -= this.burnDamage * (BURN_TICK_MS / 1000);
+        // burnDamage = DPS → tick de 500ms aplica metade (+ vuln do gelo)
+        const tick =
+          this.burnDamage *
+          (BURN_TICK_MS / 1000) *
+          this.getDamageTakenMultiplier(now);
+        this.hp -= tick;
       }
     } else {
       this.burnAccumulatorMs = 0;
@@ -500,8 +665,10 @@ export class Enemy {
     this.isAttacking = false;
   }
 
-  takeDamage(amount: number): boolean {
-    this.hp -= amount;
+  takeDamage(amount: number, now?: number): boolean {
+    const mult =
+      now != null ? this.getDamageTakenMultiplier(now) : 1;
+    this.hp -= amount * mult;
     return this.hp <= 0;
   }
 
@@ -539,6 +706,7 @@ export class Enemy {
 
   /**
    * Desenha o inimigo + overlays de status (gelo / raio / melee / ranged).
+   * Forma geométrica depende do prestigeLevel (círculo → polígonos / estrela).
    */
   draw(ctx: CanvasRenderingContext2D, now: number): void {
     this.pruneStatusEffects(now);
@@ -546,61 +714,92 @@ export class Enemy {
     const frozen = this.hasStatus("freeze", now);
     const shocked = this.hasStatus("shock", now);
     const burning = this.hasStatus("burn", now);
+    const vulnerable = this.isVulnerable(now);
 
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    let bodyColor = `rgb(${Math.floor(255 * hpPercent)}, 0, 0)`;
+    let bodyStroke: { strokeStyle: string; lineWidth: number } | undefined;
 
     if (this.color) {
-      ctx.fillStyle = frozen ? "#7dd3fc" : burning ? "#ea580c" : this.color;
-      ctx.fill();
+      bodyColor = frozen
+        ? vulnerable
+          ? "#a5b4fc"
+          : "#7dd3fc"
+        : burning
+          ? "#ea580c"
+          : this.color;
       if (this.type === "boss") {
-        ctx.strokeStyle = frozen ? "#bae6fd" : "#e9d5ff";
-        ctx.lineWidth = 4;
-        ctx.stroke();
+        bodyStroke = {
+          strokeStyle: frozen ? "#c7d2fe" : "#e9d5ff",
+          lineWidth: 4,
+        };
       } else if (this.type === "ranged") {
-        ctx.strokeStyle = frozen ? "#bae6fd" : "#99f6e4";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        bodyStroke = {
+          strokeStyle: frozen ? "#bae6fd" : "#99f6e4",
+          lineWidth: 2,
+        };
       }
     } else if (this.type === "boss") {
-      ctx.fillStyle = frozen ? "#5b21b6" : burning ? "#9a3412" : "#7e22ce";
-      ctx.fill();
-      ctx.strokeStyle = frozen ? "#bae6fd" : "#e9d5ff";
-      ctx.lineWidth = 4;
-      ctx.stroke();
+      bodyColor = frozen
+        ? vulnerable
+          ? "#6366f1"
+          : "#5b21b6"
+        : burning
+          ? "#9a3412"
+          : "#7e22ce";
+      bodyStroke = {
+        strokeStyle: frozen ? "#c7d2fe" : "#e9d5ff",
+        lineWidth: 4,
+      };
     } else if (this.type === "dasher") {
       if (frozen) {
-        ctx.fillStyle = `rgb(${Math.floor(100 + 80 * hpPercent)}, ${Math.floor(160 + 60 * hpPercent)}, ${Math.floor(220 + 35 * hpPercent)})`;
+        bodyColor = vulnerable
+          ? `rgb(${Math.floor(120 + 60 * hpPercent)}, ${Math.floor(140 + 40 * hpPercent)}, ${Math.floor(230 + 25 * hpPercent)})`
+          : `rgb(${Math.floor(100 + 80 * hpPercent)}, ${Math.floor(160 + 60 * hpPercent)}, ${Math.floor(220 + 35 * hpPercent)})`;
       } else if (burning) {
-        ctx.fillStyle = `rgb(${Math.floor(220 + 35 * hpPercent)}, ${Math.floor(80 * hpPercent)}, 20)`;
+        bodyColor = `rgb(${Math.floor(220 + 35 * hpPercent)}, ${Math.floor(80 * hpPercent)}, 20)`;
       } else {
         const orange = Math.floor(180 + 75 * hpPercent);
-        ctx.fillStyle = `rgb(${orange}, ${Math.floor(90 * hpPercent)}, 20)`;
+        bodyColor = `rgb(${orange}, ${Math.floor(90 * hpPercent)}, 20)`;
       }
-      ctx.fill();
     } else if (this.type === "ranged") {
       if (frozen) {
-        ctx.fillStyle = `rgb(${Math.floor(80 + 40 * hpPercent)}, ${Math.floor(160 + 60 * hpPercent)}, ${Math.floor(180 + 50 * hpPercent)})`;
+        bodyColor = `rgb(${Math.floor(80 + 40 * hpPercent)}, ${Math.floor(160 + 60 * hpPercent)}, ${Math.floor(180 + 50 * hpPercent)})`;
       } else {
         const g = Math.floor(160 + 70 * hpPercent);
-        ctx.fillStyle = `rgb(${Math.floor(30 + 40 * hpPercent)}, ${g}, ${Math.floor(140 + 50 * hpPercent)})`;
+        bodyColor = `rgb(${Math.floor(30 + 40 * hpPercent)}, ${g}, ${Math.floor(140 + 50 * hpPercent)})`;
       }
-      ctx.fill();
-      ctx.strokeStyle = frozen ? "#bae6fd" : "#5eead4";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      bodyStroke = {
+        strokeStyle: frozen ? "#bae6fd" : "#5eead4",
+        lineWidth: 2,
+      };
     } else if (frozen) {
       const blue = Math.floor(160 + 95 * hpPercent);
-      ctx.fillStyle = `rgb(${Math.floor(60 * hpPercent)}, ${Math.floor(140 + 80 * hpPercent)}, ${blue})`;
-      ctx.fill();
+      bodyColor = vulnerable
+        ? `rgb(${Math.floor(90 + 40 * hpPercent)}, ${Math.floor(120 + 60 * hpPercent)}, ${blue})`
+        : `rgb(${Math.floor(60 * hpPercent)}, ${Math.floor(140 + 80 * hpPercent)}, ${blue})`;
     } else if (burning) {
-      ctx.fillStyle = `rgb(${Math.floor(220 + 35 * hpPercent)}, ${Math.floor(60 + 40 * hpPercent)}, 10)`;
-      ctx.fill();
+      bodyColor = `rgb(${Math.floor(220 + 35 * hpPercent)}, ${Math.floor(60 + 40 * hpPercent)}, 10)`;
     } else {
-      const red = Math.floor(255 * hpPercent);
-      ctx.fillStyle = `rgb(${red}, 0, 0)`;
-      ctx.fill();
+      bodyColor = `rgb(${Math.floor(255 * hpPercent)}, 0, 0)`;
     }
+
+    // Hexágono+ (prestígio ≥ 3): contorno de blindagem
+    const prestige = useGameStore.getState().prestigeLevel ?? 0;
+    if (prestige >= 3 && !bodyStroke) {
+      bodyStroke = {
+        strokeStyle: "rgba(226, 232, 240, 0.55)",
+        lineWidth: 2.5,
+      };
+    }
+
+    fillEnemyBodyShape(
+      ctx,
+      this.x,
+      this.y,
+      this.radius,
+      bodyColor,
+      bodyStroke,
+    );
 
     if (this.isAttacking && !frozen) {
       ctx.beginPath();
@@ -616,9 +815,18 @@ export class Enemy {
     if (frozen) {
       ctx.beginPath();
       ctx.arc(this.x, this.y, this.radius + 2, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(186, 230, 253, 0.95)";
+      ctx.strokeStyle = vulnerable
+        ? "rgba(165, 180, 252, 0.95)"
+        : "rgba(186, 230, 253, 0.95)";
       ctx.lineWidth = 2.5;
       ctx.stroke();
+      if (vulnerable) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(129, 140, 248, 0.55)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
     }
 
     if (shocked) {

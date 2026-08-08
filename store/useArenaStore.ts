@@ -12,6 +12,7 @@ import {
   generateUpgradeOptions,
   isSpecialSkillType,
   type MatchUpgrade,
+  type SpecialSkillKey,
   type UpgradeType,
 } from "@/lib/matchUpgrades";
 import {
@@ -46,6 +47,8 @@ export type EnemyStatusEffect = {
   burnDpsPerStack?: number;
   burnStackExpires?: number[];
   slowAmount?: number;
+  vulnerable?: boolean;
+  damageTakenMultiplier?: number;
 };
 
 export type Enemy = {
@@ -181,6 +184,11 @@ export type ArenaStoreState = {
    * Só sobem ao escolher cartas de level-up.
    */
   matchSkills: MatchSkillsData;
+  /**
+   * Skills especiais distintas já escolhidas nesta partida (máx. 2).
+   * Controla quais cartas novas podem aparecer no level-up.
+   */
+  activeRunSkills: SpecialSkillKey[];
   /** Timers / janelas ativas de Gelo / Raio / Ricochete. */
   activeSkillPulse: ActiveSkillPulseState;
   /** Projéteis elétricos do Raio. */
@@ -271,6 +279,7 @@ function randomEdgePosition(canvasWidth: number, canvasHeight: number) {
 function rollLevelUpOptions(
   matchSkills: MatchSkillsData,
   matchBuffs: MatchBuffs,
+  activeRunSkills: SpecialSkillKey[],
 ): MatchUpgrade[] {
   const game = useGameStore.getState();
   const stats = game.getEffectiveStats();
@@ -278,6 +287,7 @@ function rollLevelUpOptions(
     unlockedSkills: game.unlockedSkills,
     matchSkills,
     skills: game.skills,
+    activeRunSkills,
     effectiveRange: stats.attackRange * matchBuffs.attackRange,
     effectiveCooldownMs: stats.attackCooldownMs / matchBuffs.attackSpeed,
   });
@@ -302,7 +312,11 @@ function enterLevelUp(
     xpToNextLevel,
     matchLevel,
     gameState: "level_up",
-    levelUpOptions: rollLevelUpOptions(state.matchSkills, state.matchBuffs),
+    levelUpOptions: rollLevelUpOptions(
+      state.matchSkills,
+      state.matchBuffs,
+      state.activeRunSkills,
+    ),
   });
 }
 
@@ -328,6 +342,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   matchLevel: 1,
   matchBuffs: { ...DEFAULT_BUFFS },
   matchSkills: { ...DEFAULT_MATCH_SKILLS },
+  activeRunSkills: [],
   activeSkillPulse: createActiveSkillPulseState(),
   lightningProjectiles: [],
   skillVfxEffects: [],
@@ -364,6 +379,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
+      activeRunSkills: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
@@ -430,6 +446,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       playerRotation: -Math.PI / 2,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
+      activeRunSkills: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
@@ -529,14 +546,24 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
   selectUpgrade: (upgradeType, value) => {
     if (isSpecialSkillType(upgradeType)) {
-      set((s) => ({
-        matchSkills: {
+      set((s) => {
+        const prevLevel = s.matchSkills[upgradeType] ?? 0;
+        const nextSkills = {
           ...s.matchSkills,
-          [upgradeType]: (s.matchSkills[upgradeType] ?? 0) + 1,
-        },
-        gameState: "playing",
-        levelUpOptions: [],
-      }));
+          [upgradeType]: prevLevel + 1,
+        };
+        const alreadyTracked = s.activeRunSkills.includes(upgradeType);
+        const activeRunSkills =
+          prevLevel === 0 && !alreadyTracked
+            ? [...s.activeRunSkills, upgradeType]
+            : s.activeRunSkills;
+        return {
+          matchSkills: nextSkills,
+          activeRunSkills,
+          gameState: "playing" as const,
+          levelUpOptions: [],
+        };
+      });
     } else {
       set((s) => ({
         matchBuffs: {
@@ -816,6 +843,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
+      activeRunSkills: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],

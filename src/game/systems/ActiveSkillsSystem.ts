@@ -2,7 +2,9 @@
 
 import type { Enemy } from "@/src/game/entities/Enemy";
 import type { MatchSkillsData, SkillsData } from "@/db/schema";
-import { SHOCK_SLOW_DURATION_MS } from "@/src/game/entities/Enemy";
+import {
+  ICE_VULNERABILITY_MULTIPLIER,
+} from "@/src/game/entities/Enemy";
 
 export const ACTIVE_SKILL_CYCLE_MS = 20_000;
 export const ACTIVE_SKILL_DURATION_MS = 3_000;
@@ -13,12 +15,17 @@ export const RICOCHET_ACTIVE_MS = 2_000;
 export const ICE_RANGE_RATIO = 0.4;
 /** Duração do VFX da onda de gelo (ms). */
 export const ICE_VFX_MS = 450;
-/** Duração do VFX da cadeia de raio (ms). */
-export const LIGHTNING_VFX_MS = 280;
+/** Duração do VFX do raio single-target (ms). */
+export const LIGHTNING_VFX_MS = 320;
 /** Velocidade do projétil elétrico (px/s). */
 export const LIGHTNING_PROJECTILE_SPEED = 920;
 export const LIGHTNING_PROJECTILE_RADIUS = 7;
-/** Alcance entre saltos da cadeia (horda densa). */
+/**
+ * Multiplicador base de burst do Raio (single-target).
+ * hits/damage granulares empilham em cima disso.
+ */
+export const LIGHTNING_BURST_BASE = 2.8;
+/** @deprecated Cadeia removida — Raio é single-target. */
 export const LIGHTNING_LINK_RADIUS = 280;
 /** @deprecated Preferir iceRadius dinâmico (40% do range). */
 export const ICE_WAVE_RADIUS = 2400;
@@ -146,14 +153,17 @@ function applyIceWave(
     if (enemy.isDead) continue;
     const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
     if (dist > iceRadius) continue;
-    enemy.applyStatus("freeze", now + freezeDurationMs);
+    enemy.applyStatus("freeze", now + freezeDurationMs, {
+      vulnerable: true,
+      damageTakenMultiplier: ICE_VULNERABILITY_MULTIPLIER,
+    });
     hit += 1;
   }
   return hit;
 }
 
 /**
- * Cadeia a partir de um origem (após impacto do projétil).
+ * @deprecated Raio é single-target; mantido só por compat de imports.
  */
 export function chainLightningTargets(
   enemies: Enemy[],
@@ -162,33 +172,26 @@ export function chainLightningTargets(
   targetCount: number,
   excludeIds: Set<string> = new Set(),
 ): Enemy[] {
-  const chain: Enemy[] = [];
-  const used = new Set(excludeIds);
-  let cx = originX;
-  let cy = originY;
+  void enemies;
+  void originX;
+  void originY;
+  void targetCount;
+  void excludeIds;
+  return [];
+}
 
-  for (let i = 0; i < targetCount; i++) {
-    const maxDist = i === 0 ? LIGHTNING_LINK_RADIUS * 1.4 : LIGHTNING_LINK_RADIUS;
-    let best: Enemy | null = null;
-    let bestDist = Infinity;
-
-    for (const enemy of enemies) {
-      if (used.has(enemy.id) || enemy.isDead) continue;
-      const dist = Math.hypot(enemy.x - cx, enemy.y - cy);
-      if (dist <= maxDist && dist < bestDist) {
-        best = enemy;
-        bestDist = dist;
-      }
-    }
-
-    if (!best) break;
-    chain.push(best);
-    used.add(best.id);
-    cx = best.x;
-    cy = best.y;
-  }
-
-  return chain;
+/** Dano de estouro single-target do Raio. */
+export function getLightningBurstDamage(
+  baseDamage: number,
+  lightningDamageLevel: number,
+  lightningHitsLevel: number,
+): number {
+  return (
+    baseDamage *
+    (LIGHTNING_BURST_BASE +
+      lightningDamageLevel * 0.55 +
+      lightningHitsLevel * 0.35)
+  );
 }
 
 /** Pontos em zigue-zague entre A e B (VFX). */
@@ -327,8 +330,11 @@ export function runActiveSkills(
         const dx = nearest.x - playerX;
         const dy = nearest.y - playerY;
         const len = Math.hypot(dx, dy) || 1;
-        const lightningDamage =
-          baseDamage * (1 + skills.lightning.damage * 0.2);
+        const lightningDamage = getLightningBurstDamage(
+          baseDamage,
+          skills.lightning.damage,
+          skills.lightning.hits,
+        );
         newLightningProjectiles.push({
           id: crypto.randomUUID(),
           x: playerX,

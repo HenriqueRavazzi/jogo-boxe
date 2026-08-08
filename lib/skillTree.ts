@@ -212,7 +212,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_shock_chance",
     name: "Chance de Raio",
-    description: "15% de raio em cadeia (3 alvos, 50% dano)",
+    description: "15% de raio: estouro no alvo + mini-stun",
     cost: 18,
     requires: "node_frost_chance",
     branch: "elements",
@@ -271,7 +271,7 @@ export type RicochetConfig = {
 
 /**
  * Config de ricochete (UI / meta): ciclo 25s, janela 2s.
- * Bounces = 2+lv, dano = 60% + 15%/lv.
+ * Bounces = min(5, 2+lv), dano = 60% + 15%/lv (com falloff 0.85 por salto no combate).
  */
 export function getRicochetConfig(
   skillTree: SkillTreeState,
@@ -281,7 +281,7 @@ export function getRicochetConfig(
   return {
     unlocked: isRicochetUnlocked(skillTree) || level > 0,
     cooldownMs: 25_000,
-    maxBounces: 2 + level,
+    maxBounces: Math.min(5, 2 + level),
     bounceDamagePercent: 0.6 + level * 0.15,
   };
 }

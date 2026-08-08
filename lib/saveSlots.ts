@@ -136,6 +136,7 @@ export function createDefaultSaveData(): SaveData {
     skills: cloneSkills(DEFAULT_SKILLS_DATA),
     unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
     ...DEFAULT_META_TREE,
+    prestigeLevel: 0,
   };
 }
 
@@ -179,6 +180,7 @@ export function normalizeSaveData(
     critChanceLevel: data.critChanceLevel ?? 0,
     critDamageLevel: data.critDamageLevel ?? 0,
     purpleDiamonds: data.purpleDiamonds ?? 0,
+    prestigeLevel: Math.max(0, Math.floor(data.prestigeLevel ?? 0)),
     skillTree,
     skills,
     unlockedSkills,
@@ -193,11 +195,14 @@ export function mergeSaveRow(row: {
     skillLevels?: SkillsData | LegacyFlatSkillsData;
   };
   purpleDiamonds?: number | null;
+  prestigeLevel?: number | null;
   skillsData?: SkillsData | LegacyFlatSkillsData | null;
 }): SaveData {
   return normalizeSaveData({
     ...row.saveData,
     purpleDiamonds: row.purpleDiamonds ?? row.saveData.purpleDiamonds ?? 0,
+    prestigeLevel:
+      row.prestigeLevel ?? row.saveData.prestigeLevel ?? 0,
     skills: normalizeSkills(
       row.skillsData ??
         row.saveData.skills ??

@@ -33,14 +33,14 @@ const DIFFICULTY_ROWS = [
     enemyHpMultiplier: 1.3,
     enemyDamageMultiplier: 1.2,
     enemySpeedMultiplier: 1.1,
-    goldDropMultiplier: 1.15,
+    goldDropMultiplier: 1.35,
   },
   {
     name: "Difícil",
     enemyHpMultiplier: 1.8,
     enemyDamageMultiplier: 1.5,
     enemySpeedMultiplier: 1.25,
-    goldDropMultiplier: 1.35,
+    goldDropMultiplier: 1.55,
   },
   {
     name: "Infernal",

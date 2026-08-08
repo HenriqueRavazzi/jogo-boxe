@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Coins, Gem } from "lucide-react";
+import { Coins, Gem, Sparkles } from "lucide-react";
 import { AdvancedSkillsPanel } from "@/components/AdvancedSkillsPanel";
 import { MetaTreePanel } from "@/components/MetaTreePanel";
 import { SaveMenu } from "@/components/SaveMenu";
@@ -20,6 +20,19 @@ type MainMenuProps = {
 
 type UpgradeTab = "gold" | "diamonds" | "skills";
 
+const PRESTIGE_SHAPE_LABEL: Record<number, string> = {
+  0: "Círculos",
+  1: "Quadrados",
+  2: "Triângulos",
+  3: "Hexágonos",
+  4: "Octógonos",
+};
+
+function prestigeShapeLabel(level: number): string {
+  if (level >= 5) return "Estrelas";
+  return PRESTIGE_SHAPE_LABEL[level] ?? "Círculos";
+}
+
 /**
  * Menu principal: saves dinâmicos, START, upgrades e skill tree.
  */
@@ -34,13 +47,26 @@ export function MainMenu({
   const gold = useGameStore((s) => s.gold);
   const gems = useGameStore((s) => s.gems);
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
+  const prestigeLevel = useGameStore((s) => s.prestigeLevel);
+  const canTriggerPrestige = useGameStore((s) => s.canTriggerPrestige);
+  const triggerPrestige = useGameStore((s) => s.triggerPrestige);
+  const getPrestigeMultiplier = useGameStore((s) => s.getPrestigeMultiplier);
   const difficulties = useGameStore((s) => s.difficulties);
   const selectedDifficultyId = useGameStore((s) => s.selectedDifficultyId);
   const setSelectedDifficulty = useGameStore((s) => s.setSelectedDifficulty);
   const configsLoaded = useGameStore((s) => s.configsLoaded);
   const [upgradeTab, setUpgradeTab] = useState<UpgradeTab>("gold");
+  const [confirmPrestige, setConfirmPrestige] = useState(false);
 
   const selected = difficulties.find((d) => d.id === selectedDifficultyId);
+  const prestigeReady = canTriggerPrestige();
+  const prestigeMul = getPrestigeMultiplier();
+  const nextShape = prestigeShapeLabel(prestigeLevel + 1);
+
+  const handlePrestige = () => {
+    if (!triggerPrestige()) return;
+    setConfirmPrestige(false);
+  };
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex">
@@ -87,6 +113,21 @@ export function MainMenu({
               </p>
               <p className="truncate text-sm font-bold tabular-nums text-violet-200">
                 {purpleDiamonds.toLocaleString("pt-BR")}
+              </p>
+            </div>
+          </div>
+          <div className="flex w-full items-center gap-2 rounded-xl border border-fuchsia-400/30 bg-fuchsia-500/10 px-3 py-2">
+            <Sparkles
+              className="h-4 w-4 shrink-0 text-fuchsia-300"
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-fuchsia-200/70">
+                Ascensão
+              </p>
+              <p className="truncate text-sm font-bold tabular-nums text-fuchsia-200">
+                Nv. {prestigeLevel} · +{Math.round((prestigeMul - 1) * 100)}% ·{" "}
+                {prestigeShapeLabel(prestigeLevel)}
               </p>
             </div>
           </div>
@@ -161,6 +202,50 @@ export function MainMenu({
                 Custa diamantes
               </span>
             </button>
+          )}
+
+          {!isGameOver && canPlay && (
+            <>
+              {!confirmPrestige ? (
+                <button
+                  type="button"
+                  disabled={!prestigeReady}
+                  onClick={() => setConfirmPrestige(true)}
+                  className="w-full rounded-xl border border-fuchsia-400/50 bg-fuchsia-500/15 py-3 text-sm font-bold uppercase tracking-wider text-fuchsia-100 transition hover:bg-fuchsia-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Fazer Prestígio / Ascender
+                  <span className="mt-0.5 block text-[10px] font-medium normal-case tracking-normal text-fuchsia-200/70">
+                    {prestigeReady
+                      ? `Mundo → ${nextShape} · +15% permanente`
+                      : "Requer HP≥10, Dano≥8, Tier≥2 ou AS/Range max"}
+                  </span>
+                </button>
+              ) : (
+                <div className="rounded-xl border border-fuchsia-400/40 bg-fuchsia-950/80 p-3">
+                  <p className="text-xs leading-relaxed text-fuchsia-100/90">
+                    Ascender reseta ouro e upgrades de base (e skills roxas
+                    granulares, com reembolso). Mantém diamantes, árvore meta e
+                    Ascensão. Inimigos viram {nextShape}.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrestige}
+                      className="flex-1 rounded-lg bg-fuchsia-500 py-2 text-xs font-bold uppercase tracking-wider text-white hover:bg-fuchsia-400"
+                    >
+                      Confirmar Ascensão
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmPrestige(false)}
+                      className="rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </aside>

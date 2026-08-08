@@ -181,6 +181,8 @@ export type SaveData = {
   metaHpLevel: number;
   metaLifeStealLevel: number;
   metaSkillRegenLevel: number;
+  /** Nível de Ascensão / Prestígio (bônus permanente + mundo mais difícil). */
+  prestigeLevel: number;
 };
 
 export const gameSaves = pgTable("game_saves", {
@@ -192,6 +194,8 @@ export const gameSaves = pgTable("game_saves", {
   saveData: jsonb("save_data").$type<SaveData>().notNull(),
   /** Purple Diamonds (também espelhado em save_data). */
   purpleDiamonds: integer("purple_diamonds").notNull().default(0),
+  /** Nível de Ascensão / Prestígio. */
+  prestigeLevel: integer("prestige_level").notNull().default(0),
   /** Stats granulares de skills avançadas (também espelhado em save_data.skills). */
   skillsData: jsonb("skills_data")
     .$type<SkillsData>()

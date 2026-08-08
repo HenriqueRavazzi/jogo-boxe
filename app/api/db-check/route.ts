@@ -55,6 +55,7 @@ export async function GET() {
         .set({
           saveData: probeSaveData,
           purpleDiamonds: probeSaveData.purpleDiamonds,
+          prestigeLevel: probeSaveData.prestigeLevel ?? 0,
           skillsData: probeSaveData.skills,
           updatedAt: new Date(),
         })
@@ -69,6 +70,7 @@ export async function GET() {
           password: "probe",
           saveData: probeSaveData,
           purpleDiamonds: probeSaveData.purpleDiamonds,
+          prestigeLevel: probeSaveData.prestigeLevel ?? 0,
           skillsData: probeSaveData.skills,
         })
         .returning();
@@ -105,6 +107,7 @@ export async function GET() {
       "metaHpLevel",
       "metaLifeStealLevel",
       "metaSkillRegenLevel",
+      "prestigeLevel",
     ];
 
     const saveData = readBack?.saveData;
@@ -118,6 +121,7 @@ export async function GET() {
       "password",
       "save_data",
       "purple_diamonds",
+      "prestige_level",
       "skills_data",
       "updated_at",
     ];

@@ -129,7 +129,7 @@ const SPECIAL_SKILL_POOL: {
     type: "ice",
     category: "ice",
     name: "Gelo",
-    short: "Chance de congelar ao socar",
+    short: "Congela a área e deixa vulnerável (+30% dano)",
   },
   {
     type: "fire",
@@ -141,7 +141,7 @@ const SPECIAL_SKILL_POOL: {
     type: "lightning",
     category: "lightning",
     name: "Raio",
-    short: "Chance de raio em cadeia + slow",
+    short: "Estouro massivo no alvo mais próximo + stun",
   },
 ];
 
@@ -179,11 +179,19 @@ export type GenerateUpgradeOptionsContext = {
   unlockedSkills: UnlockedSkillsData;
   matchSkills: MatchSkillsData;
   skills: SkillsData;
+  /**
+   * Skills especiais já escolhidas nesta run (máx. MAX_ACTIVE_RUN_SKILLS).
+   * Com a lista cheia, só upgrades dessas skills entram na roleta.
+   */
+  activeRunSkills?: SpecialSkillKey[];
   /** Alcance efetivo atual (base × buffs). */
   effectiveRange?: number;
   /** Cooldown efetivo atual em ms (base / buff de velocidade). */
   effectiveCooldownMs?: number;
 };
+
+/** Máximo de habilidades especiais distintas por partida. */
+export const MAX_ACTIVE_RUN_SKILLS = 2;
 
 /**
  * Roleta por faixas cumulativas: Math.random() em [0, 1) vs pesos normalizados.
@@ -327,6 +335,7 @@ export function getEligibleStatCategories(ctx?: {
 /**
  * Gera N cartas com raridade ponderada e categorias distintas.
  * Por slot: 15% tenta skill especial elegível; senão, upgrade de status.
+ * No máx. MAX_ACTIVE_RUN_SKILLS skills novas por run — depois só upgrades delas.
  */
 export function generateUpgradeOptions(
   count = 3,
@@ -336,12 +345,23 @@ export function generateUpgradeOptions(
   const matchSkills = ctx?.matchSkills;
   const skills = ctx?.skills;
 
+  const activeFromCtx = ctx?.activeRunSkills ?? [];
+  const activeFromLevels = SPECIAL_SKILL_KEYS.filter(
+    (k) => (matchSkills?.[k] ?? 0) > 0,
+  );
+  const activeRunSkills = Array.from(
+    new Set<SpecialSkillKey>([...activeFromCtx, ...activeFromLevels]),
+  );
+  const atSkillCap = activeRunSkills.length >= MAX_ACTIVE_RUN_SKILLS;
+
   const eligibleSpecials: SpecialSkillKey[] = [];
   if (unlocked && matchSkills && skills) {
     for (const key of SPECIAL_SKILL_KEYS) {
-      if (canOfferSpecialSkill(key, unlocked, matchSkills, skills)) {
-        eligibleSpecials.push(key);
-      }
+      if (!canOfferSpecialSkill(key, unlocked, matchSkills, skills)) continue;
+      const alreadyPicked = activeRunSkills.includes(key);
+      // Cap atingido: só upgrades das skills já ativas na run
+      if (atSkillCap && !alreadyPicked) continue;
+      eligibleSpecials.push(key);
     }
   }
 

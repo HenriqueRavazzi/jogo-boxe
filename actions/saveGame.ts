@@ -20,6 +20,7 @@ function columnsFromSave(saveData: SaveData) {
   return {
     saveData: normalized,
     purpleDiamonds: normalized.purpleDiamonds,
+    prestigeLevel: normalized.prestigeLevel ?? 0,
     skillsData: normalized.skills ?? DEFAULT_SKILLS_DATA,
   };
 }
@@ -45,6 +46,7 @@ export async function listSaves(): Promise<{
         saveName: gameSaves.saveName,
         saveData: gameSaves.saveData,
         purpleDiamonds: gameSaves.purpleDiamonds,
+        prestigeLevel: gameSaves.prestigeLevel,
         updatedAt: gameSaves.updatedAt,
       })
       .from(gameSaves)

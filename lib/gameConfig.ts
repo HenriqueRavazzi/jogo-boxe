@@ -101,7 +101,7 @@ export const FALLBACK_DIFFICULTIES: DifficultyConfig[] = [
     enemyHpMultiplier: 1.3,
     enemyDamageMultiplier: 1.2,
     enemySpeedMultiplier: 1.1,
-    goldDropMultiplier: 1.15,
+    goldDropMultiplier: 1.35,
   },
   {
     id: 3,
@@ -109,7 +109,7 @@ export const FALLBACK_DIFFICULTIES: DifficultyConfig[] = [
     enemyHpMultiplier: 1.8,
     enemyDamageMultiplier: 1.5,
     enemySpeedMultiplier: 1.25,
-    goldDropMultiplier: 1.35,
+    goldDropMultiplier: 1.55,
   },
   {
     id: 4,

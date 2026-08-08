@@ -263,16 +263,32 @@ function scaleFromType(
   // Escala visual acompanha degraus de poder
   const visualScale = getEnemyVisualScale(config.scale, timeAlive);
 
+  const prestigeLevel = Math.max(
+    0,
+    useGameStore.getState().prestigeLevel ?? 0,
+  );
+  const prestigeHpMul = Math.pow(1.4, prestigeLevel);
+  const prestigeDmgMul = Math.pow(1.25, prestigeLevel);
+  const prestigeSpdMul = Math.pow(1.15, prestigeLevel);
+  // Hexágonos+ (prestige ≥ 3): blindagem extra
+  const armorMul = prestigeLevel >= 3 ? 1.12 : 1;
+  // Triângulos (prestige ≥ 2): mais agressivos / rápidos
+  const aggressionMul = prestigeLevel >= 2 ? 1.1 : 1;
+
   return {
-    hp: Math.max(1, Math.floor(scaledHp * overflowHp)),
-    speed: speedPx,
-    damage,
+    hp: Math.max(1, Math.floor(scaledHp * overflowHp * prestigeHpMul * armorMul)),
+    speed: speedPx * prestigeSpdMul * aggressionMul,
+    damage: Number(
+      Math.max(0.4, damage * prestigeDmgMul).toFixed(2),
+    ),
     attackCooldown: config.attackSpeed,
     radius: Math.max(6, Math.round(ENEMY_BASE_RADIUS * visualScale)),
     color: config.color,
     type: (config.kind === "boss" ? "boss" : config.kind) as EnemyType,
     projectileDamage:
-      config.kind === "ranged" ? Number(damage.toFixed(2)) : 0,
+      config.kind === "ranged"
+        ? Number(Math.max(0.4, damage * prestigeDmgMul).toFixed(2))
+        : 0,
   };
 }
 
@@ -292,7 +308,17 @@ function spawnFromConfig(
     difficulty,
     overflow,
   );
-  const rewards = rewardsFromConfig(config);
+  const baseRewards = rewardsFromConfig(config);
+  const prestigeLevel = Math.max(
+    0,
+    useGameStore.getState().prestigeLevel ?? 0,
+  );
+  const rewardScale = Math.pow(1.3, prestigeLevel);
+  const rewards = {
+    ...baseRewards,
+    xpReward: Math.max(1, Math.round(baseRewards.xpReward * rewardScale)),
+    goldReward: Number((baseRewards.goldReward * rewardScale).toFixed(2)),
+  };
   const enemy = Enemy.spawnAtEdge(canvasWidth, canvasHeight, {
     hp: scaled.hp,
     speed: scaled.speed,

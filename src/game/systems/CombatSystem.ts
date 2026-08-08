@@ -16,7 +16,6 @@ import {
 } from "@/store/useGameStore";
 import {
   buildZigzagPoints,
-  chainLightningTargets,
   createActiveSkillPulseState,
   isRicochetActive,
   LIGHTNING_VFX_MS,
@@ -27,6 +26,7 @@ import {
 } from "@/src/game/systems/ActiveSkillsSystem";
 import type { MatchSkillsData } from "@/db/schema";
 import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
+import { LIGHTNING_STUN_MS } from "@/src/game/entities/Enemy";
 
 export type MatchBuffsInput = {
   attackSpeed: number;
@@ -155,6 +155,13 @@ export const PUNCH_DURATION_MS = 150;
 const PUNCH_STAGGER_MS = 40;
 export const RICOCHET_SEGMENT_DURATION_MS = 120;
 export const RICOCHET_SEGMENT_STAGGER_MS = 55;
+/** Redução de dano por salto consecutivo (1º bounce = 85% do base, 2º ≈ 72%, …). */
+export const RICOCHET_BOUNCE_FALLOFF = 0.85;
+/**
+ * Teto rígido de alvos na cadeia (alvo do soco + saltos).
+ * Hits granulares aumentam até este limite — evita limpar a tela inteira.
+ */
+export const RICOCHET_MAX_TARGETS = 5;
 export const RANGED_PROJECTILE_SPEED = 340;
 export const RANGED_PROJECTILE_RADIUS = 5;
 
@@ -164,6 +171,7 @@ export const FREEZE_DURATION_MS = 2000;
 export const SHOCK_VISUAL_MS = 450;
 export const CHAIN_LIGHTNING_RADIUS = 130;
 export const CHAIN_LIGHTNING_TARGETS = 3;
+/** @deprecated Raio não usa mais cadeia. */
 export const CHAIN_DAMAGE_MULT = 0.5;
 
 /** Cadeia: saltos a partir de um origem; `used` evita alvos já atingidos. */
@@ -241,10 +249,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const gameState = useGameStore.getState();
   const matchSkills = inputMatchSkills ?? { ...DEFAULT_MATCH_SKILLS };
   const skills = gameState.skills;
-  const shockSlowAmount = Math.min(
-    0.85,
-    0.2 + skills.lightning.hits * 0.1,
-  );
   const fireLevel = matchSkills.fire;
   /** maxStacks da árvore roxa (fire.damage); mínimo 1 com carta in-run. */
   const fireMaxStacks = Math.max(1, 1 + skills.fire.damage);
@@ -252,8 +256,11 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     getLifeStealRatio(gameState.skillTree) +
     getMetaLifeStealRatio(gameState.metaLifeStealLevel);
   const metaSkillRegenLevel = gameState.metaSkillRegenLevel;
-  // Ricochete: hits / damage (ciclo gerenciado em ActiveSkillsSystem)
-  const maxBounces = 2 + skills.ricochet.hits;
+  // Ricochete: hits granulares até teto rígido; dano cai por salto
+  const maxBounces = Math.min(
+    RICOCHET_MAX_TARGETS,
+    2 + skills.ricochet.hits,
+  );
   const bounceDamageMult = 0.6 + skills.ricochet.damage * 0.15;
   const knockbackPower =
     knockbackImpulse ??
@@ -319,13 +326,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     });
   }
 
-  // Projéteis de raio: move + impacto + cadeia em zigue-zague
+  // Projéteis de raio: move + impacto single-target (burst + mini-stun)
   let skillDamageFromLightning = activeSkills.skillDamageDealt;
   let skillHitsFromLightning = activeSkills.skillHitsLanded;
   const lightningProjectiles: LightningProjectile[] = [
     ...activeSkills.newLightningProjectiles,
   ];
-  const maxLightningHits = 2 + skills.lightning.hits;
   const boltMargin = 40;
   const pendingLightningSplats: HitSplat[] = [];
 
@@ -343,12 +349,24 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
     let hitEnemy: Enemy | null = null;
     let hitDist = Infinity;
+    // Preferência: alvo travado no disparo; senão o mais próximo do projétil
     for (const enemy of enemies) {
       if (enemy.isDead) continue;
+      if (bolt.targetEnemyId && enemy.id !== bolt.targetEnemyId) continue;
       const dist = Math.hypot(nx - enemy.x, ny - enemy.y);
       if (dist <= enemy.radius + bolt.radius && dist < hitDist) {
         hitEnemy = enemy;
         hitDist = dist;
+      }
+    }
+    if (!hitEnemy && bolt.targetEnemyId) {
+      for (const enemy of enemies) {
+        if (enemy.isDead) continue;
+        const dist = Math.hypot(nx - enemy.x, ny - enemy.y);
+        if (dist <= enemy.radius + bolt.radius && dist < hitDist) {
+          hitEnemy = enemy;
+          hitDist = dist;
+        }
       }
     }
 
@@ -357,47 +375,26 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       continue;
     }
 
-    // Impacto no 1º alvo + cadeia
-    const chainTargets = chainLightningTargets(
-      enemies,
-      hitEnemy.x,
-      hitEnemy.y,
-      Math.max(0, maxLightningHits - 1),
-      new Set([hitEnemy.id]),
-    );
-    const allHits = [hitEnemy, ...chainTargets];
-    const pathPoints: { x: number; y: number }[] = [
-      { x: player.x, y: player.y },
-    ];
+    const dmg = bolt.damage;
+    hitEnemy.takeDamage(dmg, now);
+    hitEnemy.applyStun(now, LIGHTNING_STUN_MS);
+    questEvents.push({ type: "inflict_shock", amount: 1 });
+    skillDamageFromLightning += dmg * hitEnemy.getDamageTakenMultiplier(now);
+    skillHitsFromLightning += 1;
+    pendingLightningSplats.push({
+      id: crypto.randomUUID(),
+      x: hitEnemy.x,
+      y: hitEnemy.y,
+      text: String(Math.max(1, Math.round(dmg * hitEnemy.getDamageTakenMultiplier(now)))),
+      age: 0,
+      color: "#e0f2fe",
+      scale: 1.35,
+    });
 
-    let prevX = player.x;
-    let prevY = player.y;
-    for (let i = 0; i < allHits.length; i++) {
-      const target = allHits[i]!;
-      const dmg =
-        i === 0 ? bolt.damage : bolt.damage * CHAIN_DAMAGE_MULT;
-      target.hp -= dmg;
-      target.applyShockSlow(shockSlowAmount, now);
-      questEvents.push({ type: "inflict_shock", amount: 1 });
-      skillDamageFromLightning += dmg;
-      skillHitsFromLightning += 1;
-      pendingLightningSplats.push({
-        id: crypto.randomUUID(),
-        x: target.x,
-        y: target.y,
-        text: String(Math.max(1, Math.round(dmg))),
-        age: 0,
-        color: "#e0f2fe",
-      });
-      const zig = buildZigzagPoints(prevX, prevY, target.x, target.y);
-      pathPoints.push(...zig.slice(1));
-      prevX = target.x;
-      prevY = target.y;
-    }
-
+    const zig = buildZigzagPoints(player.x, player.y, hitEnemy.x, hitEnemy.y);
     skillVfx.push({
       kind: "lightning",
-      points: pathPoints,
+      points: zig,
       startedAt: now,
       expiresAt: now + LIGHTNING_VFX_MS,
     });
@@ -659,10 +656,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
         addDamage(enemy.id, damage, "physical");
 
-        // Ricochete ativo: cadeia a partir do alvo do soco
+        // Ricochete ativo: cadeia a partir do alvo do soco (1º alvo = dano cheio do soco)
         if (ricochetWindowActive && maxBounces > 1) {
-          const bounceDamage = skillPunchBase * bounceDamageMult;
-          const displayBounce = Math.max(1, Math.round(bounceDamage));
+          const baseBounceDamage = skillPunchBase * bounceDamageMult;
           const bounceChain = chainRicochet(
             living,
             enemy.x,
@@ -686,6 +682,15 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           let prevY = enemy.y;
           for (let b = 0; b < bounceChain.length; b++) {
             const target = bounceChain[b]!;
+            // bounceIndex 1 = 2º alvo (85%), 2 = 3º (~72%), …
+            const bounceIndex = b + 1;
+            const currentBounceDamage =
+              baseBounceDamage * Math.pow(RICOCHET_BOUNCE_FALLOFF, bounceIndex);
+            const displayBounce = Math.max(
+              1,
+              Math.round(currentBounceDamage),
+            );
+
             newAttacks.push({
               id: crypto.randomUUID(),
               startX: prevX,
@@ -711,7 +716,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
               color: "#fbbf24",
             });
 
-            addDamage(target.id, bounceDamage, "skill");
+            addDamage(target.id, currentBounceDamage, "skill");
             target.applyKnockback(
               target.x - prevX,
               target.y - prevY,
@@ -764,7 +769,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           physicalDealt += absorbed * (physicalPart / dealt);
           skillDealt += absorbed * (skillPart / dealt);
         }
-        if (enemy.takeDamage(dealt)) {
+        if (enemy.takeDamage(dealt, now)) {
           pushKill(enemy);
         } else {
           nextLiving.push(enemy);
