@@ -76,6 +76,22 @@ import {
   type SkillNodeId,
   type SkillTreeState,
 } from "@/lib/skillTree";
+import {
+  advancePityAfterPull,
+  getEquippedTeamBuffs as calcEquippedTeamBuffs,
+  getTeamRecruitCost as calcTeamRecruitCost,
+  MAX_EQUIPPED_TEAM_MEMBERS,
+  MAX_TEAM_MEMBER_LEVEL,
+  normalizeEquippedTeamIds,
+  normalizeTeamMembersOwned,
+  normalizeTeamPity,
+  rollTeamMemberId,
+  type EquippedTeamBuffs,
+  type RecruitTeamResult,
+  type TeamMemberId,
+  type TeamMembersOwned,
+  type TeamPityState,
+} from "@/lib/teamMembers";
 
 export {
   getSkillDamageTakenMultiplier,
@@ -166,6 +182,8 @@ export type GameStoreState = {
   metaHpLevel: number;
   metaLifeStealLevel: number;
   metaSkillRegenLevel: number;
+  /** Níveis de chance de parry automático (Diamantes). */
+  metaParryChance: number;
   /**
    * Nível de Ascensão. Cada nível: +15% dano/ouro/XP passivos
    * e inimigos mais fortes (formas geométricas).
@@ -181,6 +199,12 @@ export type GameStoreState = {
   totalMobsKilled: number;
   /** Abates cumulativos de bosses. */
   totalBossesKilled: number;
+  /** Pity / contador de pulls do gacha da equipe. */
+  teamPity: TeamPityState;
+  /** Níveis dos membros da equipe. */
+  teamMembersOwned: TeamMembersOwned;
+  /** Até 3 membros equipados. */
+  equippedTeamMemberIds: TeamMemberId[];
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
   /** Lista de dificuldades do Neon. */
@@ -245,8 +269,8 @@ export type GameStoreState = {
    */
   enforcePurpleSkillCap: () => number;
   /**
-   * Ascensão: +1 prestige, reseta ouro/upgrades de base/skills granulares.
-   * Mantém diamantes, roxos, desbloqueios, meta tree e skill tree verde.
+   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades/árvores/skills.
+   * Mantém passivas de Ascensão, shards e equipe.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -258,8 +282,18 @@ export type GameStoreState = {
   getMagnetRadiusMultiplier: () => number;
   /** Ouro bônus ao iniciar run (Herança de Ouro). */
   getStartingGoldBonus: () => number;
-  /** Bônus absoluto na chance de diamante (Sorte do Campeão). */
+  /** Bônus absoluto na chance de diamante (Sorte do Campeão + equipe). */
   getDiamondLuckBonus: () => number;
+  /** Buffs agregados dos membros equipados. */
+  getEquippedTeamBuffs: () => EquippedTeamBuffs;
+  /** Custo atual do recrutamento da equipe. */
+  getTeamRecruitCost: () => { gold: number; gems: number };
+  /** Pull do gacha da equipe (ouro + diamantes). */
+  recruitTeamMember: () => RecruitTeamResult;
+  /** Equipa membro (máx. 3 slots). */
+  equipTeamMember: (id: TeamMemberId) => boolean;
+  /** Remove membro do slot. */
+  unequipTeamMember: (id: TeamMemberId) => void;
   /** Shards que seriam ganhos se ascender agora. */
   previewAscensionShards: () => number;
   upgradeHP: () => boolean;
@@ -415,7 +449,19 @@ export function planSequentialGoldUpgrades(options: {
   return { count, totalCost };
 }
 
-export function getMetaTreeCostAt(level: number, prestigeLevel = 0): number {
+export function getMetaTreeCostAt(
+  level: number,
+  prestigeLevel = 0,
+  type?: MetaTreeUpgradeType,
+): number {
+  if (type === "metaParryChance") {
+    return getUpgradeCost(
+      META_PARRY_COST_BASE,
+      level,
+      prestigeLevel,
+      META_PARRY_COST_GROWTH,
+    );
+  }
   return getUpgradeCost(META_TREE_COST_BASE, level, prestigeLevel);
 }
 
@@ -448,7 +494,9 @@ export const MAX_UPGRADE_LEVELS = {
 export const MAX_META_TREE_LEVEL = 20;
 /** Teto de Dano / Vida permanentes (Diamantes). */
 export const MAX_META_DAMAGE_HP_LEVEL = 40;
-/** Por nó: dano/vida com teto 40; demais mantêm limite. */
+/** Teto de chance de parry (Diamantes). */
+export const MAX_META_PARRY_LEVEL = 50;
+/** Por nó: dano/vida com teto 40; parry 50; demais mantêm limite. */
 export const MAX_META_TREE_LEVELS: Record<
   MetaTreeUpgradeType,
   number
@@ -458,8 +506,12 @@ export const MAX_META_TREE_LEVELS: Record<
   metaKnockbackLevel: MAX_META_TREE_LEVEL,
   metaLifeStealLevel: MAX_META_TREE_LEVEL,
   metaSkillRegenLevel: MAX_META_TREE_LEVEL,
+  metaParryChance: MAX_META_PARRY_LEVEL,
 };
 export const META_TREE_COST_BASE = 5;
+/** Parry: custo base alto e crescimento íngreme (até nível 50). */
+export const META_PARRY_COST_BASE = 35;
+export const META_PARRY_COST_GROWTH = 1.32;
 /** Buff permanente por nível (Diamantes) — reforçado. */
 export const META_DAMAGE_PER_LEVEL = 6;
 export const META_HP_PER_LEVEL = 30;
@@ -468,6 +520,10 @@ export const META_KNOCKBACK_PER_LEVEL = 1.5;
 export const META_LIFE_STEAL_PERCENT_PER_LEVEL = 0.5;
 export const META_SKILL_REGEN_DAMAGE_RATIO = 0.01;
 export const META_SKILL_REGEN_HIT_HEAL = 0.5;
+/** Chance base de parry (sempre ativa). */
+export const META_PARRY_BASE_CHANCE = 0.01;
+/** +0.1% de chance de parry por nível (nível 50 → +5%). */
+export const META_PARRY_CHANCE_PER_LEVEL = 0.001;
 
 export function isLevelCapped(level: number, maxLevel: number): boolean {
   return Number.isFinite(maxLevel) && level >= maxLevel;
@@ -508,6 +564,15 @@ export function getMetaLifeStealRatio(level: number): number {
   );
 }
 
+/** Chance efetiva de parry: 1% base + 0.1% × nível (teto 50). */
+export function getMetaParryChance(level: number): number {
+  const capped = Math.min(
+    MAX_META_PARRY_LEVEL,
+    Math.max(0, Math.floor(level)),
+  );
+  return META_PARRY_BASE_CHANCE + capped * META_PARRY_CHANCE_PER_LEVEL;
+}
+
 /** Cura por dano/hits de skills especiais (Gelo/Fogo/Raio/Ricochete). */
 export function getMetaSkillRegenHealing(
   level: number,
@@ -529,6 +594,7 @@ function getMetaTreeLevel(
     metaHpLevel: number;
     metaLifeStealLevel: number;
     metaSkillRegenLevel: number;
+    metaParryChance: number;
   },
   type: MetaTreeUpgradeType,
 ): number {
@@ -838,12 +904,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   metaHpLevel: defaults.metaHpLevel,
   metaLifeStealLevel: defaults.metaLifeStealLevel,
   metaSkillRegenLevel: defaults.metaSkillRegenLevel,
+  metaParryChance: defaults.metaParryChance,
   prestigeLevel: defaults.prestigeLevel ?? 0,
   ascensionShards: defaults.ascensionShards ?? 0,
   ascensionPassives: normalizeAscensionPassives(defaults.ascensionPassives),
   milestoneQuests: createDefaultMilestoneQuests(),
   totalMobsKilled: defaults.totalMobsKilled ?? 0,
   totalBossesKilled: defaults.totalBossesKilled ?? 0,
+  teamPity: normalizeTeamPity(defaults.teamPity),
+  teamMembersOwned: normalizeTeamMembersOwned(defaults.teamMembersOwned),
+  equippedTeamMemberIds: normalizeEquippedTeamIds(
+    defaults.equippedTeamMemberIds,
+    normalizeTeamMembersOwned(defaults.teamMembersOwned),
+  ),
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
@@ -907,6 +980,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ),
       metaLifeStealLevel: n.metaLifeStealLevel,
       metaSkillRegenLevel: n.metaSkillRegenLevel,
+      metaParryChance: Math.min(
+        MAX_META_PARRY_LEVEL,
+        Math.max(0, Math.floor(n.metaParryChance ?? 0)),
+      ),
       prestigeLevel: Math.max(0, Math.floor(n.prestigeLevel ?? 0)),
       ascensionShards: Math.max(0, Math.floor(n.ascensionShards ?? 0)),
       ascensionPassives: normalizeAscensionPassives(n.ascensionPassives),
@@ -921,6 +998,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ),
       totalMobsKilled: Math.max(0, Math.floor(n.totalMobsKilled ?? 0)),
       totalBossesKilled: Math.max(0, Math.floor(n.totalBossesKilled ?? 0)),
+      teamPity: normalizeTeamPity(n.teamPity),
+      teamMembersOwned: normalizeTeamMembersOwned(n.teamMembersOwned),
+      equippedTeamMemberIds: normalizeEquippedTeamIds(
+        n.equippedTeamMemberIds,
+        normalizeTeamMembersOwned(n.teamMembersOwned),
+      ),
     });
     if (refund > 0) {
       void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
@@ -975,12 +1058,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaHpLevel: s.metaHpLevel,
       metaLifeStealLevel: s.metaLifeStealLevel,
       metaSkillRegenLevel: s.metaSkillRegenLevel,
+      metaParryChance: s.metaParryChance,
       prestigeLevel: s.prestigeLevel,
       ascensionShards: s.ascensionShards,
       ascensionPassives: normalizeAscensionPassives(s.ascensionPassives),
       milestoneQuests: normalizeMilestoneQuests(s.milestoneQuests),
       totalMobsKilled: Math.max(0, Math.floor(s.totalMobsKilled)),
       totalBossesKilled: Math.max(0, Math.floor(s.totalBossesKilled)),
+      teamPity: normalizeTeamPity(s.teamPity),
+      teamMembersOwned: normalizeTeamMembersOwned(s.teamMembersOwned),
+      equippedTeamMemberIds: normalizeEquippedTeamIds(
+        s.equippedTeamMemberIds,
+        normalizeTeamMembersOwned(s.teamMembersOwned),
+      ),
     };
   },
 
@@ -1078,7 +1168,82 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     startingGoldBonusAt(get().ascensionPassives.startingGold),
 
   getDiamondLuckBonus: () =>
-    diamondLuckBonusAt(get().ascensionPassives.diamondLuck),
+    diamondLuckBonusAt(get().ascensionPassives.diamondLuck) +
+    calcEquippedTeamBuffs(
+      get().teamMembersOwned,
+      get().equippedTeamMemberIds,
+    ).diamondLuckBonus,
+
+  getEquippedTeamBuffs: () =>
+    calcEquippedTeamBuffs(
+      get().teamMembersOwned,
+      get().equippedTeamMemberIds,
+    ),
+
+  getTeamRecruitCost: () =>
+    calcTeamRecruitCost(get().teamPity.totalPulls),
+
+  recruitTeamMember: () => {
+    const pity = normalizeTeamPity(get().teamPity);
+    const cost = calcTeamRecruitCost(pity.totalPulls);
+    if (get().gold < cost.gold || get().gems < cost.gems) {
+      return { ok: false, reason: "funds" };
+    }
+
+    const { memberId, tier } = rollTeamMemberId(pity);
+    const owned = normalizeTeamMembersOwned(get().teamMembersOwned);
+    const previous = owned[memberId] ?? 0;
+    const nextLevel =
+      previous <= 0
+        ? 1
+        : Math.min(MAX_TEAM_MEMBER_LEVEL, previous + 1);
+    const nextOwned = { ...owned, [memberId]: nextLevel };
+    const nextPity = advancePityAfterPull(pity, tier);
+
+    set((s) => {
+      let equipped = [...s.equippedTeamMemberIds];
+      if (
+        previous <= 0 &&
+        equipped.length < MAX_EQUIPPED_TEAM_MEMBERS &&
+        !equipped.includes(memberId)
+      ) {
+        equipped = [...equipped, memberId];
+      }
+      return {
+        gold: s.gold - cost.gold,
+        gems: s.gems - cost.gems,
+        teamMembersOwned: nextOwned,
+        teamPity: nextPity,
+        equippedTeamMemberIds: equipped,
+      };
+    });
+
+    return {
+      ok: true,
+      memberId,
+      tier,
+      isDuplicate: previous > 0,
+      level: nextLevel,
+      goldSpent: cost.gold,
+      gemsSpent: cost.gems,
+      totalPulls: nextPity.totalPulls,
+    };
+  },
+
+  equipTeamMember: (id) => {
+    const owned = get().teamMembersOwned;
+    if ((owned[id] ?? 0) <= 0) return false;
+    const current = get().equippedTeamMemberIds;
+    if (current.includes(id)) return true;
+    if (current.length >= MAX_EQUIPPED_TEAM_MEMBERS) return false;
+    set({ equippedTeamMemberIds: [...current, id] });
+    return true;
+  },
+
+  unequipTeamMember: (id) =>
+    set((s) => ({
+      equippedTeamMemberIds: s.equippedTeamMemberIds.filter((x) => x !== id),
+    })),
 
   getAscensionPassiveCost: (id) => {
     const level = get().ascensionPassives[id] ?? 0;
@@ -1107,17 +1272,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   /**
-   * Ascensão: +1 prestige + Ascension Shards; reseta ouro/upgrades/skills granulares.
-   * Mantém diamantes, meta, passivas de Ascensão e shards acumulados.
+   * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
+   * roxos), upgrades de base, árvore de skills, árvore de diamantes, desbloqueios
+   * e skills granulares. Mantém passivas de Ascensão, shards, equipe e kills.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
 
-    const invested = getTotalPurpleSkillInvestment(
-      get().skills,
-      get().prestigeLevel,
-    );
-    const refund = Math.floor(invested * SKILL_TREE_RESPEC_REFUND_RATE);
     const fresh = createDefaultSaveData();
     const current = get();
     const shardsGained = calcAscensionShardsGained({
@@ -1133,7 +1294,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       prestigeLevel: s.prestigeLevel + 1,
       ascensionShards: s.ascensionShards + shardsGained,
       gold: fresh.gold,
-      purpleDiamonds: s.purpleDiamonds + refund,
+      gems: fresh.gems,
+      purpleDiamonds: fresh.purpleDiamonds,
       maxHpLevel: fresh.maxHpLevel,
       baseDamageLevel: fresh.baseDamageLevel,
       baseDamage: fresh.baseDamage,
@@ -1149,6 +1311,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       baseKnockbackPower: fresh.baseKnockbackPower,
       critChanceLevel: fresh.critChanceLevel,
       critDamageLevel: fresh.critDamageLevel,
+      skillTree: { ...DEFAULT_SKILL_TREE },
+      unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+      ...DEFAULT_META_TREE,
       skills: {
         ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
         ice: { ...DEFAULT_SKILLS_DATA.ice },
@@ -1430,10 +1595,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getKnockbackPower: () => {
     const s = get();
+    const prestigeMul = s.getPrestigeMultiplier();
     return (
       getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
-      Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL +
-      getSkillKnockbackBonus(s.skillTree)
+      Math.max(0, s.metaKnockbackLevel) *
+        META_KNOCKBACK_PER_LEVEL *
+        prestigeMul +
+      getSkillKnockbackBonus(s.skillTree) * prestigeMul
     );
   },
 
@@ -1443,16 +1611,32 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getCritDamageUpgradeCost: () =>
     getCritDamageCostAt(get().critDamageLevel, get().prestigeLevel),
 
-  getCritChance: () =>
-    Math.min(
+  getCritChance: () => {
+    const team = calcEquippedTeamBuffs(
+      get().teamMembersOwned,
+      get().equippedTeamMemberIds,
+    );
+    const prestigeMul = get().getPrestigeMultiplier();
+    return Math.min(
       MAX_CRIT_CHANCE,
       getCritChanceAt(get().critChanceLevel) +
-        getSkillCritChanceBonus(get().skillTree),
-    ),
+        getSkillCritChanceBonus(get().skillTree) * prestigeMul +
+        team.critChanceBonus,
+    );
+  },
 
-  getCritDamageMultiplier: () =>
-    getCritDamageMultiplierAt(get().critDamageLevel) +
-    getSkillCritDamageBonus(get().skillTree),
+  getCritDamageMultiplier: () => {
+    const team = calcEquippedTeamBuffs(
+      get().teamMembersOwned,
+      get().equippedTeamMemberIds,
+    );
+    const prestigeMul = get().getPrestigeMultiplier();
+    return (
+      getCritDamageMultiplierAt(get().critDamageLevel) +
+      getSkillCritDamageBonus(get().skillTree) * prestigeMul +
+      team.critDamageBonus
+    );
+  },
 
   getXpBonusUpgradeCost: () => {
     const level = get().xpBonusLevel;
@@ -1466,13 +1650,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     xpMultiplierAt(get().xpBonusLevel) * get().getPrestigeMultiplier(),
 
   getMetaTreeUpgradeCost: (type) =>
-    getMetaTreeCostAt(getMetaTreeLevel(get(), type), get().prestigeLevel),
+    getMetaTreeCostAt(
+      getMetaTreeLevel(get(), type),
+      get().prestigeLevel,
+      type,
+    ),
 
   upgradeMetaTree: (type) => {
     const current = getMetaTreeLevel(get(), type);
     const maxLevel = getMetaTreeMaxLevel(type);
     if (isLevelCapped(current, maxLevel)) return false;
-    const cost = getMetaTreeCostAt(current, get().prestigeLevel);
+    const cost = getMetaTreeCostAt(current, get().prestigeLevel, type);
     if (get().gems < cost) return false;
     set((s) => ({
       gems: s.gems - cost,
@@ -1495,6 +1683,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const skillCd = skillCooldownReduction(tree);
     const lifeStealLevel = getLifeStealLevel(tree);
     const metaLifeSteal = getMetaLifeStealRatio(s.metaLifeStealLevel);
+    const team = calcEquippedTeamBuffs(
+      s.teamMembersOwned,
+      s.equippedTeamMemberIds,
+    );
 
     const goldHp = cfg.baseHp + (s.maxHpLevel - 1) * HP_PER_LEVEL;
     const metaHp = Math.max(0, s.metaHpLevel) * META_HP_PER_LEVEL;
@@ -1505,41 +1697,62 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       cfg.baseAttackSpeed,
     );
     const prestigeMul = 1 + Math.max(0, s.prestigeLevel) * 0.15;
+    const cooldownBeforeTeam = Math.max(
+      MIN_ATTACK_COOLDOWN_MS,
+      Math.round(goldCooldown - skillCd * prestigeMul),
+    );
 
     return {
-      maxHp: Math.round(goldHp + skillHp + metaHp),
-      damage: Math.round((s.baseDamage + skillDmg + metaDamage) * prestigeMul),
+      maxHp: Math.round(
+        goldHp + (skillHp + metaHp) * prestigeMul + team.maxHpBonus,
+      ),
+      damage: Math.round(
+        (s.baseDamage + skillDmg + metaDamage + team.flatDamage) * prestigeMul,
+      ),
       attackRange: Math.min(
         MAX_ATTACK_RANGE,
-        Math.round(goldRange + skillRange),
+        Math.round(goldRange + skillRange * prestigeMul),
       ),
       attackCooldownMs: Math.max(
         MIN_ATTACK_COOLDOWN_MS,
-        Math.round(goldCooldown - skillCd),
+        Math.round(cooldownBeforeTeam / team.attackSpeedMultiplier),
       ),
-      xpMultiplier: xpMultiplierAt(s.xpBonusLevel) * prestigeMul,
+      xpMultiplier:
+        xpMultiplierAt(s.xpBonusLevel) *
+        prestigeMul *
+        (1 + team.xpMultiplierBonus),
       arms: s.arms + getSkillExtraArms(tree),
       lifeStealLevel,
-      lifeStealPercent: getLifeStealRatio(tree) + metaLifeSteal,
+      lifeStealPercent:
+        (getLifeStealRatio(tree) + metaLifeSteal) * prestigeMul,
       metaSkillRegenLevel: s.metaSkillRegenLevel,
       critChance: Math.min(
         MAX_CRIT_CHANCE,
-        getCritChanceAt(s.critChanceLevel) + getSkillCritChanceBonus(tree),
+        getCritChanceAt(s.critChanceLevel) +
+          getSkillCritChanceBonus(tree) * prestigeMul +
+          team.critChanceBonus,
       ),
       critDamageMultiplier:
         getCritDamageMultiplierAt(s.critDamageLevel) +
-        getSkillCritDamageBonus(tree),
+        getSkillCritDamageBonus(tree) * prestigeMul +
+        team.critDamageBonus,
       ricochetUnlocked: s.unlockedSkills.ricochet,
       ricochetCooldown: Math.max(
         2_000,
-        7_000 - s.skills.ricochet.cooldown * 500,
+        7_000 - s.skills.ricochet.cooldown * 500 * prestigeMul,
       ),
-      maxBounces: Math.min(5, 2 + s.skills.ricochet.hits),
-      bounceDamagePercent: 0.6 + s.skills.ricochet.damage * 0.15,
+      maxBounces: Math.min(
+        5,
+        2 + Math.round(s.skills.ricochet.hits * prestigeMul),
+      ),
+      bounceDamagePercent:
+        (0.6 + s.skills.ricochet.damage * 0.15) * Math.min(1.5, prestigeMul),
       knockbackPower:
         getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
-        Math.max(0, s.metaKnockbackLevel) * META_KNOCKBACK_PER_LEVEL +
-        getSkillKnockbackBonus(tree),
+        Math.max(0, s.metaKnockbackLevel) *
+          META_KNOCKBACK_PER_LEVEL *
+          prestigeMul +
+        getSkillKnockbackBonus(tree) * prestigeMul,
       skillBonus: {
         hp: skillHp,
         damage: skillDmg,

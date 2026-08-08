@@ -7,6 +7,7 @@ import { AscensionPanel } from "@/components/AscensionPanel";
 import { MetaTreePanel } from "@/components/MetaTreePanel";
 import { MilestoneQuestsPanel } from "@/components/MilestoneQuestsPanel";
 import { SaveMenu } from "@/components/SaveMenu";
+import { TeamPanel } from "@/components/TeamPanel";
 import { UpgradePanel } from "@/components/UpgradePanel";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -20,7 +21,13 @@ type MainMenuProps = {
   onReturnToMenu?: () => void;
 };
 
-type UpgradeTab = "gold" | "diamonds" | "skills" | "ascension" | "quests";
+type UpgradeTab =
+  | "gold"
+  | "diamonds"
+  | "skills"
+  | "ascension"
+  | "quests"
+  | "team";
 
 const PRESTIGE_SHAPE_LABEL: Record<number, string> = {
   0: "Círculos",
@@ -239,9 +246,10 @@ export function MainMenu({
               ) : (
                 <div className="rounded-xl border border-fuchsia-400/40 bg-fuchsia-950/80 p-3">
                   <p className="text-xs leading-relaxed text-fuchsia-100/90">
-                    Ascender reseta ouro, upgrades de base, bônus de XP e skills
-                    roxas granulares (com reembolso). Mantém diamantes, árvore
-                    meta, passivas de Ascensão e concede{" "}
+                    Ascender reseta ouro, diamantes (normais e roxos), upgrades
+                    de base, árvore de skills, árvore de diamantes, desbloqueios
+                    e skills roxas. Ao recomprar, custos e poder sobem com a
+                    Ascensão. Mantém passivas/shards/equipe e concede{" "}
                     <span className="font-semibold text-pink-200">
                       +{shardsPreview} Ascension Shards
                     </span>
@@ -330,6 +338,17 @@ export function MainMenu({
               >
                 Missões
               </button>
+              <button
+                type="button"
+                onClick={() => setUpgradeTab("team")}
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition ${
+                  upgradeTab === "team"
+                    ? "bg-orange-500/20 text-orange-200"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Equipe
+              </button>
             </div>
             {upgradeTab === "gold" ? (
               <UpgradePanel embedded />
@@ -339,8 +358,10 @@ export function MainMenu({
               <AdvancedSkillsPanel embedded />
             ) : upgradeTab === "ascension" ? (
               <AscensionPanel embedded />
-            ) : (
+            ) : upgradeTab === "quests" ? (
               <MilestoneQuestsPanel embedded />
+            ) : (
+              <TeamPanel embedded />
             )}
           </div>
         </div>

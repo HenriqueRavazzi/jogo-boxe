@@ -8,6 +8,12 @@ import {
 } from "@/lib/milestoneQuests";
 import { DEFAULT_SKILL_TREE } from "@/lib/skillTree";
 import {
+  DEFAULT_TEAM_MEMBERS_OWNED,
+  normalizeEquippedTeamIds,
+  normalizeTeamMembersOwned,
+  normalizeTeamPity,
+} from "@/lib/teamMembers";
+import {
   DEFAULT_MATCH_SKILLS,
   DEFAULT_META_TREE,
   DEFAULT_SKILLS_DATA,
@@ -117,6 +123,8 @@ function normalizeMetaTree(
       data.metaLifeStealLevel ?? DEFAULT_META_TREE.metaLifeStealLevel,
     metaSkillRegenLevel:
       data.metaSkillRegenLevel ?? DEFAULT_META_TREE.metaSkillRegenLevel,
+    metaParryChance:
+      data.metaParryChance ?? DEFAULT_META_TREE.metaParryChance,
   };
 }
 
@@ -150,6 +158,9 @@ export function createDefaultSaveData(): SaveData {
     milestoneQuests: createDefaultMilestoneQuests(),
     totalMobsKilled: 0,
     totalBossesKilled: 0,
+    teamPity: normalizeTeamPity(null),
+    teamMembersOwned: { ...DEFAULT_TEAM_MEMBERS_OWNED },
+    equippedTeamMemberIds: [],
   };
 }
 
@@ -192,6 +203,19 @@ export function normalizeSaveData(
   if (rawTree.node_shock_chance) unlockedSkills.lightning = true;
 
   const meta = normalizeMetaTree(data);
+  const teamMembersOwned = normalizeTeamMembersOwned(data.teamMembersOwned);
+  const legacyPulls = (data as SaveData & { teamTotalPulls?: number })
+    .teamTotalPulls;
+  const teamPity = normalizeTeamPity(
+    data.teamPity ??
+      (typeof legacyPulls === "number"
+        ? {
+            totalPulls: legacyPulls,
+            pullsSinceEpic: 0,
+            pullsSinceLegendary: 0,
+          }
+        : null),
+  );
 
   const { skillLevels: _legacyLevels, ...rest } = data;
 
@@ -224,6 +248,12 @@ export function normalizeSaveData(
     skills,
     unlockedSkills,
     ...meta,
+    teamPity,
+    teamMembersOwned,
+    equippedTeamMemberIds: normalizeEquippedTeamIds(
+      data.equippedTeamMemberIds,
+      teamMembersOwned,
+    ),
   };
 }
 

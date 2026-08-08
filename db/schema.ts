@@ -14,6 +14,11 @@ import { sql } from "drizzle-orm";
 import type { AscensionPassivesData } from "@/lib/ascensionPassives";
 import type { MilestoneQuestsState } from "@/lib/milestoneQuests";
 import type { SkillTreeState } from "@/lib/skillTree";
+import type {
+  TeamMemberId,
+  TeamMembersOwned,
+  TeamPityState,
+} from "@/lib/teamMembers";
 
 /** Stats granulares por skill avançada (Diamantes Roxos / JSONB). */
 export type RicochetSkillStats = {
@@ -139,6 +144,8 @@ export type MetaTreeData = {
   metaHpLevel: number;
   metaLifeStealLevel: number;
   metaSkillRegenLevel: number;
+  /** Níveis de chance de parry automático (0–50). */
+  metaParryChance: number;
 };
 
 export type MetaTreeUpgradeType = keyof MetaTreeData;
@@ -149,6 +156,7 @@ export const DEFAULT_META_TREE: MetaTreeData = {
   metaHpLevel: 0,
   metaLifeStealLevel: 0,
   metaSkillRegenLevel: 0,
+  metaParryChance: 0,
 };
 
 /** Progresso persistido (ouro, gemas, upgrades) — espelha o useGameStore. */
@@ -194,6 +202,8 @@ export type SaveData = {
   metaHpLevel: number;
   metaLifeStealLevel: number;
   metaSkillRegenLevel: number;
+  /** Níveis de chance de parry automático (Diamantes). */
+  metaParryChance: number;
   /** Nível de Ascensão / Prestígio (bônus permanente + mundo mais difícil). */
   prestigeLevel: number;
   /** Moeda de Ascensão (shards) — gasta na loja de passivas permanentes. */
@@ -206,6 +216,12 @@ export type SaveData = {
   totalMobsKilled: number;
   /** Abates cumulativos de bosses — desbloqueio de skills. */
   totalBossesKilled: number;
+  /** Gacha da equipe: contador total de pulls (+ pity interno). */
+  teamPity: TeamPityState;
+  /** Níveis dos membros da equipe (0 = não possui). */
+  teamMembersOwned: TeamMembersOwned;
+  /** Até 3 membros equipados na esquina do ringue. */
+  equippedTeamMemberIds: TeamMemberId[];
 };
 
 export const gameSaves = pgTable("game_saves", {

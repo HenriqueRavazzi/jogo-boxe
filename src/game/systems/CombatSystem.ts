@@ -12,6 +12,7 @@ import type { MilestoneProgressEvent } from "@/lib/milestoneQuests";
 import { getLifeStealRatio, getSkillDamageTakenMultiplier, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
 import {
   getMetaLifeStealRatio,
+  getMetaParryChance,
   getMetaSkillRegenHealing,
   useGameStore,
 } from "@/store/useGameStore";
@@ -168,6 +169,12 @@ export const RICOCHET_BOUNCE_FALLOFF = 0.85;
 export const RICOCHET_MAX_TARGETS = 5;
 export const RANGED_PROJECTILE_SPEED = 340;
 export const RANGED_PROJECTILE_RADIUS = 5;
+/** Duração do clarão de parry (ms de game clock). */
+export const PARRY_VFX_MS = 280;
+/** Raio do contra-ataque ao parry. */
+export const PARRY_COUNTER_RADIUS = 100;
+/** Fração do dano do herói refletida no contra-ataque. */
+export const PARRY_COUNTER_DAMAGE_RATIO = 0.65;
 
 export const ELEMENTAL_PROC_CHANCE = 0.15;
 /** Fallback legado; duração real = 1000 + ice*500. */
@@ -254,25 +261,39 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const matchSkills = inputMatchSkills ?? { ...DEFAULT_MATCH_SKILLS };
   const skills = gameState.skills;
   const fireLevel = matchSkills.fire;
-  /** maxStacks da árvore roxa (fire.damage); mínimo 1 com carta in-run. */
-  const fireMaxStacks = Math.max(1, 1 + skills.fire.damage);
+  /** maxStacks da árvore roxa (fire.damage); escala com prestígio. */
+  const prestigeMul = gameState.getPrestigeMultiplier();
+  const fireMaxStacks = Math.max(
+    1,
+    1 + Math.round(skills.fire.damage * prestigeMul),
+  );
   const lifeStealRatio =
-    getLifeStealRatio(gameState.skillTree) +
-    getMetaLifeStealRatio(gameState.metaLifeStealLevel);
+    (getLifeStealRatio(gameState.skillTree) +
+      getMetaLifeStealRatio(gameState.metaLifeStealLevel)) *
+    prestigeMul;
+
   const metaSkillRegenLevel = gameState.metaSkillRegenLevel;
   // Ricochete: hits granulares até teto rígido; dano cai por salto
   const maxBounces = Math.min(
     RICOCHET_MAX_TARGETS,
-    2 + skills.ricochet.hits,
+    2 + Math.round(skills.ricochet.hits * prestigeMul),
   );
-  const bounceDamageMult = 0.6 + skills.ricochet.damage * 0.15;
+  const bounceDamageMult =
+    (0.6 + skills.ricochet.damage * 0.15) * Math.min(1.5, prestigeMul);
   const knockbackPower =
     (knockbackImpulse ??
       gameState.getKnockbackPower() ??
       DEFAULT_KNOCKBACK) *
     (matchBuffs.knockbackMultiplier ?? 1);
   const difficulty = gameState.getDifficultyMultipliers();
-  const damageTakenMul = getSkillDamageTakenMultiplier(gameState.skillTree);
+  const damageTakenMul =
+    getSkillDamageTakenMultiplier(gameState.skillTree) *
+    gameState.getEquippedTeamBuffs().damageTakenMultiplier;
+  const parryChance = Math.min(
+    0.2,
+    getMetaParryChance(gameState.metaParryChance) *
+      (0.85 + 0.15 * prestigeMul),
+  );
   void contactDamage; // legado: dano melee vem de enemy.attackDamage
 
   let contactHits = 0;
@@ -286,6 +307,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const questEvents: QuestProgressEvent[] = [];
   const milestoneEvents: MilestoneProgressEvent[] = [];
   const skillVfx: SkillVfxEffect[] = [];
+  const pendingParrySplats: HitSplat[] = [];
+  let parriesThisFrame = 0;
 
   const pushKillQuests = (enemyType: Enemy["type"]) => {
     questEvents.push({ type: "kill_enemies", amount: 1 });
@@ -450,9 +473,13 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           : Math.max(0.5, 1.2 * difficulty.enemyDamageMultiplier);
 
       if (now - enemy.lastAttackTime >= cooldown) {
-        meleeDamageDealt += damage;
         enemy.lastAttackTime = now;
         contactHits += 1;
+        if (Math.random() < parryChance) {
+          parriesThisFrame += 1;
+        } else {
+          meleeDamageDealt += damage;
+        }
       }
     } else {
       enemy.isAttacking = false;
@@ -479,11 +506,64 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
     const hitDist = Math.hypot(nx - player.x, ny - player.y);
     if (hitDist <= player.radius + p.radius) {
-      player.takeDamage(p.damage * damageTakenMul);
       contactHits += 1;
+      if (Math.random() < parryChance) {
+        parriesThisFrame += 1;
+      } else {
+        player.takeDamage(p.damage * damageTakenMul);
+      }
       continue;
     }
     projectiles.push({ ...p, x: nx, y: ny });
+  }
+
+  if (parriesThisFrame > 0) {
+    skillVfx.push({
+      kind: "parry",
+      x: player.x,
+      y: player.y,
+      maxRadius: 56,
+      startedAt: now,
+      expiresAt: now + PARRY_VFX_MS,
+    });
+    pendingParrySplats.push({
+      id: crypto.randomUUID(),
+      x: player.x,
+      y: player.y - 30,
+      text: "PARRY!",
+      age: 0,
+      color: "#fef08a",
+      scale: 1.65,
+    });
+
+    const counterDamage = Math.max(
+      1,
+      baseDamage * matchBuffs.damageMultiplier * PARRY_COUNTER_DAMAGE_RATIO,
+    );
+    for (const enemy of enemies) {
+      if (enemy.isDead) continue;
+      const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+      if (dist > PARRY_COUNTER_RADIUS + enemy.radius) continue;
+      const dx = enemy.x - player.x;
+      const dy = enemy.y - player.y;
+      enemy.applyKnockback(dx, dy, knockbackPower * 1.35);
+      const displayDamage = Math.max(
+        1,
+        Math.round(counterDamage * enemy.getDamageTakenMultiplier(now)),
+      );
+      pendingParrySplats.push({
+        id: crypto.randomUUID(),
+        x: enemy.x,
+        y: enemy.y,
+        text: String(displayDamage),
+        age: 0,
+        color: "#fde68a",
+        scale: 1.15,
+      });
+      if (enemy.takeDamage(counterDamage, now)) {
+        pushKill(enemy);
+      }
+    }
   }
 
   // Ranged: dispara quando parado no alcance de ataque do jogador
@@ -523,7 +603,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   let nextAttackTime = lastAttackTime;
   let nextPunchSide = lastPunchSide;
   const newAttacks: ActiveAttack[] = [];
-  const hitSplats: HitSplat[] = [...pendingLightningSplats];
+  const hitSplats: HitSplat[] = [...pendingLightningSplats, ...pendingParrySplats];
   const ricochetPaths: RicochetPathEffect[] = [];
   let living = enemies.filter((e) => !e.isDead);
 
@@ -553,7 +633,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   const applySkillRegen = (damage: number, hits: number) => {
     applyHealingSplat(
-      getMetaSkillRegenHealing(metaSkillRegenLevel, damage, hits),
+      getMetaSkillRegenHealing(metaSkillRegenLevel, damage, hits) *
+      prestigeMul,
     );
   };
 

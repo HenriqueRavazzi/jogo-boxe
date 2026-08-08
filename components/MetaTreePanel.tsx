@@ -6,6 +6,7 @@ import {
   Gem,
   Heart,
   HeartPulse,
+  Shield,
   Swords,
 } from "lucide-react";
 import type { MetaTreeUpgradeType } from "@/db/schema";
@@ -17,6 +18,8 @@ import {
   META_DAMAGE_PER_LEVEL,
   META_HP_PER_LEVEL,
   META_LIFE_STEAL_PERCENT_PER_LEVEL,
+  META_PARRY_BASE_CHANCE,
+  META_PARRY_CHANCE_PER_LEVEL,
   META_SKILL_REGEN_DAMAGE_RATIO,
   META_SKILL_REGEN_HIT_HEAL,
   useGameStore,
@@ -63,6 +66,17 @@ const CARDS: MetaCardDef[] = [
         level * META_SKILL_REGEN_HIT_HEAL
       ).toFixed(1)} HP/hit`,
   },
+  {
+    type: "metaParryChance",
+    title: "Parry",
+    icon: <Shield className="h-4 w-4" aria-hidden />,
+    bonusLabel: (level) => {
+      const bonusPct = level * META_PARRY_CHANCE_PER_LEVEL * 100;
+      const totalPct =
+        (META_PARRY_BASE_CHANCE + level * META_PARRY_CHANCE_PER_LEVEL) * 100;
+      return `+${bonusPct.toFixed(1)}% · total ${totalPct.toFixed(1)}% (base 1%)`;
+    },
+  },
 ];
 
 /** Painel da árvore de atributos permanentes (Diamantes Normais). */
@@ -73,6 +87,7 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
     metaHpLevel: useGameStore((s) => s.metaHpLevel),
     metaLifeStealLevel: useGameStore((s) => s.metaLifeStealLevel),
     metaSkillRegenLevel: useGameStore((s) => s.metaSkillRegenLevel),
+    metaParryChance: useGameStore((s) => s.metaParryChance),
   };
   const getMetaTreeUpgradeCost = useGameStore((s) => s.getMetaTreeUpgradeCost);
   const upgradeMetaTree = useGameStore((s) => s.upgradeMetaTree);

@@ -274,7 +274,9 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const difficulty = game.getDifficultyMultipliers();
       const dropResult = createDropsFromKills(combat.killSites, gameNow, {
         incomeMultiplier:
-          game.incomeMultiplier * getSkillGoldIncomeMultiplier(game.skillTree),
+          game.incomeMultiplier *
+          getSkillGoldIncomeMultiplier(game.skillTree) *
+          game.getEquippedTeamBuffs().goldIncomeMultiplier,
         goldDropMultiplier: difficulty.goldDropMultiplier,
         bossesKilled: arena.bossesKilled,
         diamondLuckBonus: game.getDiamondLuckBonus(),
@@ -391,6 +393,17 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       });
       spawnAccumulator = spawn.spawnAccumulatorMs;
 
+      let nextHp = combat.player.hp;
+      const teamRegen = game.getEquippedTeamBuffs().hpRegenPerSecond;
+      if (
+        teamRegen > 0 &&
+        nextHp > 0 &&
+        nextHp < stats.maxHp &&
+        !combat.player.isDead
+      ) {
+        nextHp = Math.min(stats.maxHp, nextHp + teamRegen * dt);
+      }
+
       useArenaStore.setState({
         playerX: cx,
         playerY: cy,
@@ -401,7 +414,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
             : livingEnemies,
         drops: loot.drops,
         projectiles: combat.projectiles,
-        currentHp: combat.player.hp,
+        currentHp: nextHp,
         lastAttackTime: combat.lastAttackTime,
         lastPunchSide: combat.lastPunchSide,
         lastRicochetTime: combat.lastRicochetTime,
@@ -678,6 +691,29 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           ctx.strokeStyle = "rgba(255,255,255,0.85)";
           ctx.lineWidth = 1.5;
           ctx.shadowBlur = 6;
+          ctx.stroke();
+          ctx.restore();
+        } else if (effect.kind === "parry") {
+          const progress = 1 - alpha;
+          const radius = Math.max(
+            18,
+            effect.maxRadius * Math.min(1, 0.35 + progress * 1.1),
+          );
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(254, 240, 138, 0.95)";
+          ctx.lineWidth = 6;
+          ctx.shadowColor = "#fef08a";
+          ctx.shadowBlur = 28;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(effect.x, effect.y, radius * 0.62, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.22 * alpha})`;
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+          ctx.lineWidth = 2;
           ctx.stroke();
           ctx.restore();
         }

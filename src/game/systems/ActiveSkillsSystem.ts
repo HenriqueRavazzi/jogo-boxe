@@ -5,6 +5,7 @@ import type { MatchSkillsData, SkillsData } from "@/db/schema";
 import {
   ICE_VULNERABILITY_MULTIPLIER,
 } from "@/src/game/entities/Enemy";
+import { useGameStore } from "@/store/useGameStore";
 
 export const ACTIVE_SKILL_CYCLE_MS = 20_000;
 export const ACTIVE_SKILL_DURATION_MS = 3_000;
@@ -110,6 +111,14 @@ export type SkillVfxEffect =
   | {
       kind: "lightning";
       points: { x: number; y: number }[];
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
+      kind: "parry";
+      x: number;
+      y: number;
+      maxRadius: number;
       startedAt: number;
       expiresAt: number;
     };
@@ -249,17 +258,18 @@ export function runActiveSkills(
   const newLightningProjectiles: LightningProjectile[] = [];
   const newSkillVfx: SkillVfxEffect[] = [];
 
+  const prestigeMul = useGameStore.getState().getPrestigeMultiplier();
   const iceCooldownMs = Math.max(
     5_000,
-    20_000 - skills.ice.cooldown * 1_000,
+    20_000 - skills.ice.cooldown * 1_000 * prestigeMul,
   );
   const lightningCooldownMs = Math.max(
     5_000,
-    20_000 - skills.lightning.cooldown * 1_000,
+    20_000 - skills.lightning.cooldown * 1_000 * prestigeMul,
   );
   const ricochetCooldownMs = Math.max(
     2_000,
-    7_000 - skills.ricochet.cooldown * 500,
+    7_000 - skills.ricochet.cooldown * 500 * prestigeMul,
   );
 
   // ——— Gelo (onda periódica a 40% do range) ———
@@ -275,7 +285,8 @@ export function runActiveSkills(
       next.iceWaveRadius = iceRadius;
       next.iceNextPulseAt = now + iceCooldownMs;
 
-      const freezeDurationMs = 1000 + skills.ice.duration * 500;
+      const freezeDurationMs =
+        1000 + Math.round(skills.ice.duration * 500 * prestigeMul);
       questFreeze = applyIceWave(
         enemies,
         playerX,
@@ -330,11 +341,12 @@ export function runActiveSkills(
         const dx = nearest.x - playerX;
         const dy = nearest.y - playerY;
         const len = Math.hypot(dx, dy) || 1;
-        const lightningDamage = getLightningBurstDamage(
-          baseDamage,
-          skills.lightning.damage,
-          skills.lightning.hits,
-        );
+        const lightningDamage =
+          getLightningBurstDamage(
+            baseDamage,
+            skills.lightning.damage,
+            skills.lightning.hits,
+          ) * prestigeMul;
         newLightningProjectiles.push({
           id: crypto.randomUUID(),
           x: playerX,

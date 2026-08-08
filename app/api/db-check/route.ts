@@ -109,12 +109,16 @@ export async function GET() {
       "metaHpLevel",
       "metaLifeStealLevel",
       "metaSkillRegenLevel",
+      "metaParryChance",
       "prestigeLevel",
       "ascensionShards",
       "ascensionPassives",
       "milestoneQuests",
       "totalMobsKilled",
       "totalBossesKilled",
+      "teamPity",
+      "teamMembersOwned",
+      "equippedTeamMemberIds",
     ];
 
     const saveData = readBack?.saveData;
