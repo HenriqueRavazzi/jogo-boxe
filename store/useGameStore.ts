@@ -269,8 +269,8 @@ export type GameStoreState = {
    */
   enforcePurpleSkillCap: () => number;
   /**
-   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades/árvores/skills.
-   * Mantém passivas de Ascensão, shards e equipe.
+   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades/árvores/skills
+   * liberadas e abates de unlock. Mantém passivas de Ascensão, shards e equipe.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -1274,7 +1274,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   /**
    * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
    * roxos), upgrades de base, árvore de skills, árvore de diamantes, desbloqueios
-   * e skills granulares. Mantém passivas de Ascensão, shards, equipe e kills.
+   * de skills, skills granulares e abates usados nos unlocks. Mantém passivas de
+   * Ascensão, shards e equipe.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -1320,6 +1321,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         fire: { ...DEFAULT_SKILLS_DATA.fire },
         lightning: { ...DEFAULT_SKILLS_DATA.lightning },
       },
+      totalMobsKilled: 0,
+      totalBossesKilled: 0,
       milestoneQuests: applyMilestoneProgress(s.milestoneQuests, [
         { type: "prestige_level", amount: s.prestigeLevel + 1 },
       ]),
@@ -1410,9 +1413,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const base = advancedSkillUnlockRequirementsOf(skillType);
     const mul = getPrestigeCostMultiplier(get().prestigeLevel);
     return {
-      ...base,
       goldCost: Math.max(1, Math.floor(base.goldCost * mul)),
       diamondCost: Math.max(1, Math.floor(base.diamondCost * mul)),
+      requiredMobs: Math.max(1, Math.floor(base.requiredMobs * mul)),
+      requiredBosses: Math.max(1, Math.floor(base.requiredBosses * mul)),
     };
   },
 

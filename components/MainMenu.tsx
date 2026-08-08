@@ -246,9 +246,9 @@ export function MainMenu({
               ) : (
                 <div className="rounded-xl border border-fuchsia-400/40 bg-fuchsia-950/80 p-3">
                   <p className="text-xs leading-relaxed text-fuchsia-100/90">
-                    Ascender reseta ouro, diamantes (normais e roxos), upgrades
-                    de base, árvore de skills, árvore de diamantes, desbloqueios
-                    e skills roxas. Ao recomprar, custos e poder sobem com a
+                    Ascender reseta ouro, diamantes, upgrades, árvores, skills
+                    liberadas (e abates dos unlocks) e níveis roxos. Ao
+                    reliberar/recomprar, custos, marcos e poder sobem com a
                     Ascensão. Mantém passivas/shards/equipe e concede{" "}
                     <span className="font-semibold text-pink-200">
                       +{shardsPreview} Ascension Shards
