@@ -17,28 +17,30 @@ export const ADVANCED_SKILL_UNLOCK: Record<
   SkillUpgradeType,
   AdvancedSkillUnlockRequirements
 > = {
-  ricochet: {
+  /** Mais fácil — base da progressão ×4 ouro/diamantes e ×6 mobs por tier. */
+  ice: {
     goldCost: 5_000,
     diamondCost: 15,
     requiredMobs: 250,
     requiredBosses: 1,
   },
-  ice: {
-    goldCost: 12_000,
-    diamondCost: 25,
-    requiredMobs: 600,
+  lightning: {
+    goldCost: 20_000,
+    diamondCost: 60,
+    requiredMobs: 1_500,
     requiredBosses: 3,
   },
   fire: {
-    goldCost: 25_000,
-    diamondCost: 40,
-    requiredMobs: 1_200,
+    goldCost: 80_000,
+    diamondCost: 240,
+    requiredMobs: 9_000,
     requiredBosses: 6,
   },
-  lightning: {
-    goldCost: 50_000,
-    diamondCost: 60,
-    requiredMobs: 2_000,
+  /** Mais difícil */
+  ricochet: {
+    goldCost: 320_000,
+    diamondCost: 960,
+    requiredMobs: 54_000,
     requiredBosses: 10,
   },
 };

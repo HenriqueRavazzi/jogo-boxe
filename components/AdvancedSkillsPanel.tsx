@@ -48,26 +48,6 @@ type SkillCardDef = {
 
 const CARDS: SkillCardDef[] = [
   {
-    type: "ricochet",
-    title: "Ricochete",
-    description: "Socos saltam entre inimigos na janela ativa.",
-    icon: <Spline className="h-5 w-5" aria-hidden />,
-    statActions: {
-      damage: {
-        label: "Aumentar Dano",
-        icon: <Crosshair className="h-4 w-4" aria-hidden />,
-      },
-      cooldown: {
-        label: "Reduzir Cooldown",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
-      hits: {
-        label: "Aumentar Ricochetes",
-        icon: <Spline className="h-4 w-4" aria-hidden />,
-      },
-    },
-  },
-  {
     type: "ice",
     title: "Gelo",
     description:
@@ -77,6 +57,26 @@ const CARDS: SkillCardDef[] = [
       duration: {
         label: "Aumentar Duração",
         icon: <Snowflake className="h-4 w-4" aria-hidden />,
+      },
+      cooldown: {
+        label: "Reduzir Cooldown",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
+    type: "lightning",
+    title: "Raio",
+    description: "Estouro massivo no inimigo mais próximo + mini-stun.",
+    icon: <Zap className="h-5 w-5" aria-hidden />,
+    statActions: {
+      damage: {
+        label: "Aumentar Dano",
+        icon: <Zap className="h-4 w-4" aria-hidden />,
+      },
+      hits: {
+        label: "Aumentar Burst",
+        icon: <Crosshair className="h-4 w-4" aria-hidden />,
       },
       cooldown: {
         label: "Reduzir Cooldown",
@@ -101,22 +101,22 @@ const CARDS: SkillCardDef[] = [
     },
   },
   {
-    type: "lightning",
-    title: "Raio",
-    description: "Estouro massivo no inimigo mais próximo + mini-stun.",
-    icon: <Zap className="h-5 w-5" aria-hidden />,
+    type: "ricochet",
+    title: "Ricochete",
+    description: "Socos saltam entre inimigos na janela ativa.",
+    icon: <Spline className="h-5 w-5" aria-hidden />,
     statActions: {
       damage: {
         label: "Aumentar Dano",
-        icon: <Zap className="h-4 w-4" aria-hidden />,
-      },
-      hits: {
-        label: "Aumentar Burst",
         icon: <Crosshair className="h-4 w-4" aria-hidden />,
       },
       cooldown: {
         label: "Reduzir Cooldown",
         icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+      hits: {
+        label: "Aumentar Ricochetes",
+        icon: <Spline className="h-4 w-4" aria-hidden />,
       },
     },
   },

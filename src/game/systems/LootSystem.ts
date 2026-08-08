@@ -24,8 +24,11 @@ export type KillSite = {
 
 const DROP_IDLE_MS = 800;
 const MAGNET_SPEED = 520; // px/s
-/** Alcance base do magnetismo (px). Escala com Ímã Primordial. */
-export const BASE_MAGNET_RANGE = 280;
+/**
+ * @deprecated Loot sempre magnetiza após o idle (sem limite de distância).
+ * Mantido só por compat / UI do Ímã Primordial (ainda escala raio de coleta).
+ */
+export const BASE_MAGNET_RANGE = Number.POSITIVE_INFINITY;
 /** Valor de cada moeda física ao coletar (nerf econômico). */
 const GOLD_DROP_VALUE = 5;
 /** Moedas base por kill se `rewards` ausente. */
@@ -175,7 +178,7 @@ export type LootSystemResult = {
 };
 
 /**
- * Idle 800ms → magnetismo em direção ao player → coleta por proximidade.
+ * Idle 800ms → magnetismo ilimitado em direção ao player → coleta por proximidade.
  * Cada moeda física vale GOLD_DROP_VALUE (multiplicadores já vieram no spawn).
  */
 export function runLootSystem(input: LootSystemInput): LootSystemResult {
@@ -190,7 +193,7 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
   } = input;
 
   const magnetMul = Math.max(1, magnetRadiusMultiplier);
-  const magnetRange = BASE_MAGNET_RANGE * magnetMul;
+  // Ímã Primordial ainda amplia a área de coleta ao tocar o player
   const collectRadius = playerRadius * magnetMul;
 
   let collectedGold = 0;
@@ -206,11 +209,10 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
       const dx = playerX - x;
       const dy = playerY - y;
       const dist = Math.hypot(dx, dy) || 1;
-      if (dist <= magnetRange) {
-        const step = MAGNET_SPEED * dt;
-        x += (dx / dist) * step;
-        y += (dy / dist) * step;
-      }
+      // Sempre puxa para o hero, independente da distância
+      const step = MAGNET_SPEED * dt;
+      x += (dx / dist) * step;
+      y += (dy / dist) * step;
     }
 
     const distToPlayer = Math.hypot(playerX - x, playerY - y);
