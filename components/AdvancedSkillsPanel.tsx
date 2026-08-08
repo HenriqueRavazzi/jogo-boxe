@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Check,
   ChevronRight,
   Crosshair,
   Flame,
@@ -20,6 +21,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  MAX_PURPLE_SKILL_STAT_LEVEL,
   SKILL_STAT_KEYS,
   getSkillMetaCap,
   type SkillUpgradeType,
@@ -27,12 +29,10 @@ import {
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
+  getPurpleSkillSpentForLevel,
   getSkillStatLevel,
   useGameStore,
 } from "@/store/useGameStore";
-
-/** Nível visual máximo da barra de progresso (só UI). */
-const STAT_BAR_CAP = 20;
 
 type SkillCardDef = {
   type: SkillUpgradeType;
@@ -67,7 +67,8 @@ const CARDS: SkillCardDef[] = [
   {
     type: "ice",
     title: "Gelo",
-    description: "Onda a 40% do alcance: congela e deixa vulnerável (+30% dano).",
+    description:
+      "Onda a 40% do alcance: congela e deixa vulnerável (+30% dano).",
     icon: <Snowflake className="h-5 w-5" aria-hidden />,
     statActions: {
       duration: {
@@ -118,21 +119,44 @@ const CARDS: SkillCardDef[] = [
   },
 ];
 
-function StatProgressBar({ level }: { level: number }) {
-  const pct = Math.min(100, (Math.max(0, level) / STAT_BAR_CAP) * 100);
+function StatProgressBar({
+  level,
+  max = MAX_PURPLE_SKILL_STAT_LEVEL,
+}: {
+  level: number;
+  max?: number;
+}) {
+  const capped = Math.min(max, Math.max(0, level));
+  const pct = max <= 0 ? 0 : Math.min(100, (capped / max) * 100);
+  const isMax = capped >= max;
   return (
     <div
-      className="h-1.5 w-full overflow-hidden rounded-full bg-black/40"
+      className="h-2 w-full overflow-hidden rounded-full bg-zinc-900/80 ring-1 ring-inset ring-white/5"
       role="progressbar"
-      aria-valuenow={level}
+      aria-valuenow={capped}
       aria-valuemin={0}
-      aria-valuemax={STAT_BAR_CAP}
+      aria-valuemax={max}
     >
       <div
-        className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-400 transition-[width] duration-300"
+        className={`h-full rounded-full transition-[width] duration-300 ${
+          isMax
+            ? "bg-gradient-to-r from-amber-500 to-yellow-300"
+            : "bg-gradient-to-r from-violet-600 to-fuchsia-400"
+        }`}
         style={{ width: `${pct}%` }}
       />
     </div>
+  );
+}
+
+function skillInvested(
+  skills: ReturnType<typeof useGameStore.getState>["skills"],
+  skillType: SkillUpgradeType,
+): number {
+  return SKILL_STAT_KEYS[skillType].reduce(
+    (sum, key) =>
+      sum + getPurpleSkillSpentForLevel(getSkillStatLevel(skills, skillType, key)),
+    0,
   );
 }
 
@@ -155,6 +179,7 @@ function SkillDetailModal({
     getSkillMetaCap(skills[card.type]),
   );
   const statKeys = SKILL_STAT_KEYS[card.type];
+  const invested = skillInvested(skills, card.type);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -171,7 +196,7 @@ function SkillDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
       role="presentation"
       onClick={onClose}
     >
@@ -179,44 +204,60 @@ function SkillDetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-violet-400/35 bg-zinc-950 shadow-2xl shadow-violet-950/40"
+        className="flex w-full max-w-md max-h-[min(90vh,640px)] flex-col overflow-hidden rounded-2xl border border-violet-400/40 bg-zinc-950 shadow-2xl shadow-violet-950/50"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
-          <div className="min-w-0">
-            <p
-              id={titleId}
-              className="inline-flex items-center gap-2 text-base font-bold text-violet-100"
+        <header className="shrink-0 border-b border-white/10 px-4 py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p
+                id={titleId}
+                className="inline-flex items-center gap-2 text-lg font-bold tracking-tight text-violet-50"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20 text-violet-300">
+                  {card.icon}
+                </span>
+                {card.title}
+              </p>
+              <p className="mt-1.5 text-[12px] leading-snug text-zinc-400">
+                {card.description}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-white/10 p-1.5 text-zinc-400 transition hover:bg-white/5 hover:text-zinc-200"
+              aria-label="Fechar"
             >
-              <span className="text-violet-300">{card.icon}</span>
-              {card.title}
-            </p>
-            <p className="mt-1 text-[11px] leading-snug text-zinc-400">
-              {card.description}
-            </p>
-            <p className="mt-1.5 text-[11px] text-violet-300/80">
-              Teto in-run {matchMax} ·{" "}
-              <span className="inline-flex items-center gap-1">
-                <Gem className="h-3 w-3 text-violet-300" aria-hidden />
-                {purpleDiamonds.toLocaleString("pt-BR")} roxos
-              </span>
-            </p>
+              <X className="h-4 w-4" aria-hidden />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-white/10 p-1.5 text-zinc-400 transition hover:bg-white/5 hover:text-zinc-200"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-violet-200/85">
+            <span className="inline-flex items-center gap-1 font-semibold">
+              <Gem className="h-3 w-3 text-violet-300" aria-hidden />
+              {purpleDiamonds.toLocaleString("pt-BR")} disponíveis
+            </span>
+            <span className="text-zinc-600">·</span>
+            <span>
+              Investido nesta skill:{" "}
+              <span className="font-semibold text-violet-200">
+                {invested.toLocaleString("pt-BR")}
+              </span>
+            </span>
+            <span className="text-zinc-600">·</span>
+            <span>Teto in-run {matchMax}</span>
+          </div>
         </header>
 
-        <ul className="flex max-h-[min(60vh,420px)] flex-col gap-2 overflow-y-auto p-3">
+        <ul className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3">
           {statKeys.map((statKey) => {
             const level = getSkillStatLevel(skills, card.type, statKey);
+            const atMax = level >= MAX_PURPLE_SKILL_STAT_LEVEL;
             const cost = getSkillStatUpgradeCost(card.type, statKey);
-            const canUpgrade = purpleDiamonds >= cost;
+            const canUpgrade =
+              !atMax &&
+              Number.isFinite(cost) &&
+              purpleDiamonds >= cost;
             const action = card.statActions[statKey] ?? {
               label: String(statKey),
               icon: <Gem className="h-4 w-4" aria-hidden />,
@@ -225,27 +266,50 @@ function SkillDetailModal({
             return (
               <li
                 key={statKey}
-                className="rounded-xl border border-violet-400/25 bg-violet-500/5 px-3 py-2.5"
+                className={`rounded-xl border px-3.5 py-3 ${
+                  atMax
+                    ? "border-amber-400/35 bg-amber-500/5"
+                    : "border-violet-400/30 bg-violet-500/[0.07]"
+                }`}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-violet-50">
-                    <span className="text-violet-300">{action.icon}</span>
+                  <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-zinc-50">
+                    <span
+                      className={atMax ? "text-amber-300" : "text-violet-300"}
+                    >
+                      {action.icon}
+                    </span>
                     {action.label}
                   </p>
-                  <span className="shrink-0 rounded-md bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-200">
-                    Nv. {level}
+                  <span
+                    className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      atMax
+                        ? "bg-amber-500/25 text-amber-100"
+                        : "bg-violet-500/25 text-violet-100"
+                    }`}
+                  >
+                    {atMax
+                      ? "Máx"
+                      : `Nv. ${level}/${MAX_PURPLE_SKILL_STAT_LEVEL}`}
                   </span>
                 </div>
                 <StatProgressBar level={level} />
-                <button
-                  type="button"
-                  disabled={!canUpgrade}
-                  onClick={() => void upgradeStat(statKey)}
-                  className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-violet-400/45 bg-violet-500/20 px-2.5 py-2 text-xs font-bold text-violet-50 transition hover:bg-violet-500/30 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Gem className="h-3.5 w-3.5 text-violet-300" aria-hidden />
-                  Upgrade · {cost.toLocaleString("pt-BR")}
-                </button>
+                {atMax ? (
+                  <div className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-500/15 px-2.5 py-2 text-xs font-bold text-amber-100">
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                    Nível máximo ({MAX_PURPLE_SKILL_STAT_LEVEL})
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!canUpgrade}
+                    onClick={() => void upgradeStat(statKey)}
+                    className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-violet-400/50 bg-violet-500/25 px-2.5 py-2 text-xs font-bold text-violet-50 transition hover:bg-violet-500/40 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Gem className="h-3.5 w-3.5 text-violet-300" aria-hidden />
+                    Upgrade · {cost.toLocaleString("pt-BR")}
+                  </button>
+                )}
               </li>
             );
           })}
@@ -275,11 +339,17 @@ export function AdvancedSkillsPanel({
     (s) => s.getPurpleSkillInvestment,
   );
   const resetSkillTree = useGameStore((s) => s.resetSkillTree);
+  const enforcePurpleSkillCap = useGameStore((s) => s.enforcePurpleSkillCap);
 
   const selectedCard =
     selected != null ? CARDS.find((c) => c.type === selected) ?? null : null;
   const investment = getPurpleSkillInvestment();
   const canReset = investment > 0;
+
+  // Sessoes já abertas com níveis > teto: corta e reembolsa.
+  useEffect(() => {
+    enforcePurpleSkillCap();
+  }, [enforcePurpleSkillCap]);
 
   const unlock = async (type: SkillUpgradeType) => {
     if (!unlockAdvancedSkill(type)) return;
@@ -302,7 +372,8 @@ export function AdvancedSkillsPanel({
       )}
       <p className="mb-3 px-1 text-[11px] leading-snug text-zinc-500">
         Desbloqueie com diamantes. Clique numa skill liberada para upar cada
-        atributo com diamantes roxos.
+        atributo com diamantes roxos (máx. {MAX_PURPLE_SKILL_STAT_LEVEL} por
+        atributo).
       </p>
       <div className="mb-2 px-1 text-[11px] text-violet-300/80">
         <span className="inline-flex items-center gap-1 font-semibold">
@@ -322,6 +393,8 @@ export function AdvancedSkillsPanel({
             (sum, key) => sum + getSkillStatLevel(skills, card.type, key),
             0,
           );
+          const maxTotal =
+            SKILL_STAT_KEYS[card.type].length * MAX_PURPLE_SKILL_STAT_LEVEL;
 
           if (!unlocked) {
             return (
@@ -381,11 +454,11 @@ export function AdvancedSkillsPanel({
               </div>
               <div className="flex items-center justify-between gap-2 text-[11px] text-violet-200/85">
                 <span>
-                  {totalLevels} pts · teto in-run {matchMax}
+                  {totalLevels}/{maxTotal} pts · teto in-run {matchMax}
                 </span>
                 <span className="font-semibold text-violet-200">Detalhes</span>
               </div>
-              <StatProgressBar level={Math.min(STAT_BAR_CAP, totalLevels)} />
+              <StatProgressBar level={totalLevels} max={maxTotal} />
             </button>
           );
         })}

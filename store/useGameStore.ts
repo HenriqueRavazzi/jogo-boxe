@@ -12,6 +12,7 @@ import {
   DEFAULT_META_TREE,
   DEFAULT_SKILLS_DATA,
   DEFAULT_UNLOCKED_SKILLS,
+  MAX_PURPLE_SKILL_STAT_LEVEL,
   SKILL_STAT_KEYS,
   isSkillStatKey,
   isSkillUpgradeType,
@@ -179,6 +180,10 @@ export type GameStoreState = {
   /** Total de diamantes roxos investidos nos sub-níveis atuais. */
   getPurpleSkillInvestment: () => number;
   /**
+   * Corta atributos > MAX e devolve o excedente. Retorna o refund aplicado.
+   */
+  enforcePurpleSkillCap: () => number;
+  /**
    * Ascensão: +1 prestige, reseta ouro/upgrades de base/skills granulares.
    * Mantém diamantes, roxos, desbloqueios, meta tree e skill tree verde.
    */
@@ -268,6 +273,8 @@ export const MAX_UPGRADE_LEVELS = {
   critDamage: Number.POSITIVE_INFINITY,
   attackSpeed: 10,
   range: 10,
+  /** Bônus de XP com diamantes (+10%/nível). */
+  xpBonus: 20,
 } as const;
 
 /** Árvore de atributos permanentes (Diamantes Normais). */
@@ -419,7 +426,41 @@ export function getSkillStatLevel(
   statKey: string,
 ): number {
   const skill = skills[skillId] as Record<string, number>;
-  return Math.max(0, Math.floor(Number(skill[statKey]) || 0));
+  return Math.min(
+    MAX_PURPLE_SKILL_STAT_LEVEL,
+    Math.max(0, Math.floor(Number(skill[statKey]) || 0)),
+  );
+}
+
+/**
+ * Corta atributos acima do teto e devolve diamantes roxos do excedente.
+ */
+export function clampSkillsToMaxLevel(skills: SkillsData): {
+  skills: SkillsData;
+  refund: number;
+} {
+  let refund = 0;
+  const next: SkillsData = {
+    ricochet: { ...skills.ricochet },
+    ice: { ...skills.ice },
+    fire: { ...skills.fire },
+    lightning: { ...skills.lightning },
+  };
+
+  for (const skillId of Object.keys(SKILL_STAT_KEYS) as SkillUpgradeType[]) {
+    const row = next[skillId] as Record<string, number>;
+    for (const statKey of SKILL_STAT_KEYS[skillId]) {
+      const raw = Math.max(0, Math.floor(Number(row[statKey]) || 0));
+      if (raw > MAX_PURPLE_SKILL_STAT_LEVEL) {
+        refund +=
+          getPurpleSkillSpentForLevel(raw) -
+          getPurpleSkillSpentForLevel(MAX_PURPLE_SKILL_STAT_LEVEL);
+        row[statKey] = MAX_PURPLE_SKILL_STAT_LEVEL;
+      }
+    }
+  }
+
+  return { skills: next, refund: Math.max(0, refund) };
 }
 
 /** Poder de knockback: base + nível × 2. */
@@ -466,7 +507,11 @@ export function getCritDamageCostAt(level: number): number {
 
 /** Multiplicador de XP: nível 0 = 1.0, nível 1 = 1.1, … (+10% por nível). */
 export function getXpMultiplier(level: number): number {
-  return 1 + Math.max(0, level) * 0.1;
+  const capped = Math.min(
+    MAX_UPGRADE_LEVELS.xpBonus,
+    Math.max(0, Math.floor(level)),
+  );
+  return 1 + capped * 0.1;
 }
 
 export function getXpBonusCostAt(level: number): number {
@@ -647,12 +692,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   hydrateFromSave: (saveId, data, saveName) => {
     const n = normalizeSaveData(data);
+    const { skills, refund } = clampSkillsToMaxLevel(normalizeSkills(n.skills));
     set({
       activeSaveId: saveId,
       activeSaveName: saveName ?? null,
       gold: n.gold,
       gems: n.gems,
-      purpleDiamonds: n.purpleDiamonds,
+      purpleDiamonds: n.purpleDiamonds + refund,
       maxHpLevel: n.maxHpLevel,
       baseDamageLevel: n.baseDamageLevel,
       baseDamage: n.baseDamage,
@@ -662,13 +708,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       armTier: n.armTier,
       armsNextCost: n.armsNextCost,
       incomeMultiplier: n.incomeMultiplier,
-      xpBonusLevel: n.xpBonusLevel,
+      xpBonusLevel: Math.min(
+        MAX_UPGRADE_LEVELS.xpBonus,
+        Math.max(0, Math.floor(n.xpBonusLevel)),
+      ),
       knockbackLevel: n.knockbackLevel,
       baseKnockbackPower: n.baseKnockbackPower,
       critChanceLevel: n.critChanceLevel,
       critDamageLevel: n.critDamageLevel,
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
-      skills: normalizeSkills(n.skills),
+      skills,
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
       metaDamageLevel: n.metaDamageLevel,
       metaKnockbackLevel: n.metaKnockbackLevel,
@@ -677,6 +726,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       metaSkillRegenLevel: n.metaSkillRegenLevel,
       prestigeLevel: Math.max(0, Math.floor(n.prestigeLevel ?? 0)),
     });
+    if (refund > 0) {
+      void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+        void syncWithDB();
+      });
+    }
   },
 
   clearActiveSlot: () =>
@@ -692,6 +746,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getSaveSnapshot: () => {
     const s = get();
+    const { skills } = clampSkillsToMaxLevel(normalizeSkills(s.skills));
     return {
       gold: s.gold,
       gems: s.gems,
@@ -705,13 +760,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       armTier: s.armTier,
       armsNextCost: s.armsNextCost,
       incomeMultiplier: s.incomeMultiplier,
-      xpBonusLevel: s.xpBonusLevel,
+      xpBonusLevel: Math.min(
+        MAX_UPGRADE_LEVELS.xpBonus,
+        Math.max(0, Math.floor(s.xpBonusLevel)),
+      ),
       knockbackLevel: s.knockbackLevel,
       baseKnockbackPower: s.baseKnockbackPower,
       critChanceLevel: s.critChanceLevel,
       critDamageLevel: s.critDamageLevel,
       skillTree: { ...s.skillTree },
-      skills: normalizeSkills(s.skills),
+      skills,
       unlockedSkills: { ...s.unlockedSkills },
       metaDamageLevel: s.metaDamageLevel,
       metaKnockbackLevel: s.metaKnockbackLevel,
@@ -865,9 +923,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (!isSkillUpgradeType(skillId) || !isSkillStatKey(skillId, statKey)) {
       return Number.POSITIVE_INFINITY;
     }
-    return getPurpleSkillCostAt(
-      getSkillStatLevel(get().skills, skillId, statKey),
-    );
+    const level = getSkillStatLevel(get().skills, skillId, statKey);
+    if (level >= MAX_PURPLE_SKILL_STAT_LEVEL) return Number.POSITIVE_INFINITY;
+    return getPurpleSkillCostAt(level);
   },
 
   getAdvancedSkillUnlockCost: (skillType) =>
@@ -895,7 +953,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Incrementa um atributo específico da skill com Diamantes Roxos.
-   * Custo: base × 1.25^nívelAtual do atributo. Persiste via syncWithDB.
+   * Custo: base × 1.25^nívelAtual do atributo. Teto: MAX_PURPLE_SKILL_STAT_LEVEL.
    */
   upgradeSkillStat: (skillId, statKey) => {
     if (!isSkillUpgradeType(skillId) || !isSkillStatKey(skillId, statKey)) {
@@ -904,6 +962,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (!get().unlockedSkills[skillId]) return false;
 
     const currentLevel = getSkillStatLevel(get().skills, skillId, statKey);
+    if (currentLevel >= MAX_PURPLE_SKILL_STAT_LEVEL) return false;
+
     const cost = getPurpleSkillCostAt(currentLevel);
     if (get().purpleDiamonds < cost) return false;
 
@@ -928,6 +988,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   getPurpleSkillInvestment: () => getTotalPurpleSkillInvestment(get().skills),
+
+  enforcePurpleSkillCap: () => {
+    const { skills, refund } = clampSkillsToMaxLevel(get().skills);
+    if (refund <= 0) return 0;
+    set((s) => ({
+      skills,
+      purpleDiamonds: s.purpleDiamonds + refund,
+    }));
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return refund;
+  },
 
   /**
    * Respec da árvore roxa: zera atributos granulares e devolve diamantes roxos.
@@ -994,7 +1067,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getCritDamageMultiplier: () =>
     getCritDamageMultiplierAt(get().critDamageLevel),
 
-  getXpBonusUpgradeCost: () => xpBonusCostAt(get().xpBonusLevel),
+  getXpBonusUpgradeCost: () => {
+    const level = get().xpBonusLevel;
+    if (isLevelCapped(level, MAX_UPGRADE_LEVELS.xpBonus)) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return xpBonusCostAt(level);
+  },
 
   getXpMultiplier: () =>
     xpMultiplierAt(get().xpBonusLevel) * get().getPrestigeMultiplier(),
@@ -1240,11 +1319,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /** Compra nível de bônus de XP com diamantes (só gems + xpBonusLevel). */
   upgradeXpBonus: () => {
+    if (isLevelCapped(get().xpBonusLevel, MAX_UPGRADE_LEVELS.xpBonus)) {
+      return false;
+    }
     const cost = get().getXpBonusUpgradeCost();
-    if (get().gems < cost) return false;
+    if (!Number.isFinite(cost) || get().gems < cost) return false;
     set((state) => ({
       gems: state.gems - cost,
-      xpBonusLevel: state.xpBonusLevel + 1,
+      xpBonusLevel: Math.min(
+        MAX_UPGRADE_LEVELS.xpBonus,
+        state.xpBonusLevel + 1,
+      ),
     }));
     return true;
   },

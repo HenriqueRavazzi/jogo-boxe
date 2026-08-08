@@ -1,6 +1,6 @@
 "use client";
 
-import { Gem, Lock, Sparkles, Unlock } from "lucide-react";
+import { Check, Gem, Lock, Sparkles, Unlock } from "lucide-react";
 import {
   SKILL_BRANCHES,
   SKILL_NODES,
@@ -8,7 +8,11 @@ import {
   type SkillNodeDef,
 } from "@/lib/skillTree";
 import { syncWithDB } from "@/lib/syncWithDB";
-import { getXpMultiplier, useGameStore } from "@/store/useGameStore";
+import {
+  MAX_UPGRADE_LEVELS,
+  getXpMultiplier,
+  useGameStore,
+} from "@/store/useGameStore";
 
 type SkillTreeProps = {
   onClose: () => void;
@@ -60,8 +64,10 @@ export function SkillTree({ onClose }: SkillTreeProps) {
   const getXpBonusUpgradeCost = useGameStore((s) => s.getXpBonusUpgradeCost);
 
   const xpCost = getXpBonusUpgradeCost();
-  const xpBonusPct = Math.round(xpBonusLevel * 10);
-  const canBuyXp = gems >= xpCost;
+  const xpCap = MAX_UPGRADE_LEVELS.xpBonus;
+  const xpAtMax = xpBonusLevel >= xpCap;
+  const xpBonusPct = Math.round(Math.min(xpCap, xpBonusLevel) * 10);
+  const canBuyXp = !xpAtMax && Number.isFinite(xpCost) && gems >= xpCost;
 
   const handleUnlock = async (nodeId: SkillNodeDef["id"], cost: number) => {
     const ok = unlockSkill(nodeId, cost);
@@ -109,37 +115,72 @@ export function SkillTree({ onClose }: SkillTreeProps) {
         </header>
 
         <div className="overflow-y-auto p-5">
-          <div className="mb-8 rounded-2xl border border-violet-500/40 bg-violet-950/40 p-4">
+          <div
+            className={`mb-8 rounded-2xl border p-4 ${
+              xpAtMax
+                ? "border-amber-500/40 bg-amber-950/30"
+                : "border-violet-500/40 bg-violet-950/40"
+            }`}
+          >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/20 text-violet-300">
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                    xpAtMax
+                      ? "bg-amber-500/20 text-amber-300"
+                      : "bg-violet-500/20 text-violet-300"
+                  }`}
+                >
                   <Sparkles className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-violet-100">
+                  <p
+                    className={`text-sm font-bold ${
+                      xpAtMax ? "text-amber-100" : "text-violet-100"
+                    }`}
+                  >
                     Aumento de XP
                   </p>
-                  <p className="text-xs text-violet-200/80">
-                    Nível {xpBonusLevel} · bônus atual{" "}
-                    <span className="font-semibold text-violet-200">
+                  <p
+                    className={`text-xs ${
+                      xpAtMax ? "text-amber-200/80" : "text-violet-200/80"
+                    }`}
+                  >
+                    Nível {Math.min(xpCap, xpBonusLevel)}/{xpCap} · bônus atual{" "}
+                    <span
+                      className={`font-semibold ${
+                        xpAtMax ? "text-amber-200" : "text-violet-200"
+                      }`}
+                    >
                       +{xpBonusPct}% XP
                     </span>{" "}
-                    (×{getXpMultiplier(xpBonusLevel).toFixed(1)})
+                    (×
+                    {getXpMultiplier(
+                      Math.min(xpCap, xpBonusLevel),
+                    ).toFixed(1)}
+                    )
                   </p>
                   <p className="mt-1 text-xs text-zinc-400">
-                    Cada nível: +10% de ganho de XP na partida
+                    Cada nível: +10% de ganho de XP na partida (máx. {xpCap})
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                disabled={!canBuyXp}
-                onClick={() => void handleXpUpgrade()}
-                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-              >
-                <Gem className="h-4 w-4" />
-                {xpCost.toLocaleString("pt-BR")} Diamantes
-              </button>
+              {xpAtMax ? (
+                <div className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-amber-400/45 bg-amber-500/20 px-4 py-2.5 text-sm font-semibold text-amber-100">
+                  <Check className="h-4 w-4" aria-hidden />
+                  Nível máximo
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!canBuyXp}
+                  onClick={() => void handleXpUpgrade()}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+                >
+                  <Gem className="h-4 w-4" />
+                  {xpCost.toLocaleString("pt-BR")} Diamantes
+                </button>
+              )}
             </div>
           </div>
 

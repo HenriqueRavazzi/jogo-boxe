@@ -82,15 +82,26 @@ export const SKILL_STAT_KEYS = {
   [K in SkillUpgradeType]: readonly (keyof SkillsData[K] & string)[];
 };
 
+/** Teto permanente de cada atributo granular (Diamantes Roxos). */
+export const MAX_PURPLE_SKILL_STAT_LEVEL = 20;
+
 /** Teto in-run: maior nível entre os atributos meta da skill. */
 export function getSkillMetaCap(
   skill: SkillsData[SkillUpgradeType] | number | undefined,
 ): number {
   if (skill == null) return 0;
-  if (typeof skill === "number") return Math.max(0, Math.floor(skill));
+  if (typeof skill === "number") {
+    return Math.min(
+      MAX_PURPLE_SKILL_STAT_LEVEL,
+      Math.max(0, Math.floor(skill)),
+    );
+  }
   const values = Object.values(skill as Record<string, number>);
   if (values.length === 0) return 0;
-  return Math.max(0, ...values.map((v) => Math.floor(Number(v) || 0)));
+  return Math.min(
+    MAX_PURPLE_SKILL_STAT_LEVEL,
+    Math.max(0, ...values.map((v) => Math.floor(Number(v) || 0))),
+  );
 }
 
 export function isSkillUpgradeType(value: string): value is SkillUpgradeType {
