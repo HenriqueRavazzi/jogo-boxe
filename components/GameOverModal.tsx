@@ -9,12 +9,16 @@ import {
   Star,
   Trophy,
 } from "lucide-react";
+import { TOTAL_STAGES, getStageDef } from "@/lib/stages";
 import { useArenaStore } from "@/store/useArenaStore";
+import { useGameStore } from "@/store/useGameStore";
 
 type GameOverModalProps = {
   outcome?: "defeat" | "victory";
   onRestart: () => void;
   onReturnToMenu: () => void;
+  /** Avança para a próxima fase (só na vitória de campanha). */
+  onNextStage?: () => void;
   busy?: boolean;
 };
 
@@ -30,6 +34,7 @@ export function GameOverModal({
   outcome = "defeat",
   onRestart,
   onReturnToMenu,
+  onNextStage,
   busy = false,
 }: GameOverModalProps) {
   const timeAlive = useArenaStore((s) => s.timeAlive);
@@ -37,10 +42,40 @@ export function GameOverModal({
   const matchLevel = useArenaStore((s) => s.matchLevel);
   const currentXp = useArenaStore((s) => s.currentXp);
   const xpToNextLevel = useArenaStore((s) => s.xpToNextLevel);
+  const runMode = useArenaStore((s) => s.runMode);
+  const runStageNumber = useArenaStore((s) => s.runStageNumber);
+  const runStage = useArenaStore((s) => s.runStage);
+  const stageClearReward = useArenaStore((s) => s.stageClearReward);
+  const selectedStage = useGameStore((s) => s.selectedStage);
 
   const isVictory = outcome === "victory";
+  const canAdvance =
+    isVictory &&
+    runMode === "stage" &&
+    runStageNumber > 0 &&
+    runStageNumber < TOTAL_STAGES &&
+    typeof onNextStage === "function";
+  const nextStageLabel =
+    canAdvance ? getStageDef(runStageNumber + 1).name : null;
 
   const rows = [
+    ...(runMode === "stage" && runStage
+      ? [
+          {
+            icon: <Trophy className="h-4 w-4 text-emerald-300" aria-hidden />,
+            label: "Fase",
+            value: `${runStage.stageNumber}. ${runStage.name}`,
+          },
+        ]
+      : runMode === "endless"
+        ? [
+            {
+              icon: <Sparkles className="h-4 w-4 text-fuchsia-300" aria-hidden />,
+              label: "Modo",
+              value: "Endless",
+            },
+          ]
+        : []),
     {
       icon: <Clock className="h-4 w-4 text-zinc-300" aria-hidden />,
       label: "Tempo sobrevivido",
@@ -103,9 +138,25 @@ export function GameOverModal({
               isVictory ? "text-emerald-400" : "text-rose-500"
             }`}
           >
-            {isVictory ? "FASE CONCLUÍDA" : "GAME OVER"}
+            {isVictory
+              ? runMode === "stage"
+                ? "FASE CONCLUÍDA"
+                : "VITÓRIA"
+              : "GAME OVER"}
           </h2>
           <p className="mt-2 text-sm text-zinc-400">Resumo da partida atual</p>
+          {isVictory && stageClearReward && (
+            <p className="mt-2 text-sm font-semibold text-emerald-300/90">
+              {stageClearReward.firstClear ? "1ª vitória" : "Replay"} · +
+              {stageClearReward.gold.toLocaleString("pt-BR")} ouro
+              {stageClearReward.gems > 0
+                ? ` · +${stageClearReward.gems} diamantes`
+                : ""}
+              {selectedStage > runStageNumber
+                ? ` · próxima: ${selectedStage}`
+                : ""}
+            </p>
+          )}
         </div>
 
         <ul className="mt-6 max-h-[min(50vh,360px)] space-y-2 overflow-y-auto">
@@ -126,17 +177,30 @@ export function GameOverModal({
         </ul>
 
         <div className="mt-6 flex flex-col gap-2">
+          {canAdvance && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onNextStage}
+              className="w-full rounded-xl bg-emerald-500 py-3.5 text-base font-black uppercase tracking-wider text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Próxima Fase
+              {nextStageLabel ? ` · ${nextStageLabel}` : ""}
+            </button>
+          )}
           <button
             type="button"
             disabled={busy}
             onClick={onRestart}
             className={`w-full rounded-xl py-3.5 text-base font-black uppercase tracking-wider text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
-              isVictory
+              isVictory && !canAdvance
                 ? "bg-emerald-500 hover:bg-emerald-400"
-                : "bg-sky-500 hover:bg-sky-400"
+                : canAdvance
+                  ? "bg-sky-600 hover:bg-sky-500"
+                  : "bg-sky-500 hover:bg-sky-400"
             }`}
           >
-            Tentar Novamente
+            {isVictory ? "Repetir Fase" : "Tentar Novamente"}
           </button>
           <button
             type="button"

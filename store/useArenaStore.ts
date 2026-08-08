@@ -34,6 +34,11 @@ import type { RicochetPathEffect } from "@/src/game/systems/CombatSystem";
 import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import { useGameStore } from "@/store/useGameStore";
 import type { EnemyRewards } from "@/lib/gameConfig";
+import {
+  getStageDef,
+  type RunMode,
+  type StageDef,
+} from "@/lib/stages";
 
 export type { ActiveQuest, QuestProgressEvent } from "@/lib/quests";
 
@@ -226,9 +231,24 @@ export type ArenaStoreState = {
   activeQuests: ActiveQuest[];
   /** Partida pausada (ESC) — trava física/tempo. */
   isPaused: boolean;
+  /** Campanha ou endless nesta run. */
+  runMode: RunMode;
+  /** Fase atual (ignorada em endless). */
+  runStageNumber: number;
+  /** Snapshot da fase para o spawner / vitória. */
+  runStage: StageDef | null;
+  /** Chefe da fase já foi derrotado (modo stage). */
+  stageBossDefeated: boolean;
+  /** Recompensa da última vitória de fase (null em derrota / endless). */
+  stageClearReward: {
+    stageNumber: number;
+    firstClear: boolean;
+    gold: number;
+    gems: number;
+  } | null;
   startGame: () => void;
   setGameOver: () => void;
-  /** Vitória da fase (ex.: bosses do catálogo derrotados). */
+  /** Vitória da fase: persiste progresso e recompensas bônus. */
   setVictory: () => void;
   /** Volta ao menu mantendo o progresso persistente (claim & exit). */
   exitMatch: () => void;
@@ -387,6 +407,11 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   bossHordeAlertUntil: 0,
   activeQuests: [],
   isPaused: false,
+  runMode: "stage",
+  runStageNumber: 1,
+  runStage: null,
+  stageBossDefeated: false,
+  stageClearReward: null,
 
   startGame: () => {
     const game = useGameStore.getState();
@@ -398,6 +423,16 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     const { playerX, playerY } = get();
     const w = typeof window !== "undefined" ? window.innerWidth : 800;
     const h = typeof window !== "undefined" ? window.innerHeight : 600;
+
+    const runMode: RunMode =
+      game.selectedRunMode === "endless" && game.endlessUnlocked
+        ? "endless"
+        : "stage";
+    const runStageNumber =
+      runMode === "stage"
+        ? Math.max(1, Math.min(50, game.selectedStage || 1))
+        : 0;
+    const runStage = runMode === "stage" ? getStageDef(runStageNumber) : null;
 
     set({
       gameState: "playing",
@@ -434,6 +469,11 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       playerRotation: -Math.PI / 2,
       playerX: playerX || w / 2,
       playerY: playerY || h / 2,
+      runMode,
+      runStageNumber,
+      runStage,
+      stageBossDefeated: false,
+      stageClearReward: null,
     });
   },
 
@@ -457,9 +497,27 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
+      stageClearReward: null,
     }),
 
-  setVictory: () =>
+  setVictory: () => {
+    if (get().gameState === "victory") return;
+    const { runMode, runStageNumber } = get();
+    let stageClearReward: {
+      stageNumber: number;
+      firstClear: boolean;
+      gold: number;
+      gems: number;
+    } | null = null;
+    if (runMode === "stage" && runStageNumber > 0) {
+      const rewards = useGameStore
+        .getState()
+        .completeStageClear(runStageNumber);
+      stageClearReward = {
+        stageNumber: runStageNumber,
+        ...rewards,
+      };
+    }
     set({
       gameState: "victory",
       enemies: [],
@@ -479,7 +537,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
-    }),
+      stageClearReward,
+    });
+  },
 
   /** Claim & exit: limpa a arena e volta ao menu (ouro/gems já estão no useGameStore). */
   exitMatch: () =>
@@ -516,6 +576,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       levelUpOptions: [],
       runStats: { ...EMPTY_RUN_STATS },
       currentHp: useGameStore.getState().getEffectiveStats().maxHp,
+      stageClearReward: null,
+      stageBossDefeated: false,
     }),
 
   togglePause: () => {

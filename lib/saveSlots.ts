@@ -8,6 +8,12 @@ import {
 } from "@/lib/milestoneQuests";
 import { DEFAULT_SKILL_TREE } from "@/lib/skillTree";
 import {
+  ENDLESS_UNLOCK_STAGE,
+  isEndlessUnlocked,
+  TOTAL_STAGES,
+  type RunMode,
+} from "@/lib/stages";
+import {
   DEFAULT_TEAM_MEMBERS_OWNED,
   normalizeEquippedTeamIds,
   normalizeTeamMembersOwned,
@@ -161,6 +167,10 @@ export function createDefaultSaveData(): SaveData {
     teamPity: normalizeTeamPity(null),
     teamMembersOwned: { ...DEFAULT_TEAM_MEMBERS_OWNED },
     equippedTeamMemberIds: [],
+    maxStageCleared: 0,
+    endlessUnlocked: false,
+    selectedStage: 1,
+    selectedRunMode: "stage",
   };
 }
 
@@ -254,6 +264,31 @@ export function normalizeSaveData(
       data.equippedTeamMemberIds,
       teamMembersOwned,
     ),
+    maxStageCleared: Math.min(
+      TOTAL_STAGES,
+      Math.max(0, Math.floor(Number(data.maxStageCleared) || 0)),
+    ),
+    endlessUnlocked: (() => {
+      const cleared = Math.min(
+        TOTAL_STAGES,
+        Math.max(0, Math.floor(Number(data.maxStageCleared) || 0)),
+      );
+      return Boolean(data.endlessUnlocked) || isEndlessUnlocked(cleared);
+    })(),
+    selectedStage: Math.min(
+      TOTAL_STAGES,
+      Math.max(1, Math.floor(Number(data.selectedStage) || 1)),
+    ),
+    selectedRunMode: (() => {
+      const cleared = Math.min(
+        TOTAL_STAGES,
+        Math.max(0, Math.floor(Number(data.maxStageCleared) || 0)),
+      );
+      const unlocked =
+        Boolean(data.endlessUnlocked) || isEndlessUnlocked(cleared);
+      if (data.selectedRunMode === "endless" && unlocked) return "endless";
+      return "stage";
+    })(),
   };
 }
 

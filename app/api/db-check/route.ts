@@ -119,6 +119,10 @@ export async function GET() {
       "teamPity",
       "teamMembersOwned",
       "equippedTeamMemberIds",
+      "maxStageCleared",
+      "endlessUnlocked",
+      "selectedStage",
+      "selectedRunMode",
     ];
 
     const saveData = readBack?.saveData;

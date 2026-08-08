@@ -20,6 +20,10 @@ export function TopBar() {
   const currentXp = useArenaStore((s) => s.currentXp);
   const xpToNextLevel = useArenaStore((s) => s.xpToNextLevel);
   const matchLevel = useArenaStore((s) => s.matchLevel);
+  const runMode = useArenaStore((s) => s.runMode);
+  const runStage = useArenaStore((s) => s.runStage);
+  const timeAlive = useArenaStore((s) => s.timeAlive);
+  const stageBossDefeated = useArenaStore((s) => s.stageBossDefeated);
   const maxHp = getMaxHp();
   const hpPercent = Math.max(0, Math.min(100, (currentHp / maxHp) * 100));
   const xpPercent = Math.max(
@@ -90,6 +94,25 @@ export function TopBar() {
             />
           </div>
         </div>
+
+        {runMode === "endless" ? (
+          <div className="rounded-lg bg-black/55 px-3 py-1.5 text-[11px] font-semibold text-fuchsia-200/90 shadow-lg backdrop-blur-sm">
+            Endless · {Math.floor(timeAlive)}s
+          </div>
+        ) : runStage ? (
+          <div className="rounded-lg bg-black/55 px-3 py-1.5 text-[11px] font-semibold text-sky-200/90 shadow-lg backdrop-blur-sm">
+            Fase {runStage.stageNumber}: {runStage.name}
+            <span className="ml-1.5 tabular-nums text-zinc-400">
+              {Math.min(Math.floor(timeAlive), runStage.durationSeconds)}/
+              {runStage.durationSeconds}s
+              {runStage.bossSpawnTime != null
+                ? stageBossDefeated
+                  ? " · chefe ✓"
+                  : " · chefe"
+                : ""}
+            </span>
+          </div>
+        ) : null}
 
         <div className="rounded-lg bg-black/55 px-3 py-2 shadow-lg backdrop-blur-sm">
           <div className="mb-1 flex items-center justify-between gap-2 text-xs text-zinc-300">

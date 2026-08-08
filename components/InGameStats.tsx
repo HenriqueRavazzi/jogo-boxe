@@ -33,6 +33,9 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const matchLevel = useArenaStore((s) => s.matchLevel);
   const timeAlive = useArenaStore((s) => s.timeAlive);
   const matchBuffs = useArenaStore((s) => s.matchBuffs);
+  const runMode = useArenaStore((s) => s.runMode);
+  const runStage = useArenaStore((s) => s.runStage);
+  const stageBossDefeated = useArenaStore((s) => s.stageBossDefeated);
 
   const skillTree = useGameStore((s) => s.skillTree);
   const maxHpLevel = useGameStore((s) => s.maxHpLevel);
@@ -78,6 +81,25 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   ).padStart(2, "0")}s`;
 
   const rows: { label: string; value: string }[] = [
+    ...(runMode === "endless"
+      ? [{ label: "Modo", value: "Endless" }]
+      : runStage
+        ? [
+            {
+              label: "Fase",
+              value: `${runStage.stageNumber}/${runStage.durationSeconds}s`,
+            },
+            {
+              label: "Chefe",
+              value:
+                runStage.bossSpawnTime == null
+                  ? "—"
+                  : stageBossDefeated
+                    ? "OK"
+                    : `${runStage.bossSpawnTime}s`,
+            },
+          ]
+        : []),
     { label: "HP", value: `${Math.ceil(currentHp)}/${stats.maxHp}` },
     { label: "Dano", value: String(damage) },
     { label: "Braços", value: String(stats.arms) },

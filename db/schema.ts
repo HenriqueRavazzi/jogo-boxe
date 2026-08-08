@@ -222,6 +222,14 @@ export type SaveData = {
   teamMembersOwned: TeamMembersOwned;
   /** Até 3 membros equipados na esquina do ringue. */
   equippedTeamMemberIds: TeamMemberId[];
+  /** Maior fase limpa (0 = nenhuma). */
+  maxStageCleared: number;
+  /** Endless liberado após limpar a fase 15. */
+  endlessUnlocked: boolean;
+  /** Última fase selecionada no menu (1–50). */
+  selectedStage: number;
+  /** Modo de run selecionado. */
+  selectedRunMode: "stage" | "endless";
 };
 
 export const gameSaves = pgTable("game_saves", {
@@ -271,6 +279,18 @@ export const difficulties = pgTable("difficulties", {
   enemyDamageMultiplier: real("enemy_damage_multiplier").notNull(),
   enemySpeedMultiplier: real("enemy_speed_multiplier").notNull(),
   goldDropMultiplier: real("gold_drop_multiplier").notNull(),
+});
+
+/**
+ * Configuração das 50 fases da campanha (espelhada em `lib/stages.ts` no cliente).
+ */
+export const stages = pgTable("stages", {
+  stageNumber: integer("stage_number").primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  durationSeconds: integer("duration_seconds").notNull(),
+  enemyTierCap: integer("enemy_tier_cap").notNull(),
+  /** Null = fase sem chefe obrigatório. */
+  bossSpawnTime: integer("boss_spawn_time"),
 });
 
 /**

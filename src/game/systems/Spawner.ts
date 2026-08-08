@@ -150,6 +150,12 @@ export type SpawnerInput = {
   difficulty?: DifficultySpawnMultipliers;
   /** Catálogo do Neon / fallback. */
   enemyTypes?: EnemyTypeConfig[];
+  /** Campanha: limita pool de comuns e agenda 1 chefe no horário da fase. */
+  stageCampaign?: {
+    enemyTierCap: number;
+    bossSpawnTime: number | null;
+    difficultyMul: number;
+  } | null;
 };
 
 export type SpawnerResult = {
@@ -211,10 +217,17 @@ function commonTypes(types: EnemyTypeConfig[]): EnemyTypeConfig[] {
 export function availableCommonTypes(
   types: EnemyTypeConfig[],
   timeAliveSeconds: number,
+  enemyTierCap?: number,
 ): EnemyTypeConfig[] {
-  const unlocked = commonTypes(types).filter(
-    (e) => timeAliveSeconds >= e.unlockTime,
+  const sorted = [...commonTypes(types)].sort(
+    (a, b) => a.unlockTime - b.unlockTime || a.id - b.id,
   );
+  const tierPool =
+    enemyTierCap != null && enemyTierCap > 0
+      ? sorted.slice(0, Math.max(1, Math.floor(enemyTierCap)))
+      : sorted;
+
+  const unlocked = tierPool.filter((e) => timeAliveSeconds >= e.unlockTime);
 
   // Primeiros 45s: só Zumbi Fraco e Rato Corredor (respiração inicial)
   if (timeAliveSeconds < EARLY_BATCH_LOCK_SECONDS) {
@@ -227,7 +240,7 @@ export function availableCommonTypes(
     if (soft.length > 0) return soft;
   }
 
-  return unlocked;
+  return unlocked.length > 0 ? unlocked : tierPool.slice(0, 1);
 }
 
 function bossTypes(types: EnemyTypeConfig[]): EnemyTypeConfig[] {
@@ -385,6 +398,7 @@ function spawnFromConfig(
 
 /**
  * Spawner: comuns por unlock_time; bosses agendados (240s) + invasões na horda.
+ * Em campanha de fase: pool limitada por enemyTierCap e 1 chefe no horário da fase.
  */
 export function runSpawner(input: SpawnerInput): SpawnerResult {
   const {
@@ -398,13 +412,18 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     difficulty,
   } = input;
 
+  const stage = input.stageCampaign ?? null;
   const types = catalog(input.enemyTypes);
   const bosses = bossTypes(types);
 
   const timeAliveInSeconds =
     timeAlive > 10_000 ? timeAlive / 1000 : timeAlive;
 
-  const availableTypes = availableCommonTypes(types, timeAliveInSeconds);
+  const availableTypes = availableCommonTypes(
+    types,
+    timeAliveInSeconds,
+    stage?.enemyTierCap,
+  );
   const aliveBossCount =
     input.aliveBossCount ?? (hasBossAlive ? 1 : 0);
 
@@ -420,37 +439,89 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
   let bossesAlive = aliveBossCount;
   let hordeBossInvaded = false;
 
-  const expectedBosses = Math.floor(
-    timeAliveInSeconds / BOSS_INTERVAL_SECONDS,
-  );
+  const stageDiffMul = stage?.difficultyMul ?? 1;
+  const mergedDifficulty: DifficultySpawnMultipliers | undefined = difficulty
+    ? {
+        enemyHpMultiplier:
+          (difficulty.enemyHpMultiplier ?? 1) * stageDiffMul,
+        enemyDamageMultiplier:
+          (difficulty.enemyDamageMultiplier ?? 1) * stageDiffMul,
+        enemySpeedMultiplier:
+          (difficulty.enemySpeedMultiplier ?? 1) *
+          Math.sqrt(Math.max(1, stageDiffMul)),
+      }
+    : stage
+      ? {
+          enemyHpMultiplier: stageDiffMul,
+          enemyDamageMultiplier: stageDiffMul,
+          enemySpeedMultiplier: Math.sqrt(Math.max(1, stageDiffMul)),
+        }
+      : undefined;
 
-  // Boss agendado (a cada 240s) — não pausa a horda
-  if (expectedBosses > bossesSpawned && count < MAX_ENEMIES) {
-    const bossCount = bossesSpawned;
-    const { config, overflow } = pickBossConfig(bosses, bossCount);
-    spawned.push(
-      spawnFromConfig(
-        canvasWidth,
-        canvasHeight,
-        config,
-        timeAliveInSeconds,
-        matchLevel,
-        difficulty,
-        overflow,
-      ),
+  if (stage) {
+    // Campanha: um chefe no horário da fase (sem invasões / ciclo 240s)
+    const bossAt = stage.bossSpawnTime;
+    if (
+      bossAt != null &&
+      bossesSpawned < 1 &&
+      timeAliveInSeconds >= bossAt &&
+      count < MAX_ENEMIES &&
+      bosses.length > 0
+    ) {
+      const stageBossIndex = Math.min(
+        bosses.length - 1,
+        Math.max(0, Math.floor(stage.enemyTierCap / 4) - 1),
+      );
+      const { config, overflow } = pickBossConfig(bosses, stageBossIndex);
+      spawned.push(
+        spawnFromConfig(
+          canvasWidth,
+          canvasHeight,
+          config,
+          timeAliveInSeconds,
+          matchLevel,
+          mergedDifficulty,
+          overflow,
+        ),
+      );
+      bossesSpawned = 1;
+      bossesAlive += 1;
+      count += 1;
+    }
+  } else {
+    const expectedBosses = Math.floor(
+      timeAliveInSeconds / BOSS_INTERVAL_SECONDS,
     );
-    bossesSpawned = expectedBosses;
-    bossesAlive += 1;
-    count += 1;
-    invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
+
+    // Boss agendado (a cada 240s) — não pausa a horda
+    if (expectedBosses > bossesSpawned && count < MAX_ENEMIES) {
+      const bossCount = bossesSpawned;
+      const { config, overflow } = pickBossConfig(bosses, bossCount);
+      spawned.push(
+        spawnFromConfig(
+          canvasWidth,
+          canvasHeight,
+          config,
+          timeAliveInSeconds,
+          matchLevel,
+          mergedDifficulty,
+          overflow,
+        ),
+      );
+      bossesSpawned = expectedBosses;
+      bossesAlive += 1;
+      count += 1;
+      invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
+    }
   }
 
   while (spawnAccumulatorMs >= spawnIntervalMs && count < MAX_ENEMIES) {
     spawnAccumulatorMs -= spawnIntervalMs;
     const batchAmount = getSpawnAmount(timeAliveInSeconds);
 
-    // Invasão: chance progressiva de boss no meio do lote
+    // Invasão: só no Endless (campanha usa chefe único da fase)
     const canInvade =
+      !stage &&
       invasionBossCooldownMs <= 0 &&
       bossesAlive < MAX_ALIVE_BOSSES &&
       bosses.length > 0 &&
@@ -467,7 +538,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
           config,
           timeAliveInSeconds,
           matchLevel,
-          difficulty,
+          mergedDifficulty,
           overflow,
         ),
       );
@@ -486,7 +557,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
           config,
           timeAliveInSeconds,
           matchLevel,
-          difficulty,
+          mergedDifficulty,
         ),
       );
       count += 1;

@@ -77,6 +77,15 @@ import {
   type SkillTreeState,
 } from "@/lib/skillTree";
 import {
+  ENDLESS_UNLOCK_STAGE,
+  getMaxSelectableStage,
+  getStageClearRewards,
+  getStageDef,
+  isEndlessUnlocked,
+  TOTAL_STAGES,
+  type RunMode,
+} from "@/lib/stages";
+import {
   advancePityAfterPull,
   getEquippedTeamBuffs as calcEquippedTeamBuffs,
   getTeamRecruitCost as calcTeamRecruitCost,
@@ -205,6 +214,11 @@ export type GameStoreState = {
   teamMembersOwned: TeamMembersOwned;
   /** Até 3 membros equipados. */
   equippedTeamMemberIds: TeamMemberId[];
+  /** Progresso da campanha (fases 1–50). */
+  maxStageCleared: number;
+  endlessUnlocked: boolean;
+  selectedStage: number;
+  selectedRunMode: "stage" | "endless";
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
   /** Lista de dificuldades do Neon. */
@@ -294,6 +308,14 @@ export type GameStoreState = {
   equipTeamMember: (id: TeamMemberId) => boolean;
   /** Remove membro do slot. */
   unequipTeamMember: (id: TeamMemberId) => void;
+  setSelectedStage: (stage: number) => void;
+  setSelectedRunMode: (mode: "stage" | "endless") => void;
+  /** Marca fase limpa + recompensas; libera Endless em ≥15. */
+  completeStageClear: (stageNumber: number) => {
+    firstClear: boolean;
+    gold: number;
+    gems: number;
+  };
   /** Shards que seriam ganhos se ascender agora. */
   previewAscensionShards: () => number;
   upgradeHP: () => boolean;
@@ -917,6 +939,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     defaults.equippedTeamMemberIds,
     normalizeTeamMembersOwned(defaults.teamMembersOwned),
   ),
+  maxStageCleared: defaults.maxStageCleared ?? 0,
+  endlessUnlocked:
+    defaults.endlessUnlocked ||
+    isEndlessUnlocked(defaults.maxStageCleared ?? 0),
+  selectedStage: defaults.selectedStage ?? 1,
+  selectedRunMode: defaults.selectedRunMode ?? "stage",
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
@@ -1004,6 +1032,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         n.equippedTeamMemberIds,
         normalizeTeamMembersOwned(n.teamMembersOwned),
       ),
+      maxStageCleared: Math.min(
+        TOTAL_STAGES,
+        Math.max(0, Math.floor(n.maxStageCleared ?? 0)),
+      ),
+      endlessUnlocked:
+        Boolean(n.endlessUnlocked) ||
+        isEndlessUnlocked(n.maxStageCleared ?? 0),
+      selectedStage: Math.min(
+        TOTAL_STAGES,
+        Math.max(1, Math.floor(n.selectedStage ?? 1)),
+      ),
+      selectedRunMode:
+        n.selectedRunMode === "endless" &&
+        (Boolean(n.endlessUnlocked) ||
+          isEndlessUnlocked(n.maxStageCleared ?? 0))
+          ? "endless"
+          : "stage",
     });
     if (refund > 0) {
       void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
@@ -1071,6 +1116,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         s.equippedTeamMemberIds,
         normalizeTeamMembersOwned(s.teamMembersOwned),
       ),
+      maxStageCleared: s.maxStageCleared,
+      endlessUnlocked: s.endlessUnlocked || isEndlessUnlocked(s.maxStageCleared),
+      selectedStage: s.selectedStage,
+      selectedRunMode: s.selectedRunMode,
     };
   },
 
@@ -1244,6 +1293,52 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((s) => ({
       equippedTeamMemberIds: s.equippedTeamMemberIds.filter((x) => x !== id),
     })),
+
+  setSelectedStage: (stage) => {
+    const max = getMaxSelectableStage(get().maxStageCleared);
+    const n = Math.min(max, Math.max(1, Math.floor(stage)));
+    set({ selectedStage: n, selectedRunMode: "stage" });
+  },
+
+  setSelectedRunMode: (mode) => {
+    if (mode === "endless") {
+      if (!get().endlessUnlocked && !isEndlessUnlocked(get().maxStageCleared)) {
+        return;
+      }
+      set({ selectedRunMode: "endless" });
+      return;
+    }
+    set({ selectedRunMode: "stage" });
+  },
+
+  completeStageClear: (stageNumber) => {
+    const stage = Math.min(
+      TOTAL_STAGES,
+      Math.max(1, Math.floor(stageNumber)),
+    );
+    const prev = get().maxStageCleared;
+    const firstClear = stage > prev;
+    const rewards = firstClear
+      ? getStageClearRewards(stage)
+      : { gold: Math.floor(getStageClearRewards(stage).gold * 0.25), gems: 0 };
+
+    set((s) => {
+      const nextCleared = Math.max(s.maxStageCleared, stage);
+      return {
+        maxStageCleared: nextCleared,
+        endlessUnlocked:
+          s.endlessUnlocked || nextCleared >= ENDLESS_UNLOCK_STAGE,
+        gold: s.gold + rewards.gold,
+        gems: s.gems + rewards.gems,
+        selectedStage: Math.min(
+          TOTAL_STAGES,
+          Math.max(s.selectedStage, Math.min(TOTAL_STAGES, nextCleared + 1)),
+        ),
+      };
+    });
+
+    return { firstClear, ...rewards };
+  },
 
   getAscensionPassiveCost: (id) => {
     const level = get().ascensionPassives[id] ?? 0;

@@ -372,6 +372,14 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const hasBossAlive = livingEnemies.some((e) => e.type === "boss");
       const aliveBossCount = livingEnemies.filter((e) => e.type === "boss")
         .length;
+      const stageCampaign =
+        arena.runMode === "stage" && arena.runStage
+          ? {
+              enemyTierCap: arena.runStage.enemyTierCap,
+              bossSpawnTime: arena.runStage.bossSpawnTime,
+              difficultyMul: arena.runStage.difficultyMul,
+            }
+          : null;
       const spawn = runSpawner({
         timeAlive: nextTimeAlive,
         matchLevel: arena.matchLevel,
@@ -390,6 +398,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           enemySpeedMultiplier: difficulty.enemySpeedMultiplier,
         },
         enemyTypes: game.enemyTypes,
+        stageCampaign,
       });
       spawnAccumulator = spawn.spawnAccumulatorMs;
 
@@ -403,6 +412,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       ) {
         nextHp = Math.min(stats.maxHp, nextHp + teamRegen * dt);
       }
+
+      const stageBossDefeated =
+        arena.stageBossDefeated ||
+        (arena.runMode === "stage" &&
+          dropResult.bossesKilledThisBatch > 0);
 
       useArenaStore.setState({
         playerX: cx,
@@ -427,6 +441,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         bossesSpawned: spawn.bossesSpawned,
         bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
         invasionBossCooldownMs: spawn.invasionBossCooldownMs,
+        stageBossDefeated,
         activeSkillPulse: combat.activeSkillPulse,
         lightningProjectiles: combat.lightningProjectiles,
         skillVfxEffects,
@@ -436,8 +451,6 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         useArenaStore.getState().triggerBossHordeAlert(2_000);
       }
 
-      const bossesKilledNow =
-        arena.bossesKilled + dropResult.bossesKilledThisBatch;
       if (dropResult.bossesKilledThisBatch > 0) {
         useArenaStore.setState((s) => ({
           runStats: {
@@ -450,10 +463,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
       if (combat.player.hp <= 0) {
         useArenaStore.getState().setGameOver();
-      } else if (dropResult.bossesKilledThisBatch > 0) {
-        const bossCatalogCount = game.enemyTypes.filter((t) => t.isBoss).length;
-        const victoryTarget = Math.max(1, bossCatalogCount);
-        if (bossesKilledNow >= victoryTarget) {
+      } else if (arena.runMode === "stage" && arena.runStage) {
+        const stage = arena.runStage;
+        const survived = nextTimeAlive >= stage.durationSeconds;
+        const bossOk =
+          stage.bossSpawnTime == null || stageBossDefeated;
+        if (survived && bossOk) {
           useArenaStore.getState().setVictory();
         }
       }

@@ -9,6 +9,12 @@ import { MilestoneQuestsPanel } from "@/components/MilestoneQuestsPanel";
 import { SaveMenu } from "@/components/SaveMenu";
 import { TeamPanel } from "@/components/TeamPanel";
 import { UpgradePanel } from "@/components/UpgradePanel";
+import {
+  ENDLESS_UNLOCK_STAGE,
+  TOTAL_STAGES,
+  getMaxSelectableStage,
+  getStageDef,
+} from "@/lib/stages";
 import { useGameStore } from "@/store/useGameStore";
 
 type MainMenuProps = {
@@ -66,6 +72,12 @@ export function MainMenu({
   const selectedDifficultyId = useGameStore((s) => s.selectedDifficultyId);
   const setSelectedDifficulty = useGameStore((s) => s.setSelectedDifficulty);
   const configsLoaded = useGameStore((s) => s.configsLoaded);
+  const maxStageCleared = useGameStore((s) => s.maxStageCleared);
+  const endlessUnlocked = useGameStore((s) => s.endlessUnlocked);
+  const selectedStage = useGameStore((s) => s.selectedStage);
+  const selectedRunMode = useGameStore((s) => s.selectedRunMode);
+  const setSelectedStage = useGameStore((s) => s.setSelectedStage);
+  const setSelectedRunMode = useGameStore((s) => s.setSelectedRunMode);
   const [upgradeTab, setUpgradeTab] = useState<UpgradeTab>("gold");
   const [confirmPrestige, setConfirmPrestige] = useState(false);
 
@@ -74,6 +86,9 @@ export function MainMenu({
   const prestigeMul = getPrestigeMultiplier();
   const nextShape = prestigeShapeLabel(prestigeLevel + 1);
   const shardsPreview = previewAscensionShards();
+  const maxSelectable = getMaxSelectableStage(maxStageCleared);
+  const endlessReady = endlessUnlocked || maxStageCleared >= ENDLESS_UNLOCK_STAGE;
+  const stagePreview = getStageDef(selectedStage);
 
   const handlePrestige = () => {
     if (!triggerPrestige()) return;
@@ -186,6 +201,95 @@ export function MainMenu({
                 Inimigos {selected.enemyHpMultiplier.toFixed(1)}× HP · Ouro{" "}
                 {selected.goldDropMultiplier.toFixed(1)}×
                 {!configsLoaded ? " · defaults locais" : null}
+              </p>
+            )}
+          </div>
+        )}
+
+        {!isGameOver && (
+          <div className="rounded-xl border border-white/10 bg-zinc-900/70 p-3">
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+              Campanha
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRunMode("stage")}
+                className={`flex-1 rounded-lg px-2 py-2 text-xs font-bold uppercase tracking-wider transition ${
+                  selectedRunMode === "stage"
+                    ? "bg-sky-500/30 text-sky-200"
+                    : "bg-zinc-950 text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Fases
+              </button>
+              <button
+                type="button"
+                disabled={!endlessReady}
+                onClick={() => setSelectedRunMode("endless")}
+                title={
+                  endlessReady
+                    ? "Sobrevivência infinita"
+                    : `Libere ao vencer a fase ${ENDLESS_UNLOCK_STAGE}`
+                }
+                className={`flex-1 rounded-lg px-2 py-2 text-xs font-bold uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  selectedRunMode === "endless"
+                    ? "bg-fuchsia-500/30 text-fuchsia-200"
+                    : "bg-zinc-950 text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Endless
+              </button>
+            </div>
+
+            {selectedRunMode === "stage" ? (
+              <>
+                <label
+                  htmlFor="stage-select"
+                  className="mb-1.5 mt-3 block text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500"
+                >
+                  Fase
+                </label>
+                <select
+                  id="stage-select"
+                  value={selectedStage}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setSelectedStage(n);
+                  }}
+                  className="w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-2.5 text-sm font-semibold text-zinc-100 outline-none transition focus:border-sky-400/60"
+                >
+                  {Array.from({ length: maxSelectable }, (_, i) => i + 1).map(
+                    (n) => {
+                      const stage = getStageDef(n);
+                      const cleared = n <= maxStageCleared;
+                      return (
+                        <option key={n} value={n}>
+                          {n}. {stage.name}
+                          {cleared ? " ✓" : n === maxStageCleared + 1 ? " ★" : ""}
+                        </option>
+                      );
+                    },
+                  )}
+                </select>
+                <p className="mt-2 text-[11px] leading-snug text-zinc-400">
+                  {stagePreview.name} · {stagePreview.durationSeconds}s
+                  {stagePreview.bossSpawnTime != null
+                    ? ` · chefe ~${stagePreview.bossSpawnTime}s`
+                    : " · sem chefe"}
+                  {" · "}
+                  limpa até {maxStageCleared}/{TOTAL_STAGES}
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-[11px] leading-snug text-zinc-400">
+                Endless liberado. Horda contínua com bosses e escalonamento.
+              </p>
+            )}
+            {!endlessReady && (
+              <p className="mt-2 text-[11px] text-zinc-500">
+                Endless após vencer a fase {ENDLESS_UNLOCK_STAGE}.
               </p>
             )}
           </div>

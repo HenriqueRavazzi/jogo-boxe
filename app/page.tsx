@@ -13,6 +13,7 @@ import { QuestsPanel } from "@/components/QuestsPanel";
 import { SkillTree } from "@/components/SkillTree";
 import { TopBar } from "@/components/TopBar";
 import { syncWithDB } from "@/lib/syncWithDB";
+import { TOTAL_STAGES } from "@/lib/stages";
 import { fetchGameConfigs } from "@/actions/fetchGameConfigs";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
@@ -99,6 +100,21 @@ export default function Home() {
     }
   };
 
+  const handleNextStage = async () => {
+    if (busy) return;
+    const arena = useArenaStore.getState();
+    if (arena.runMode !== "stage" || arena.runStageNumber >= TOTAL_STAGES) return;
+    const next = arena.runStageNumber + 1;
+    setBusy(true);
+    try {
+      useGameStore.getState().setSelectedStage(next);
+      await syncWithDB();
+      startGame();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="relative h-dvh w-full select-none overflow-hidden bg-zinc-950">
       <GameCanvas />
@@ -170,6 +186,7 @@ export default function Home() {
           outcome={gameState === "victory" ? "victory" : "defeat"}
           busy={busy}
           onRestart={() => void handleRestart()}
+          onNextStage={() => void handleNextStage()}
           onReturnToMenu={() => void handleExitMatch()}
         />
       )}
