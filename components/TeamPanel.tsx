@@ -18,8 +18,11 @@ import {
   MAX_EQUIPPED_TEAM_MEMBERS,
   MAX_TEAM_MEMBER_LEVEL,
   TEAM_MEMBER_DEFS,
+  TEAM_MULTI_PULL_COUNT,
+  TEAM_MULTI_PULL_DISCOUNT,
   TEAM_ROLE_LABEL,
   TEAM_TIER_LABEL,
+  type RecruitTeamPullEntry,
   type TeamMemberId,
   type TeamRole,
   type TeamTier,
@@ -59,6 +62,14 @@ const TIER_REVEAL: Record<TeamTier, string> = {
   legendary: "from-amber-300 to-orange-800",
 };
 
+const TIER_RANK: Record<TeamTier, number> = {
+  common: 0,
+  uncommon: 1,
+  rare: 2,
+  epic: 3,
+  legendary: 4,
+};
+
 /** Painel da Equipe: gacha com pity + slots na esquina. */
 export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
   const gold = useGameStore((s) => s.gold);
@@ -67,7 +78,9 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
   const teamMembersOwned = useGameStore((s) => s.teamMembersOwned);
   const equippedTeamMemberIds = useGameStore((s) => s.equippedTeamMemberIds);
   const getTeamRecruitCost = useGameStore((s) => s.getTeamRecruitCost);
+  const getTeamMultiRecruitCost = useGameStore((s) => s.getTeamMultiRecruitCost);
   const recruitTeamMember = useGameStore((s) => s.recruitTeamMember);
+  const recruitTeamMembers = useGameStore((s) => s.recruitTeamMembers);
   const equipTeamMember = useGameStore((s) => s.equipTeamMember);
   const unequipTeamMember = useGameStore((s) => s.unequipTeamMember);
 
@@ -77,23 +90,30 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
     isDuplicate: boolean;
     level: number;
   } | null>(null);
+  const [batchReveal, setBatchReveal] = useState<RecruitTeamPullEntry[] | null>(
+    null,
+  );
   const [revealing, setRevealing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cost = getTeamRecruitCost();
+  const multiCost = getTeamMultiRecruitCost();
   const canRecruit = gold >= cost.gold && gems >= cost.gems;
+  const canRecruitMulti = gold >= multiCost.gold && gems >= multiCost.gems;
   const weights = getTeamTierWeights(teamPity);
   const weightSum = Object.values(weights).reduce((a, b) => a + b, 0);
+  const discountPct = Math.round(TEAM_MULTI_PULL_DISCOUNT * 100);
 
   useEffect(() => {
-    if (!reveal) return;
+    if (!reveal && !batchReveal) return;
     setRevealing(true);
     const t = window.setTimeout(() => setRevealing(false), 650);
     return () => window.clearTimeout(t);
-  }, [reveal]);
+  }, [reveal, batchReveal]);
 
   const handleRecruit = async () => {
     setError(null);
+    setBatchReveal(null);
     const result = recruitTeamMember();
     if (!result.ok) {
       setError("Ouro ou diamantes insuficientes.");
@@ -105,6 +125,18 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
       isDuplicate: result.isDuplicate,
       level: result.level,
     });
+    await syncWithDB();
+  };
+
+  const handleRecruitMulti = async () => {
+    setError(null);
+    setReveal(null);
+    const result = recruitTeamMembers(TEAM_MULTI_PULL_COUNT);
+    if (!result.ok) {
+      setError("Ouro ou diamantes insuficientes para o pacote 10×.");
+      return;
+    }
+    setBatchReveal(result.pulls);
     await syncWithDB();
   };
 
@@ -133,6 +165,14 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
   });
 
   const revealDef = reveal ? getTeamMemberDef(reveal.memberId) : null;
+  const bestBatchTier =
+    batchReveal && batchReveal.length > 0
+      ? batchReveal.reduce(
+          (best, p) => (TIER_RANK[p.tier] > TIER_RANK[best] ? p.tier : best),
+          batchReveal[0]!.tier,
+        )
+      : null;
+  const batchNewCount = batchReveal?.filter((p) => !p.isDuplicate).length ?? 0;
 
   return (
     <div className={embedded ? "" : "rounded-2xl border border-white/10 p-3"}>
@@ -144,7 +184,8 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
       <p className="mb-3 px-1 text-[11px] leading-snug text-zinc-500">
         Recrute membros com ouro e diamantes. Duplicatas sobem o nível. Equipe
         até {MAX_EQUIPPED_TEAM_MEMBERS} na esquina do ringue. Pity melhora rare+
-        com pulls acumuladas.
+        com pulls acumuladas. Pacote {TEAM_MULTI_PULL_COUNT}× com {discountPct}%
+        de desconto.
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2 px-1 text-[10px] text-zinc-400">
@@ -194,22 +235,47 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 px-1">
-        <button
-          type="button"
-          disabled={!canRecruit}
-          onClick={() => void handleRecruit()}
-          className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-orange-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-        >
-          <UserRound className="h-3.5 w-3.5" aria-hidden />
-          Recrutar Membro
-          <span className="inline-flex items-center gap-1 font-semibold tabular-nums opacity-90">
-            <Coins className="h-3 w-3 text-amber-200" aria-hidden />
-            {cost.gold.toLocaleString("pt-BR")}
-            <Gem className="h-3 w-3 text-cyan-200" aria-hidden />
-            {cost.gems.toLocaleString("pt-BR")}
-          </span>
-        </button>
+      <div className="mb-4 flex flex-col gap-2 px-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!canRecruit}
+            onClick={() => void handleRecruit()}
+            className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-orange-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+          >
+            <UserRound className="h-3.5 w-3.5" aria-hidden />
+            Recrutar Membro
+            <span className="inline-flex items-center gap-1 font-semibold tabular-nums opacity-90">
+              <Coins className="h-3 w-3 text-amber-200" aria-hidden />
+              {cost.gold.toLocaleString("pt-BR")}
+              <Gem className="h-3 w-3 text-cyan-200" aria-hidden />
+              {cost.gems.toLocaleString("pt-BR")}
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={!canRecruitMulti}
+            onClick={() => void handleRecruitMulti()}
+            className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+          >
+            <Users className="h-3.5 w-3.5" aria-hidden />
+            Recrutar {TEAM_MULTI_PULL_COUNT}×
+            <span className="rounded bg-black/25 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-100">
+              −{discountPct}%
+            </span>
+            <span className="inline-flex items-center gap-1 font-semibold tabular-nums opacity-90">
+              <Coins className="h-3 w-3 text-amber-200" aria-hidden />
+              {multiCost.gold.toLocaleString("pt-BR")}
+              <Gem className="h-3 w-3 text-cyan-200" aria-hidden />
+              {multiCost.gems.toLocaleString("pt-BR")}
+            </span>
+          </button>
+        </div>
+        <p className="text-[10px] text-zinc-500">
+          Pacote: soma das próximas {TEAM_MULTI_PULL_COUNT} pulls com desconto
+          (sem pacote: {multiCost.rawGold.toLocaleString("pt-BR")} ouro ·{" "}
+          {multiCost.rawGems.toLocaleString("pt-BR")} diamantes).
+        </p>
         {error && (
           <span className="text-[11px] font-medium text-rose-300">{error}</span>
         )}
@@ -239,6 +305,43 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {batchReveal && bestBatchTier && (
+        <div
+          className={`mb-4 overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br p-3 transition duration-500 ${TIER_REVEAL[bestBatchTier]} ${
+            revealing ? "scale-[1.01] opacity-100" : "scale-100 opacity-95"
+          }`}
+        >
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/75">
+            Pacote {TEAM_MULTI_PULL_COUNT}× · {batchNewCount} novos · melhor:{" "}
+            {TEAM_TIER_LABEL[bestBatchTier]}
+          </p>
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {batchReveal.map((pull, idx) => {
+              const def = getTeamMemberDef(pull.memberId);
+              return (
+                <li
+                  key={`${pull.memberId}-${idx}`}
+                  className="flex items-center gap-2 rounded-lg bg-black/25 px-2 py-1.5"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/30 text-white">
+                    {ROLE_ICONS[def.role]}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-bold text-white">
+                      {def.name}
+                    </p>
+                    <p className="text-[10px] text-white/75">
+                      {pull.isDuplicate ? "Duplicata" : "Novo"} ·{" "}
+                      {TEAM_TIER_LABEL[pull.tier]} · Nv. {pull.level}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 

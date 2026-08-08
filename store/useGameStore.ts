@@ -89,13 +89,17 @@ import {
   advancePityAfterPull,
   getEquippedTeamBuffs as calcEquippedTeamBuffs,
   getTeamRecruitCost as calcTeamRecruitCost,
+  getTeamMultiRecruitCost as calcTeamMultiRecruitCost,
   MAX_EQUIPPED_TEAM_MEMBERS,
   MAX_TEAM_MEMBER_LEVEL,
   normalizeEquippedTeamIds,
   normalizeTeamMembersOwned,
   normalizeTeamPity,
   rollTeamMemberId,
+  TEAM_MULTI_PULL_COUNT,
   type EquippedTeamBuffs,
+  type RecruitTeamBatchResult,
+  type RecruitTeamPullEntry,
   type RecruitTeamResult,
   type TeamMemberId,
   type TeamMembersOwned,
@@ -302,8 +306,19 @@ export type GameStoreState = {
   getEquippedTeamBuffs: () => EquippedTeamBuffs;
   /** Custo atual do recrutamento da equipe. */
   getTeamRecruitCost: () => { gold: number; gems: number };
+  /** Custo do pacote 10× com desconto. */
+  getTeamMultiRecruitCost: () => {
+    gold: number;
+    gems: number;
+    rawGold: number;
+    rawGems: number;
+    count: number;
+    discount: number;
+  };
   /** Pull do gacha da equipe (ouro + diamantes). */
   recruitTeamMember: () => RecruitTeamResult;
+  /** Pacote multi-pull (padrão 10× com desconto). */
+  recruitTeamMembers: (count?: number) => RecruitTeamBatchResult;
   /** Equipa membro (máx. 3 slots). */
   equipTeamMember: (id: TeamMemberId) => boolean;
   /** Remove membro do slot. */
@@ -1232,6 +1247,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getTeamRecruitCost: () =>
     calcTeamRecruitCost(get().teamPity.totalPulls),
 
+  getTeamMultiRecruitCost: () =>
+    calcTeamMultiRecruitCost(
+      get().teamPity.totalPulls,
+      TEAM_MULTI_PULL_COUNT,
+    ),
+
   recruitTeamMember: () => {
     const pity = normalizeTeamPity(get().teamPity);
     const cost = calcTeamRecruitCost(pity.totalPulls);
@@ -1276,6 +1297,63 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       goldSpent: cost.gold,
       gemsSpent: cost.gems,
       totalPulls: nextPity.totalPulls,
+    };
+  },
+
+  recruitTeamMembers: (count = TEAM_MULTI_PULL_COUNT) => {
+    const pullCount = Math.max(1, Math.floor(count));
+    const pityStart = normalizeTeamPity(get().teamPity);
+    const cost = calcTeamMultiRecruitCost(pityStart.totalPulls, pullCount);
+    if (get().gold < cost.gold || get().gems < cost.gems) {
+      return { ok: false, reason: "funds" };
+    }
+
+    let pity = pityStart;
+    let owned = normalizeTeamMembersOwned(get().teamMembersOwned);
+    let equipped = [...get().equippedTeamMemberIds];
+    const pulls: RecruitTeamPullEntry[] = [];
+
+    for (let i = 0; i < pullCount; i++) {
+      const { memberId, tier } = rollTeamMemberId(pity);
+      const previous = owned[memberId] ?? 0;
+      const nextLevel =
+        previous <= 0
+          ? 1
+          : Math.min(MAX_TEAM_MEMBER_LEVEL, previous + 1);
+      owned = { ...owned, [memberId]: nextLevel };
+      pity = advancePityAfterPull(pity, tier);
+
+      if (
+        previous <= 0 &&
+        equipped.length < MAX_EQUIPPED_TEAM_MEMBERS &&
+        !equipped.includes(memberId)
+      ) {
+        equipped = [...equipped, memberId];
+      }
+
+      pulls.push({
+        memberId,
+        tier,
+        isDuplicate: previous > 0,
+        level: nextLevel,
+      });
+    }
+
+    set((s) => ({
+      gold: s.gold - cost.gold,
+      gems: s.gems - cost.gems,
+      teamMembersOwned: owned,
+      teamPity: pity,
+      equippedTeamMemberIds: equipped,
+    }));
+
+    return {
+      ok: true,
+      pulls,
+      goldSpent: cost.gold,
+      gemsSpent: cost.gems,
+      totalPulls: pity.totalPulls,
+      discount: cost.discount,
     };
   },
 

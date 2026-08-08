@@ -406,6 +406,46 @@ export function getTeamRecruitCost(totalPulls: number): {
   };
 }
 
+/** Quantidade do pacote multi-pull. */
+export const TEAM_MULTI_PULL_COUNT = 10;
+/** Desconto no pacote 10× (10%). */
+export const TEAM_MULTI_PULL_DISCOUNT = 0.1;
+
+/**
+ * Soma o custo das próximas `count` pulls (custo cresce com totalPulls)
+ * e aplica desconto de pacote.
+ */
+export function getTeamMultiRecruitCost(
+  totalPulls: number,
+  count: number = TEAM_MULTI_PULL_COUNT,
+): {
+  gold: number;
+  gems: number;
+  rawGold: number;
+  rawGems: number;
+  count: number;
+  discount: number;
+} {
+  const start = Math.max(0, Math.floor(totalPulls));
+  const n = Math.max(1, Math.floor(count));
+  let rawGold = 0;
+  let rawGems = 0;
+  for (let i = 0; i < n; i++) {
+    const c = getTeamRecruitCost(start + i);
+    rawGold += c.gold;
+    rawGems += c.gems;
+  }
+  const mul = 1 - TEAM_MULTI_PULL_DISCOUNT;
+  return {
+    count: n,
+    discount: TEAM_MULTI_PULL_DISCOUNT,
+    rawGold,
+    rawGems,
+    gold: Math.max(n, Math.floor(rawGold * mul)),
+    gems: Math.max(n, Math.floor(rawGems * mul)),
+  };
+}
+
 export type TeamPityState = {
   totalPulls: number;
   pullsSinceEpic: number;
@@ -630,6 +670,24 @@ export type RecruitTeamResult =
       goldSpent: number;
       gemsSpent: number;
       totalPulls: number;
+    };
+
+export type RecruitTeamPullEntry = {
+  memberId: TeamMemberId;
+  tier: TeamTier;
+  isDuplicate: boolean;
+  level: number;
+};
+
+export type RecruitTeamBatchResult =
+  | { ok: false; reason: "funds" }
+  | {
+      ok: true;
+      pulls: RecruitTeamPullEntry[];
+      goldSpent: number;
+      gemsSpent: number;
+      totalPulls: number;
+      discount: number;
     };
 
 export function advancePityAfterPull(
