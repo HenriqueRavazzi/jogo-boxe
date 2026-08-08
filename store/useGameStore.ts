@@ -433,20 +433,23 @@ export const MAX_UPGRADE_LEVELS = {
 
 /** Árvore de atributos permanentes (Diamantes Normais). */
 export const MAX_META_TREE_LEVEL = 20;
-/** Por nó: dano/vida sem teto; demais mantêm limite. */
+/** Teto de Dano / Vida permanentes (Diamantes). */
+export const MAX_META_DAMAGE_HP_LEVEL = 40;
+/** Por nó: dano/vida com teto 40; demais mantêm limite. */
 export const MAX_META_TREE_LEVELS: Record<
   MetaTreeUpgradeType,
   number
 > = {
-  metaDamageLevel: Number.POSITIVE_INFINITY,
-  metaHpLevel: Number.POSITIVE_INFINITY,
+  metaDamageLevel: MAX_META_DAMAGE_HP_LEVEL,
+  metaHpLevel: MAX_META_DAMAGE_HP_LEVEL,
   metaKnockbackLevel: MAX_META_TREE_LEVEL,
   metaLifeStealLevel: MAX_META_TREE_LEVEL,
   metaSkillRegenLevel: MAX_META_TREE_LEVEL,
 };
 export const META_TREE_COST_BASE = 5;
-export const META_DAMAGE_PER_LEVEL = 3;
-export const META_HP_PER_LEVEL = 15;
+/** Buff permanente por nível (Diamantes) — reforçado. */
+export const META_DAMAGE_PER_LEVEL = 6;
+export const META_HP_PER_LEVEL = 30;
 export const META_KNOCKBACK_PER_LEVEL = 1.5;
 /** Pontos percentuais por nível (0.5 → 0.5%). */
 export const META_LIFE_STEAL_PERCENT_PER_LEVEL = 0.5;
@@ -877,9 +880,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
       skills,
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
-      metaDamageLevel: n.metaDamageLevel,
+      metaDamageLevel: Math.min(
+        MAX_META_DAMAGE_HP_LEVEL,
+        Math.max(0, Math.floor(n.metaDamageLevel ?? 0)),
+      ),
       metaKnockbackLevel: n.metaKnockbackLevel,
-      metaHpLevel: n.metaHpLevel,
+      metaHpLevel: Math.min(
+        MAX_META_DAMAGE_HP_LEVEL,
+        Math.max(0, Math.floor(n.metaHpLevel ?? 0)),
+      ),
       metaLifeStealLevel: n.metaLifeStealLevel,
       metaSkillRegenLevel: n.metaSkillRegenLevel,
       prestigeLevel: Math.max(0, Math.floor(n.prestigeLevel ?? 0)),

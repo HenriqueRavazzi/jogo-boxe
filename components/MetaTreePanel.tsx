@@ -6,7 +6,6 @@ import {
   Gem,
   Heart,
   HeartPulse,
-  Move,
   Swords,
 } from "lucide-react";
 import type { MetaTreeUpgradeType } from "@/db/schema";
@@ -17,15 +16,19 @@ import {
   isLevelCapped,
   META_DAMAGE_PER_LEVEL,
   META_HP_PER_LEVEL,
-  META_KNOCKBACK_PER_LEVEL,
   META_LIFE_STEAL_PERCENT_PER_LEVEL,
   META_SKILL_REGEN_DAMAGE_RATIO,
   META_SKILL_REGEN_HIT_HEAL,
   useGameStore,
 } from "@/store/useGameStore";
 
+type ShopMetaUpgradeType = Exclude<
+  MetaTreeUpgradeType,
+  "metaKnockbackLevel"
+>;
+
 type MetaCardDef = {
-  type: MetaTreeUpgradeType;
+  type: ShopMetaUpgradeType;
   title: string;
   icon: ReactNode;
   bonusLabel: (level: number) => string;
@@ -37,13 +40,6 @@ const CARDS: MetaCardDef[] = [
     title: "Dano",
     icon: <Swords className="h-4 w-4" aria-hidden />,
     bonusLabel: (level) => `+${level * META_DAMAGE_PER_LEVEL} dano base`,
-  },
-  {
-    type: "metaKnockbackLevel",
-    title: "Knockback",
-    icon: <Move className="h-4 w-4" aria-hidden />,
-    bonusLabel: (level) =>
-      `+${(level * META_KNOCKBACK_PER_LEVEL).toFixed(1)} empurrão`,
   },
   {
     type: "metaHpLevel",
@@ -74,7 +70,6 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
   const gems = useGameStore((s) => s.gems);
   const levels = {
     metaDamageLevel: useGameStore((s) => s.metaDamageLevel),
-    metaKnockbackLevel: useGameStore((s) => s.metaKnockbackLevel),
     metaHpLevel: useGameStore((s) => s.metaHpLevel),
     metaLifeStealLevel: useGameStore((s) => s.metaLifeStealLevel),
     metaSkillRegenLevel: useGameStore((s) => s.metaSkillRegenLevel),
@@ -82,7 +77,7 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
   const getMetaTreeUpgradeCost = useGameStore((s) => s.getMetaTreeUpgradeCost);
   const upgradeMetaTree = useGameStore((s) => s.upgradeMetaTree);
 
-  const buy = (type: MetaTreeUpgradeType) => {
+  const buy = (type: ShopMetaUpgradeType) => {
     if (!upgradeMetaTree(type)) return;
     void syncWithDB();
   };
@@ -94,7 +89,7 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
           Árvore de Atributos (Diamantes)
         </p>
       )}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {CARDS.map((card) => {
           const level = levels[card.type];
           const cost = getMetaTreeUpgradeCost(card.type);
