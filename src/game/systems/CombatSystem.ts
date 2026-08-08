@@ -35,6 +35,7 @@ export type MatchBuffsInput = {
   damageMultiplier: number;
   critDamageMultiplier?: number;
   skillDamageMultiplier?: number;
+  knockbackMultiplier?: number;
 };
 
 export type ActiveAttack = {
@@ -266,9 +267,10 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   );
   const bounceDamageMult = 0.6 + skills.ricochet.damage * 0.15;
   const knockbackPower =
-    knockbackImpulse ??
-    gameState.getKnockbackPower() ??
-    DEFAULT_KNOCKBACK;
+    (knockbackImpulse ??
+      gameState.getKnockbackPower() ??
+      DEFAULT_KNOCKBACK) *
+    (matchBuffs.knockbackMultiplier ?? 1);
   const difficulty = gameState.getDifficultyMultipliers();
   void contactDamage; // legado: dano melee vem de enemy.attackDamage
 

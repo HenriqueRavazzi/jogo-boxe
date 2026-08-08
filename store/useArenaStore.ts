@@ -135,6 +135,7 @@ export type MatchBuffs = {
   damageMultiplier: number;
   critDamageMultiplier: number;
   skillDamageMultiplier: number;
+  knockbackMultiplier: number;
 };
 
 export type GameState =
@@ -150,6 +151,7 @@ const DEFAULT_BUFFS: MatchBuffs = {
   damageMultiplier: 1,
   critDamageMultiplier: 1,
   skillDamageMultiplier: 1,
+  knockbackMultiplier: 1,
 };
 
 const EMPTY_RUN_STATS: RunStats = {

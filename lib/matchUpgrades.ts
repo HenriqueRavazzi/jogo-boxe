@@ -23,6 +23,7 @@ export type UpgradeCategory =
   | "range"
   | "critDamage"
   | "skillDamage"
+  | "knockback"
   | SpecialSkillKey;
 
 export type UpgradeType =
@@ -31,6 +32,7 @@ export type UpgradeType =
   | "damageMultiplier"
   | "critDamageMultiplier"
   | "skillDamageMultiplier"
+  | "knockbackMultiplier"
   | SpecialSkillKey;
 
 export type MatchUpgrade = {
@@ -80,7 +82,8 @@ type StatCategory =
   | "speed"
   | "range"
   | "critDamage"
-  | "skillDamage";
+  | "skillDamage"
+  | "knockback";
 
 const STAT_UPGRADE_POOL: {
   type: UpgradeType;
@@ -117,6 +120,12 @@ const STAT_UPGRADE_POOL: {
     category: "skillDamage",
     name: "Skill Damage",
     short: "Dano das Skills",
+  },
+  {
+    type: "knockbackMultiplier",
+    category: "knockback",
+    name: "Knockback",
+    short: "Empurrão dos Socos",
   },
 ];
 
@@ -379,14 +388,20 @@ const ALL_STAT_CATEGORIES: StatCategory[] = [
   "range",
   "critDamage",
   "skillDamage",
+  "knockback",
 ];
 
 /** Quais categorias de status ainda podem aparecer na roleta. */
 export function getEligibleStatCategories(ctx?: {
   effectiveRange?: number;
   effectiveCooldownMs?: number;
+  /** True se o jogador já tem ≥1 skill especial ativa na run. */
+  hasActiveSkill?: boolean;
 }): StatCategory[] {
   return ALL_STAT_CATEGORIES.filter((category) => {
+    if (category === "skillDamage" && !ctx?.hasActiveSkill) {
+      return false;
+    }
     if (
       category === "range" &&
       ctx?.effectiveRange != null &&
@@ -444,7 +459,10 @@ export function generateUpgradeOptions(
   const usedCategories = new Set<UpgradeCategory>();
   const usedTypes = new Set<UpgradeType>();
   let specialPool = [...eligibleSpecials];
-  let statPool = getEligibleStatCategories(ctx);
+  let statPool = getEligibleStatCategories({
+    ...ctx,
+    hasActiveSkill: activeRunSkills.length > 0,
+  });
   let attempts = 0;
   const maxAttempts = count * 8;
 

@@ -132,7 +132,7 @@ export type GameStoreState = {
   incomeMultiplier: number;
   /** Nível de bônus de XP (+10% por nível). */
   xpBonusLevel: number;
-  /** Nível do upgrade de knockback (ouro). */
+  /** Nível do upgrade de knockback (ouro) — só via cartas in-run. */
   knockbackLevel: number;
   /** Poder base de empurrão dos socos. */
   baseKnockbackPower: number;
@@ -358,7 +358,7 @@ export const MAX_UPGRADE_LEVELS = {
   hp: Number.POSITIVE_INFINITY,
   damage: Number.POSITIVE_INFINITY,
   income: Number.POSITIVE_INFINITY,
-  knockback: 30,
+  knockback: 0,
   /** 5% + 35×2% = 75%. */
   critChance: 35,
   /** Só via cartas in-run (`matchBuffs.critDamageMultiplier`). */
@@ -809,7 +809,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         MAX_UPGRADE_LEVELS.xpBonus,
         Math.max(0, Math.floor(n.xpBonusLevel)),
       ),
-      knockbackLevel: n.knockbackLevel,
+      knockbackLevel: 0,
       baseKnockbackPower: n.baseKnockbackPower,
       critChanceLevel: n.critChanceLevel,
       critDamageLevel: 0,
@@ -877,7 +877,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         MAX_UPGRADE_LEVELS.xpBonus,
         Math.max(0, Math.floor(s.xpBonusLevel)),
       ),
-      knockbackLevel: s.knockbackLevel,
+      knockbackLevel: 0,
       baseKnockbackPower: s.baseKnockbackPower,
       critChanceLevel: s.critChanceLevel,
       critDamageLevel: 0,
@@ -1575,14 +1575,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   upgradeKnockback: () => {
-    if (get().knockbackLevel >= MAX_UPGRADE_LEVELS.knockback) return false;
-    const cost = get().getKnockbackUpgradeCost();
-    if (get().gold < cost) return false;
-    set((s) => ({
-      gold: s.gold - cost,
-      knockbackLevel: s.knockbackLevel + 1,
-    }));
-    return true;
+    // Knockback só via cartas in-run (`matchBuffs.knockbackMultiplier`).
+    return false;
   },
 
   upgradeCritChance: () => {

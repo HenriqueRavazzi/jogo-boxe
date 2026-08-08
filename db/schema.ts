@@ -173,7 +173,7 @@ export type SaveData = {
   incomeMultiplier: number;
   /** Nível de bônus de XP (+10% por nível). */
   xpBonusLevel: number;
-  /** Nível do upgrade de knockback (ouro). */
+  /** Nível do upgrade de knockback (ouro) — legado; progresso só in-run. */
   knockbackLevel: number;
   /** Poder base de empurrão dos socos. */
   baseKnockbackPower: number;

@@ -38,6 +38,9 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const skillDamagePct = Math.round(
     ((matchBuffs.skillDamageMultiplier ?? 1) - 1) * 100,
   );
+  const knockbackPct = Math.round(
+    ((matchBuffs.knockbackMultiplier ?? 1) - 1) * 100,
+  );
 
   const totalSeconds = Math.max(0, Math.floor(timeAlive));
   const timeLabel = `${Math.floor(totalSeconds / 60)}m ${String(
@@ -51,6 +54,10 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
     { label: "Velocidade", value: `${cooldown}ms` },
     { label: "Alcance", value: String(range) },
     { label: "Dano Crít.", value: `${critDamage.toFixed(2)}x` },
+    {
+      label: "Knockback",
+      value: knockbackPct > 0 ? `+${knockbackPct}%` : "0%",
+    },
     {
       label: "Dano Skill",
       value: skillDamagePct > 0 ? `+${skillDamagePct}%` : "0%",

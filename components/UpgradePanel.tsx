@@ -6,7 +6,6 @@ import {
   Crosshair,
   Hand,
   HeartPulse,
-  Move,
   Sparkles,
   Swords,
 } from "lucide-react";
@@ -21,12 +20,11 @@ import {
 } from "@/store/useGameStore";
 import { syncWithDB } from "@/lib/syncWithDB";
 
-/** Painel de upgrades com ouro (AS e dano crítico só in-run). */
+/** Painel de upgrades com ouro (AS, crítico dano e knockback só in-run). */
 export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const maxHpLevel = useGameStore((s) => s.maxHpLevel);
   const baseDamageLevel = useGameStore((s) => s.baseDamageLevel);
   const rangeLevel = useGameStore((s) => s.rangeLevel);
-  const knockbackLevel = useGameStore((s) => s.knockbackLevel);
   const critChanceLevel = useGameStore((s) => s.critChanceLevel);
   const arms = useGameStore((s) => s.arms);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
@@ -38,8 +36,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const getRangeUpgradeCost = useGameStore((s) => s.getRangeUpgradeCost);
   const getIncomeUpgradeCost = useGameStore((s) => s.getIncomeUpgradeCost);
   const getArmsUpgradeCost = useGameStore((s) => s.getArmsUpgradeCost);
-  const getKnockbackUpgradeCost = useGameStore((s) => s.getKnockbackUpgradeCost);
-  const getKnockbackPower = useGameStore((s) => s.getKnockbackPower);
   const getCritChanceUpgradeCost = useGameStore(
     (s) => s.getCritChanceUpgradeCost,
   );
@@ -49,7 +45,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const upgradeRange = useGameStore((s) => s.upgradeRange);
   const upgradeIncome = useGameStore((s) => s.upgradeIncome);
   const upgradeArms = useGameStore((s) => s.upgradeArms);
-  const upgradeKnockback = useGameStore((s) => s.upgradeKnockback);
   const upgradeCritChance = useGameStore((s) => s.upgradeCritChance);
   const getMaxHp = useGameStore((s) => s.getMaxHp);
   const getBaseDamage = useGameStore((s) => s.getBaseDamage);
@@ -60,8 +55,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const rangeCost = getRangeUpgradeCost();
   const incomeCost = getIncomeUpgradeCost();
   const armsCost = getArmsUpgradeCost();
-  const knockbackCost = getKnockbackUpgradeCost();
-  const knockbackPower = getKnockbackPower();
   const critChanceCost = getCritChanceUpgradeCost();
   const critChance = getCritChance();
 
@@ -73,10 +66,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const hpAtMax = isLevelCapped(maxHpLevel, MAX_UPGRADE_LEVELS.hp);
   const damageAtMax = isLevelCapped(baseDamageLevel, MAX_UPGRADE_LEVELS.damage);
   const incomeAtMax = isLevelCapped(incomeLevel, MAX_UPGRADE_LEVELS.income);
-  const knockbackAtMax = isLevelCapped(
-    knockbackLevel,
-    MAX_UPGRADE_LEVELS.knockback,
-  );
   const critChanceAtMax =
     isLevelCapped(critChanceLevel, MAX_UPGRADE_LEVELS.critChance) ||
     critChance >= MAX_CRIT_CHANCE;
@@ -144,19 +133,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         canAfford={!critChanceAtMax && gold >= critChanceCost}
         atMax={critChanceAtMax}
         onUpgrade={upgradeCritChance}
-      />
-      <UpgradeCard
-        icon={<Move className="h-5 w-5 text-violet-400" />}
-        title={`Knockback: ${knockbackPower}`}
-        subtitle={
-          knockbackAtMax
-            ? "MÁXIMO"
-            : formatLevelLabel(knockbackLevel, MAX_UPGRADE_LEVELS.knockback)
-        }
-        cost={knockbackCost}
-        canAfford={!knockbackAtMax && gold >= knockbackCost}
-        atMax={knockbackAtMax}
-        onUpgrade={upgradeKnockback}
       />
       <UpgradeCard
         icon={<Coins className="h-5 w-5 text-yellow-400" />}
