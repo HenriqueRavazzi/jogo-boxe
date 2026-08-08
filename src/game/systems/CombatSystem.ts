@@ -130,7 +130,12 @@ export type CombatSystemResult = {
   ricochetPaths: RicochetPathEffect[];
   kills: number;
   /** Coordenadas dos inimigos mortos neste frame (para loot). */
-  killSites: { x: number; y: number; enemyType: Enemy["type"] }[];
+  killSites: {
+    x: number;
+    y: number;
+    enemyType: Enemy["type"];
+    rewards: Enemy["rewards"];
+  }[];
   contactHits: number;
   /** Eventos para progresso de quests in-game. */
   questEvents: QuestProgressEvent[];
@@ -241,7 +246,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     0.2 + skills.lightning.hits * 0.1,
   );
   const fireLevel = matchSkills.fire;
-  const fireMaxStacks = Math.max(1, skills.fire.damage);
+  /** maxStacks da árvore roxa (fire.damage); mínimo 1 com carta in-run. */
+  const fireMaxStacks = Math.max(1, 1 + skills.fire.damage);
   const lifeStealRatio =
     getLifeStealRatio(gameState.skillTree) +
     getMetaLifeStealRatio(gameState.metaLifeStealLevel);
@@ -258,7 +264,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   let contactHits = 0;
   let kills = 0;
-  const killSites: { x: number; y: number; enemyType: Enemy["type"] }[] = [];
+  const killSites: {
+    x: number;
+    y: number;
+    enemyType: Enemy["type"];
+    rewards: Enemy["rewards"];
+  }[] = [];
   const questEvents: QuestProgressEvent[] = [];
   const skillVfx: SkillVfxEffect[] = [];
 
@@ -273,7 +284,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   const pushKill = (enemy: Enemy) => {
     kills += 1;
-    killSites.push({ x: enemy.x, y: enemy.y, enemyType: enemy.type });
+    killSites.push({
+      x: enemy.x,
+      y: enemy.y,
+      enemyType: enemy.type,
+      rewards: { ...enemy.rewards },
+    });
     pushKillQuests(enemy.type);
   };
 
@@ -709,13 +725,13 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           }
         }
 
-        // Fogo on-hit: burnDamage / burnDuration granulares
+        // Fogo on-hit: DoT = baseBurnDamage × stacks (pilhas individuais)
         if (fireLevel > 0) {
-          const burnDamage =
-            skillPunchBase * 0.2 * (1 + skills.fire.damage * 0.5);
+          const baseBurnDamage =
+            skillPunchBase * 0.2 * (1 + fireLevel * 0.15);
           const burnDurationMs = 2000 + skills.fire.duration * 500;
           const stacks = enemy.applyBurnStack(
-            burnDamage,
+            baseBurnDamage,
             fireMaxStacks,
             now,
             burnDurationMs,

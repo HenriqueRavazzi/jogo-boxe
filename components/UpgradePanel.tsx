@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  INCOME_STEP,
   MAX_CRIT_CHANCE,
   MAX_UPGRADE_LEVELS,
   formatLevelLabel,
@@ -86,7 +87,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
 
   const incomeLevel = Math.max(
     0,
-    Math.round((incomeMultiplier - 1) / 0.2),
+    Math.round((incomeMultiplier - 1) / INCOME_STEP),
   );
 
   const hpAtMax = isLevelCapped(maxHpLevel, MAX_UPGRADE_LEVELS.hp);

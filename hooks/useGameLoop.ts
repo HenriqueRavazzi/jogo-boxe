@@ -34,7 +34,6 @@ const HEAD_RADIUS = 11;
 const DROP_RADIUS = 6;
 const GLOVE_RADIUS = 8;
 const CONTACT_DAMAGE = 20;
-const XP_PER_KILL = 25;
 const FLOATING_TEXT_MAX_AGE = 60;
 
 /** Interpolação linear: start → end. */
@@ -187,6 +186,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           projectileDamage: e.projectileDamage ?? 0,
           color: e.color ?? "",
           statusEffects: e.statusEffects ?? [],
+          rewards: e.rewards,
         }),
       );
       const playerAttackRange =
@@ -261,7 +261,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         shakeFrames = Math.max(0, shakeFrames - gameSpeed);
       }
 
-      // Drops: ouro + diamante (10%) + roxo (0.5% / boss garantido)
+      // Drops: ouro + diamantes conforme rewards do enemy_types
       const difficulty = game.getDifficultyMultipliers();
       const dropResult = createDropsFromKills(combat.killSites, gameNow, {
         incomeMultiplier: game.incomeMultiplier,
@@ -306,6 +306,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
 
       const hasBossAlive = livingEnemies.some((e) => e.type === "boss");
+      const aliveBossCount = livingEnemies.filter((e) => e.type === "boss")
+        .length;
       const spawn = runSpawner({
         timeAlive: nextTimeAlive,
         matchLevel: arena.matchLevel,
@@ -314,6 +316,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         currentEnemyCount: livingEnemies.length,
         bossesSpawned: arena.bossesSpawned,
         hasBossAlive,
+        aliveBossCount,
+        invasionBossCooldownMs: arena.invasionBossCooldownMs,
         spawnAccumulatorMs: spawnAccumulator,
         dt,
         difficulty: {
@@ -346,6 +350,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         timeAlive: nextTimeAlive,
         bossesSpawned: spawn.bossesSpawned,
         bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
+        invasionBossCooldownMs: spawn.invasionBossCooldownMs,
         activeSkillPulse: combat.activeSkillPulse,
         lightningProjectiles: combat.lightningProjectiles,
         skillVfxEffects,
@@ -355,8 +360,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         useArenaStore.getState().setGameOver();
       }
 
-      if (combat.kills > 0) {
-        useArenaStore.getState().addXp(XP_PER_KILL * combat.kills);
+      if (dropResult.totalXp > 0) {
+        useArenaStore.getState().addXp(dropResult.totalXp);
       }
     };
 
@@ -634,27 +639,34 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         });
         enemyEntity.draw(ctx, now);
 
-        // Brasas de burn (stacks)
+        // Brasas de burn (stacks) — densidade e brilho sobem com as pilhas
+        const burnEffect = enemy.statusEffects?.find(
+          (s) => s.type === "burn" && s.expiresAt > now,
+        );
         const burnStacks =
-          enemy.statusEffects?.find(
-            (s) => s.type === "burn" && s.expiresAt > now,
-          )?.burnStacks ?? 0;
+          burnEffect?.burnStackExpires?.filter((t) => t > now).length ??
+          burnEffect?.burnStacks ??
+          0;
         if (burnStacks > 0) {
-          const sparks = Math.min(12, 3 + burnStacks * 2);
+          const sparks = Math.min(28, 4 + burnStacks * 3);
+          const glow = Math.min(1, 0.4 + burnStacks * 0.1);
           for (let i = 0; i < sparks; i++) {
             const ang = (i / sparks) * Math.PI * 2 + now * 0.004;
-            const dist = (enemy.radius ?? 12) + 4 + (i % 3) * 3;
+            const dist =
+              (enemy.radius ?? 12) + 3 + (i % 3) * (2 + burnStacks * 0.4);
             const sx = enemy.x + Math.cos(ang) * dist;
             const sy =
               enemy.y +
               Math.sin(ang) * dist -
-              ((now * 0.04 + i * 7) % 14);
+              ((now * 0.04 + i * 7) % (12 + burnStacks));
             ctx.beginPath();
-            ctx.arc(sx, sy, 1.6 + (i % 2), 0, Math.PI * 2);
+            ctx.arc(sx, sy, 1.4 + (i % 2) * (0.6 + burnStacks * 0.08), 0, Math.PI * 2);
             ctx.fillStyle =
-              i % 2 === 0
-                ? "rgba(251, 146, 60, 0.9)"
-                : "rgba(239, 68, 68, 0.85)";
+              i % 3 === 0
+                ? `rgba(253, 224, 71, ${0.55 + glow * 0.4})`
+                : i % 2 === 0
+                  ? `rgba(251, 146, 60, ${0.6 + glow * 0.35})`
+                  : `rgba(239, 68, 68, ${0.55 + glow * 0.35})`;
             ctx.fill();
           }
         }

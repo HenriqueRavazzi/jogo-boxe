@@ -1,5 +1,8 @@
 /** Sistema de loot magnético (ouro / diamante / diamante roxo). */
 
+import type { EnemyRewards } from "@/lib/gameConfig";
+import { DEFAULT_ENEMY_REWARDS } from "@/src/game/entities/Enemy";
+
 export type DropType = "gold" | "diamond" | "purple_diamond";
 
 export type Drop = {
@@ -15,16 +18,22 @@ export type KillSite = {
   y: number;
   /** Tipo do inimigo morto — bosses usam scaling de diamante roxo. */
   enemyType?: "normal" | "dasher" | "ranged" | "boss";
+  /** Recompensas do tipo (Neon / fallback). */
+  rewards?: EnemyRewards;
 };
 
 const DROP_IDLE_MS = 800;
 const MAGNET_SPEED = 520; // px/s
-/** Valor de cada moeda física ao coletar. */
-const GOLD_DROP_VALUE = 10;
-/** Moedas base por kill (antes dos multiplicadores). */
+/** Valor de cada moeda física ao coletar (nerf econômico). */
+const GOLD_DROP_VALUE = 5;
+/** Moedas base por kill se `rewards` ausente. */
 const BASE_GOLD_DROP = 1;
-const DIAMOND_CHANCE = 0.1;
-const PURPLE_DIAMOND_CHANCE = 0.005;
+/** Chance global de diamante normal por kill. */
+const DIAMOND_CHANCE = 0.03;
+/** Chance global de diamante roxo em inimigos não-boss. */
+const PURPLE_DIAMOND_CHANCE = 0.001;
+/** Peso do upgrade de renda no drop (1.0 = full; 0.5 = metade do bônus). */
+const INCOME_DROP_WEIGHT = 0.5;
 /** Espalhamento aleatório das moedas em px. */
 const COIN_SCATTER_PX = 40;
 /** Espalhamento dos diamantes roxos de boss. */
@@ -43,6 +52,8 @@ export type CreateDropsResult = {
   drops: Drop[];
   /** Bosses derrotados neste lote (para incrementar o contador da run). */
   bossesKilledThisBatch: number;
+  /** XP total deste lote (soma de xp_reward). */
+  totalXp: number;
 };
 
 /** Diamantes roxos garantidos no n-ésimo boss da run (1-indexed). */
@@ -51,9 +62,14 @@ export function purpleDiamondsForBoss(bossCount: number): number {
   return Math.max(1, Math.floor(2 * Math.pow(1.5, n - 1)));
 }
 
+function resolveRewards(site: KillSite): EnemyRewards {
+  return site.rewards ?? DEFAULT_ENEMY_REWARDS;
+}
+
 /**
  * Gera moedas espalhadas por kill + diamantes (normal / roxo).
  * Bosses: sempre dropam diamantes roxos progressivos ao redor do corpo.
+ * Ouro / chances de diamante vêm de `enemy_types` via `site.rewards`.
  */
 export function createDropsFromKills(
   sites: KillSite[],
@@ -65,14 +81,21 @@ export function createDropsFromKills(
   let bossOrdinal = options.bossesKilled ?? 0;
   const drops: Drop[] = [];
   let bossesKilledThisBatch = 0;
+  let totalXp = 0;
 
   for (const site of sites) {
     const isBoss = site.enemyType === "boss";
+    const rewards = resolveRewards(site);
+    totalXp += Math.max(0, rewards.xpReward);
 
-    // Quantidade variável de ouro (renda × dificuldade), mínimo 1
+    // Renda da loja com peso reduzido (nerf econômico)
+    const incomeFactor =
+      1 + (incomeMultiplier - 1) * INCOME_DROP_WEIGHT;
     const coinCount = Math.max(
       1,
-      Math.floor(BASE_GOLD_DROP * incomeMultiplier * goldDropMultiplier),
+      Math.floor(
+        rewards.goldReward * incomeFactor * goldDropMultiplier,
+      ),
     );
 
     for (let i = 0; i < coinCount; i++) {
@@ -85,7 +108,6 @@ export function createDropsFromKills(
       });
     }
 
-    // Diamante normal: 10% em qualquer kill
     if (Math.random() < DIAMOND_CHANCE) {
       drops.push({
         id: crypto.randomUUID(),
@@ -112,7 +134,6 @@ export function createDropsFromKills(
         });
       }
     } else if (Math.random() < PURPLE_DIAMOND_CHANCE) {
-      // Diamante roxo raro em inimigos normais (0.5%)
       drops.push({
         id: crypto.randomUUID(),
         x: site.x,
@@ -123,7 +144,7 @@ export function createDropsFromKills(
     }
   }
 
-  return { drops, bossesKilledThisBatch };
+  return { drops, bossesKilledThisBatch, totalXp };
 }
 
 export type LootSystemInput = {

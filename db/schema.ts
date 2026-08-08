@@ -244,4 +244,14 @@ export const enemyTypes = pgTable("enemy_types", {
   color: varchar("color", { length: 32 }).notNull().default("#ff0000"),
   /** Escala visual (raio ≈ 12 × scale). */
   scale: real("scale").notNull().default(1),
+  /** Segundos de partida em que o inimigo entra na pool de spawn. */
+  unlockTime: integer("unlock_time").notNull().default(0),
+  /** XP base concedida ao morrer. */
+  xpReward: integer("xp_reward").notNull().default(5),
+  /** Moedas base dropadas ao morrer (antes de multiplicadores). */
+  goldReward: real("gold_reward").notNull().default(1),
+  /** Chance 0–1 de dropar diamante normal. */
+  normalDiamondChance: real("normal_diamond_chance").notNull().default(0.02),
+  /** Chance 0–1 de dropar diamante roxo (não-boss). */
+  purpleDiamondChance: real("purple_diamond_chance").notNull().default(0),
 });

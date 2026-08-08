@@ -32,6 +32,7 @@ import {
 import type { RicochetPathEffect } from "@/src/game/systems/CombatSystem";
 import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import { useGameStore } from "@/store/useGameStore";
+import type { EnemyRewards } from "@/lib/gameConfig";
 
 export type { ActiveQuest, QuestProgressEvent } from "@/lib/quests";
 
@@ -42,6 +43,8 @@ export type EnemyStatusEffect = {
   expiresAt: number;
   burnDps?: number;
   burnStacks?: number;
+  burnDpsPerStack?: number;
+  burnStackExpires?: number[];
   slowAmount?: number;
 };
 
@@ -63,6 +66,7 @@ export type Enemy = {
   radius: number;
   color?: string;
   statusEffects: EnemyStatusEffect[];
+  rewards?: EnemyRewards;
 };
 
 export type EnemyProjectile = {
@@ -190,6 +194,8 @@ export type ArenaStoreState = {
   bossesSpawned: number;
   /** Quantos bosses já foram derrotados nesta run (scaling de diamante roxo). */
   bossesKilled: number;
+  /** Cooldown (ms) até a próxima invasão de boss na horda. */
+  invasionBossCooldownMs: number;
   /** Missões ativas da partida atual. */
   activeQuests: ActiveQuest[];
   /** Partida pausada (ESC) — trava física/tempo. */
@@ -329,6 +335,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   runStats: { ...EMPTY_RUN_STATS },
   bossesSpawned: 0,
   bossesKilled: 0,
+  invasionBossCooldownMs: 0,
   activeQuests: [],
   isPaused: false,
 
@@ -364,6 +371,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       runStats: { ...EMPTY_RUN_STATS },
       bossesSpawned: 0,
       bossesKilled: 0,
+      invasionBossCooldownMs: 0,
       activeQuests: createRandomQuests(2),
       isPaused: false,
       playerRotation: -Math.PI / 2,
@@ -388,6 +396,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       levelUpOptions: [],
       bossesSpawned: 0,
       bossesKilled: 0,
+      invasionBossCooldownMs: 0,
       activeQuests: [],
       isPaused: false,
       activeSkillPulse: createActiveSkillPulseState(),
@@ -415,6 +424,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchLevel: 1,
       bossesSpawned: 0,
       bossesKilled: 0,
+      invasionBossCooldownMs: 0,
       activeQuests: [],
       isPaused: false,
       playerRotation: -Math.PI / 2,
@@ -811,6 +821,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       skillVfxEffects: [],
       levelUpOptions: [],
       runStats: { ...EMPTY_RUN_STATS },
+      bossesSpawned: 0,
       bossesKilled: 0,
+      invasionBossCooldownMs: 0,
     }),
 }));

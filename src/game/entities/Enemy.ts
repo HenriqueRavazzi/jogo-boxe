@@ -1,5 +1,7 @@
 /** Entidade inimigo — atributos, chase, melee, ranged, status e desenho. */
 
+import type { EnemyRewards } from "@/lib/gameConfig";
+
 const EDGE_MARGIN = 24;
 const DEFAULT_HP = 30;
 const DEFAULT_SPEED = 55;
@@ -19,10 +21,14 @@ export type StatusEffectType = "freeze" | "shock" | "burn";
 export type StatusEffect = {
   type: StatusEffectType;
   expiresAt: number;
-  /** DPS de queimadura (burn) — soma das stacks. */
+  /** DPS total de queimadura (= base × stacks ativas). */
   burnDps?: number;
-  /** Pilhas de queimadura on-hit. */
+  /** Pilhas de queimadura on-hit ativas. */
   burnStacks?: number;
+  /** DPS por pilha (base do DoT progressivo). */
+  burnDpsPerStack?: number;
+  /** Expiração individual de cada pilha de fogo (ms game clock). */
+  burnStackExpires?: number[];
   /** Fração de slow 0–1 (shock). */
   slowAmount?: number;
 };
@@ -38,6 +44,13 @@ export const ENEMY_RADIUS: Record<EnemyType, number> = {
 export const BURN_TICK_MS = 500;
 export const BURN_DURATION_MS = 3000;
 export const SHOCK_SLOW_DURATION_MS = 2000;
+
+export const DEFAULT_ENEMY_REWARDS: EnemyRewards = {
+  xpReward: 5,
+  goldReward: 1,
+  normalDiamondChance: 0.03,
+  purpleDiamondChance: 0.001,
+};
 
 export type EnemyData = {
   id: string;
@@ -63,6 +76,8 @@ export type EnemyData = {
   /** Cor do canvas (vindo de enemy_types). */
   color?: string;
   statusEffects: StatusEffect[];
+  /** Recompensas por kill (vindo de enemy_types). */
+  rewards?: EnemyRewards;
 };
 
 export type EnemySpawnStats = {
@@ -74,6 +89,7 @@ export type EnemySpawnStats = {
   type?: EnemyType;
   radius?: number;
   color?: string;
+  rewards?: EnemyRewards;
   /** Se true, não aplica modifiers legacy (stats já vêm do DB). */
   skipTypeModifiers?: boolean;
 };
@@ -154,6 +170,7 @@ export class Enemy {
     public statusEffects: StatusEffect[] = [],
     public projectileDamage: number = 0,
     public color: string = "",
+    public rewards: EnemyRewards = { ...DEFAULT_ENEMY_REWARDS },
   ) {}
 
   static fromData(data: EnemyData): Enemy {
@@ -180,21 +197,51 @@ export class Enemy {
       data.isAttacking ?? false,
       type,
       data.radius ?? ENEMY_RADIUS[type],
-      (data.statusEffects ?? []).map((s) => ({ ...s })),
+      (data.statusEffects ?? []).map((s) => ({
+        ...s,
+        burnStackExpires: s.burnStackExpires
+          ? [...s.burnStackExpires]
+          : undefined,
+      })),
       data.projectileDamage ?? (type === "ranged" ? attackDamage * 1.5 : 0),
       data.color ?? "",
+      data.rewards ? { ...data.rewards } : { ...DEFAULT_ENEMY_REWARDS },
     );
     return enemy;
   }
 
   pruneStatusEffects(now: number): void {
-    this.statusEffects = this.statusEffects.filter((s) => s.expiresAt > now);
+    this.statusEffects = this.statusEffects
+      .map((s) => {
+        if (s.type !== "burn") return s;
+        const active = (s.burnStackExpires ?? []).filter((t) => t > now);
+        if (active.length === 0) {
+          // Fallback legado: um único expiresAt
+          if ((s.burnStackExpires?.length ?? 0) === 0 && s.expiresAt > now) {
+            return s;
+          }
+          return null;
+        }
+        const dpsPerStack = s.burnDpsPerStack ?? 0;
+        return {
+          ...s,
+          burnStackExpires: active,
+          burnStacks: active.length,
+          burnDps: active.length * dpsPerStack,
+          expiresAt: Math.max(...active),
+        };
+      })
+      .filter((s): s is StatusEffect => s != null && s.expiresAt > now);
   }
 
   hasStatus(type: StatusEffectType, now: number): boolean {
     return this.statusEffects.some(
       (s) => s.type === type && s.expiresAt > now,
     );
+  }
+
+  get isBoss(): boolean {
+    return this.type === "boss";
   }
 
   /**
@@ -204,7 +251,12 @@ export class Enemy {
   applyStatus(
     type: StatusEffectType,
     expiresAt: number,
-    meta?: { burnDps?: number; burnStacks?: number; slowAmount?: number },
+    meta?: {
+      burnDps?: number;
+      burnStacks?: number;
+      burnDpsPerStack?: number;
+      slowAmount?: number;
+    },
   ): void {
     const existing = this.statusEffects.find((s) => s.type === type);
     if (existing) {
@@ -217,6 +269,9 @@ export class Enemy {
           existing.burnStacks ?? 0,
           meta.burnStacks,
         );
+      }
+      if (meta?.burnDpsPerStack != null) {
+        existing.burnDpsPerStack = meta.burnDpsPerStack;
       }
       if (meta?.slowAmount != null) {
         existing.slowAmount = Math.max(
@@ -231,50 +286,67 @@ export class Enemy {
       expiresAt,
       burnDps: meta?.burnDps,
       burnStacks: meta?.burnStacks,
+      burnDpsPerStack: meta?.burnDpsPerStack,
       slowAmount: meta?.slowAmount,
     });
   }
 
   applyBurn(burnDps: number, now: number, durationMs = BURN_DURATION_MS): void {
     if (burnDps <= 0) return;
-    this.applyStatus("burn", now + durationMs, { burnDps, burnStacks: 1 });
+    this.applyBurnStack(burnDps, 1, now, durationMs);
   }
 
   /**
-   * On-hit: +1 stack de burn (teto = maxStacks). DPS = stacks × dpsPerStack.
+   * On-hit: +1 pilha de burn (teto = maxStacks).
+   * DoT total = baseBurnDamage × burnStacks; cada pilha expira individualmente.
    */
   applyBurnStack(
-    dpsPerStack: number,
+    baseBurnDamage: number,
     maxStacks: number,
     now: number,
     durationMs = BURN_DURATION_MS,
   ): number {
-    if (dpsPerStack <= 0 || maxStacks <= 0) return 0;
+    if (baseBurnDamage <= 0 || maxStacks <= 0) return 0;
     const cap = Math.max(1, Math.floor(maxStacks));
-    const existing = this.statusEffects.find((s) => s.type === "burn");
-    const prev = existing?.burnStacks ?? 0;
-    const next = Math.min(cap, prev + 1);
-    const burnDps = next * dpsPerStack;
-    if (existing) {
-      existing.burnStacks = next;
-      existing.burnDps = burnDps;
-      existing.expiresAt = now + durationMs;
-    } else {
-      this.statusEffects.push({
+    const stackExpiresAt = now + durationMs;
+
+    let existing = this.statusEffects.find((s) => s.type === "burn");
+    if (!existing) {
+      existing = {
         type: "burn",
-        expiresAt: now + durationMs,
-        burnDps,
-        burnStacks: next,
-      });
+        expiresAt: stackExpiresAt,
+        burnStackExpires: [],
+        burnDpsPerStack: baseBurnDamage,
+        burnStacks: 0,
+        burnDps: 0,
+      };
+      this.statusEffects.push(existing);
     }
-    return next;
+
+    existing.burnDpsPerStack = baseBurnDamage;
+    const active = (existing.burnStackExpires ?? []).filter((t) => t > now);
+    active.push(stackExpiresAt);
+    while (active.length > cap) {
+      active.shift(); // remove a pilha mais antiga
+    }
+
+    existing.burnStackExpires = active;
+    existing.burnStacks = active.length;
+    // totalBurnDamagePerSecond = baseBurnDamage * enemy.burnStacks
+    existing.burnDps = baseBurnDamage * active.length;
+    existing.expiresAt = Math.max(...active);
+    return existing.burnStacks;
   }
 
   getBurnStacks(now: number): number {
     const burn = this.statusEffects.find(
       (s) => s.type === "burn" && s.expiresAt > now,
     );
-    return burn?.burnStacks ?? 0;
+    if (!burn) return 0;
+    if (burn.burnStackExpires && burn.burnStackExpires.length > 0) {
+      return burn.burnStackExpires.filter((t) => t > now).length;
+    }
+    return burn.burnStacks ?? 0;
   }
 
   applyShockSlow(
@@ -413,11 +485,15 @@ export class Enemy {
     applyFrictionStep();
   }
 
-  /** Impulso de repulsão; cancela swarm (isAttacking). */
+  /** Impulso de repulsão; bosses são imunes. Cancela swarm nos demais. */
   applyKnockback(dirX: number, dirY: number, impulse: number): void {
+    if (this.isBoss) {
+      this.vx = 0;
+      this.vy = 0;
+      return;
+    }
     const len = Math.hypot(dirX, dirY) || 1;
-    const scale =
-      this.type === "boss" ? 0.35 : this.type === "dasher" ? 1.2 : 1;
+    const scale = this.type === "dasher" ? 1.2 : 1;
     const power = impulse * scale;
     this.vx = (dirX / len) * power;
     this.vy = (dirY / len) * power;
@@ -451,7 +527,13 @@ export class Enemy {
       type: this.type,
       radius: this.radius,
       color: this.color || undefined,
-      statusEffects: this.statusEffects.map((s) => ({ ...s })),
+      statusEffects: this.statusEffects.map((s) => ({
+        ...s,
+        burnStackExpires: s.burnStackExpires
+          ? [...s.burnStackExpires]
+          : undefined,
+      })),
+      rewards: { ...this.rewards },
     };
   }
 
@@ -569,25 +651,40 @@ export class Enemy {
 
     if (burning) {
       ctx.save();
-      const fireSparks = 6;
+      const stacks = Math.max(1, this.getBurnStacks(now));
+      const intensity = Math.min(1, 0.35 + stacks * 0.12);
+      const fireSparks = Math.min(28, 5 + stacks * 3);
       for (let i = 0; i < fireSparks; i++) {
         const phase = (now * 0.004 + i * 0.9) % 1;
-        const ox = Math.sin(now * 0.01 + i * 1.7) * this.radius * 0.55;
-        const oy = -phase * (this.radius + 14);
-        const r = 1.5 + (1 - phase) * 2.5;
+        const spread = 0.4 + stacks * 0.08;
+        const ox = Math.sin(now * 0.01 + i * 1.7) * this.radius * spread;
+        const oy = -phase * (this.radius + 10 + stacks * 2);
+        const r = 1.2 + (1 - phase) * (2 + stacks * 0.35);
         ctx.beginPath();
         ctx.arc(this.x + ox, this.y + oy, r, 0, Math.PI * 2);
+        const alpha = (0.55 + intensity * 0.4) - phase * 0.55;
         ctx.fillStyle =
-          i % 2 === 0
-            ? `rgba(249, 115, 22, ${0.85 - phase * 0.7})`
-            : `rgba(239, 68, 68, ${0.9 - phase * 0.75})`;
+          i % 3 === 0
+            ? `rgba(253, 224, 71, ${alpha})`
+            : i % 2 === 0
+              ? `rgba(249, 115, 22, ${alpha})`
+              : `rgba(239, 68, 68, ${alpha})`;
         ctx.fill();
       }
       ctx.beginPath();
-      ctx.arc(this.x, this.y, this.radius + 2.5, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(249, 115, 22, 0.75)";
-      ctx.lineWidth = 2;
+      ctx.arc(this.x, this.y, this.radius + 2 + stacks * 0.4, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(249, 115, 22, ${0.55 + intensity * 0.4})`;
+      ctx.lineWidth = 1.5 + stacks * 0.25;
       ctx.stroke();
+      if (stacks >= 4) {
+        ctx.shadowColor = "#fb923c";
+        ctx.shadowBlur = 6 + stacks * 2;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.55, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(251, 146, 60, ${0.12 + stacks * 0.03})`;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
       ctx.restore();
     }
   }
@@ -659,6 +756,7 @@ export class Enemy {
       [],
       stats?.projectileDamage ?? modified.projectileDamage,
       stats?.color ?? "",
+      stats?.rewards ? { ...stats.rewards } : { ...DEFAULT_ENEMY_REWARDS },
     );
   }
 }

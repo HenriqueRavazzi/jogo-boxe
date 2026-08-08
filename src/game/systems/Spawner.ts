@@ -4,6 +4,7 @@ import {
   ENEMY_BASE_RADIUS,
   ENEMY_SPEED_UNIT,
   FALLBACK_ENEMY_TYPES,
+  rewardsFromConfig,
   type EnemyTypeConfig,
 } from "@/lib/gameConfig";
 import {
@@ -40,10 +41,12 @@ export const COMMON_SPAWN_WEIGHTS: Record<
   ranged: 0.2,
 };
 
-const BASE_INTERVAL = 2000; // 2s inicial
-const MIN_INTERVAL = 400; // limite máximo de frenesi
-const BASE_AMOUNT = 1; // inimigos por disparo de spawn
-export const MAX_ENEMIES = 80;
+const BASE_INTERVAL = 1000; // 1s inicial (horda densa desde o começo)
+const MIN_INTERVAL = 180; // frenesi máximo
+const BASE_AMOUNT = 2; // lote inicial por tick
+/** Crescimento do lote por ciclo de 30s. */
+const AMOUNT_PER_CYCLE = 2;
+export const MAX_ENEMIES = 140;
 
 /**
  * Ciclo de escalonamento: floor(timeAlive / 30).
@@ -75,19 +78,20 @@ export function getEnemyPowerMultiplier(timeAliveSeconds: number): number {
 
 export function getSpawnIntervalMs(timeAlive: number): number {
   const scalingCycle = getScalingCycle(timeAlive);
+  // Intervalo cai mais rápido (×0.45 por ciclo) → pressão cedo
   return Math.max(
     MIN_INTERVAL,
-    BASE_INTERVAL / (1 + scalingCycle * 0.2),
+    BASE_INTERVAL / (1 + scalingCycle * 0.45),
   );
 }
 
 /**
  * Quantidade de inimigos comuns por tick — sobe a cada ciclo de 30s.
- * Ciclo 0 → 1, ciclo 1 → 2, ciclo 2 → 3…
+ * Ciclo 0 → 2, ciclo 1 → 4, ciclo 2 → 6…
  */
 export function getSpawnAmount(timeAlive: number): number {
   const scalingCycle = getScalingCycle(timeAlive);
-  return BASE_AMOUNT + scalingCycle;
+  return BASE_AMOUNT + scalingCycle * AMOUNT_PER_CYCLE;
 }
 
 export type DifficultySpawnMultipliers = {
@@ -104,6 +108,10 @@ export type SpawnerInput = {
   currentEnemyCount: number;
   bossesSpawned: number;
   hasBossAlive: boolean;
+  /** Quantos bosses vivos agora (limite de invasões simultâneas). */
+  aliveBossCount?: number;
+  /** Cooldown restante (ms) até a próxima invasão de boss na horda. */
+  invasionBossCooldownMs?: number;
   spawnAccumulatorMs: number;
   dt: number;
   difficulty?: DifficultySpawnMultipliers;
@@ -116,12 +124,24 @@ export type SpawnerResult = {
   spawnAccumulatorMs: number;
   spawnIntervalMs: number;
   bossesSpawned: number;
+  invasionBossCooldownMs: number;
 };
 
-export function getDifficultyScale(timeAlive: number, matchLevel: number): number {
-  const timeScale = 1 + timeAlive / 60;
-  const levelScale = 1 + (matchLevel - 1) * 0.08;
-  return timeScale * levelScale;
+/** Intervalo mínimo entre invasões de boss na horda (ms). */
+export const HORDE_BOSS_INVASION_COOLDOWN_MS = 45_000;
+/** Máximo de bosses vivos via invasão + agenda. */
+export const MAX_ALIVE_BOSSES = 2;
+/** Tempo mínimo de partida antes de invasões (s). */
+export const HORDE_BOSS_INVASION_UNLOCK_SECONDS = 90;
+
+/**
+ * Chance por lote de spawn de injetar um boss na horda.
+ * Sobe com o tempo (após 90s), até ~22%.
+ */
+export function getHordeBossInvasionChance(timeAliveSeconds: number): number {
+  if (timeAliveSeconds < HORDE_BOSS_INVASION_UNLOCK_SECONDS) return 0;
+  const t = timeAliveSeconds - HORDE_BOSS_INVASION_UNLOCK_SECONDS;
+  return Math.min(0.22, 0.03 + t / 1600);
 }
 
 export function getEnemyMaxHpAtTime(
@@ -150,6 +170,16 @@ function catalog(input?: EnemyTypeConfig[]): EnemyTypeConfig[] {
 
 function commonTypes(types: EnemyTypeConfig[]): EnemyTypeConfig[] {
   return types.filter((t) => !t.isBoss);
+}
+
+/** Comuns já liberados pelo tempo de partida (`unlock_time`). */
+export function availableCommonTypes(
+  types: EnemyTypeConfig[],
+  timeAliveSeconds: number,
+): EnemyTypeConfig[] {
+  return commonTypes(types).filter(
+    (e) => timeAliveSeconds >= e.unlockTime,
+  );
 }
 
 function bossTypes(types: EnemyTypeConfig[]): EnemyTypeConfig[] {
@@ -256,6 +286,7 @@ function spawnFromConfig(
     difficulty,
     overflow,
   );
+  const rewards = rewardsFromConfig(config);
   const enemy = Enemy.spawnAtEdge(canvasWidth, canvasHeight, {
     hp: scaled.hp,
     speed: scaled.speed,
@@ -266,13 +297,15 @@ function spawnFromConfig(
     radius: scaled.radius,
     color: scaled.color,
     skipTypeModifiers: true,
+    rewards,
   });
   enemy.maxHp = enemy.hp;
+  enemy.rewards = rewards;
   return enemy.toData();
 }
 
 /**
- * Spawner: comuns por peso do catálogo; bosses a cada 240s na ordem do DB.
+ * Spawner: comuns por unlock_time; bosses agendados (240s) + invasões na horda.
  */
 export function runSpawner(input: SpawnerInput): SpawnerResult {
   const {
@@ -287,23 +320,32 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
   } = input;
 
   const types = catalog(input.enemyTypes);
-  const commons = commonTypes(types);
   const bosses = bossTypes(types);
 
   const timeAliveInSeconds =
     timeAlive > 10_000 ? timeAlive / 1000 : timeAlive;
 
+  const availableTypes = availableCommonTypes(types, timeAliveInSeconds);
+  const aliveBossCount =
+    input.aliveBossCount ?? (hasBossAlive ? 1 : 0);
+
   let bossesSpawned = input.bossesSpawned;
+  let invasionBossCooldownMs = Math.max(
+    0,
+    (input.invasionBossCooldownMs ?? 0) - dt * 1000,
+  );
   let spawnAccumulatorMs = input.spawnAccumulatorMs + dt * 1000;
   const spawnIntervalMs = getSpawnIntervalMs(timeAliveInSeconds);
   const spawned: EnemyData[] = [];
   let count = currentEnemyCount;
+  let bossesAlive = aliveBossCount;
 
   const expectedBosses = Math.floor(
     timeAliveInSeconds / BOSS_INTERVAL_SECONDS,
   );
 
-  if (expectedBosses > bossesSpawned && !hasBossAlive && count < MAX_ENEMIES) {
+  // Boss agendado (a cada 240s) — não pausa a horda
+  if (expectedBosses > bossesSpawned && count < MAX_ENEMIES) {
     const bossCount = bossesSpawned;
     const { config, overflow } = pickBossConfig(bosses, bossCount);
     spawned.push(
@@ -318,20 +360,44 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       ),
     );
     bossesSpawned = expectedBosses;
-    spawnAccumulatorMs = 0;
-    return { spawned, spawnAccumulatorMs, spawnIntervalMs, bossesSpawned };
-  }
-
-  if (hasBossAlive || expectedBosses > bossesSpawned) {
-    spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
-    return { spawned, spawnAccumulatorMs, spawnIntervalMs, bossesSpawned };
+    bossesAlive += 1;
+    count += 1;
+    invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
   }
 
   while (spawnAccumulatorMs >= spawnIntervalMs && count < MAX_ENEMIES) {
     spawnAccumulatorMs -= spawnIntervalMs;
     const batchAmount = getSpawnAmount(timeAliveInSeconds);
+
+    // Invasão: chance progressiva de boss no meio do lote
+    const canInvade =
+      invasionBossCooldownMs <= 0 &&
+      bossesAlive < MAX_ALIVE_BOSSES &&
+      bosses.length > 0 &&
+      count < MAX_ENEMIES;
+    if (
+      canInvade &&
+      Math.random() < getHordeBossInvasionChance(timeAliveInSeconds)
+    ) {
+      const { config, overflow } = pickBossConfig(bosses, bossesSpawned);
+      spawned.push(
+        spawnFromConfig(
+          canvasWidth,
+          canvasHeight,
+          config,
+          timeAliveInSeconds,
+          matchLevel,
+          difficulty,
+          overflow,
+        ),
+      );
+      count += 1;
+      bossesAlive += 1;
+      invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
+    }
+
     for (let i = 0; i < batchAmount && count < MAX_ENEMIES; i++) {
-      const config = rollCommonConfig(commons);
+      const config = rollCommonConfig(availableTypes);
       spawned.push(
         spawnFromConfig(
           canvasWidth,
@@ -350,5 +416,11 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
   }
 
-  return { spawned, spawnAccumulatorMs, spawnIntervalMs, bossesSpawned };
+  return {
+    spawned,
+    spawnAccumulatorMs,
+    spawnIntervalMs,
+    bossesSpawned,
+    invasionBossCooldownMs,
+  };
 }

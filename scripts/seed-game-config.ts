@@ -5,9 +5,13 @@
  */
 
 import "dotenv/config";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { difficulties, enemyTypes, gameSettings } from "../db/schema";
+import {
+  ENEMY_TYPE_SEEDS,
+  OBSOLETE_ENEMY_TYPE_NAMES,
+} from "../db/seeds/enemyTypes";
 
 const DEFAULT_SETTINGS = {
   baseAttackSpeed: 1500,
@@ -44,59 +48,6 @@ const DIFFICULTY_ROWS = [
     enemyDamageMultiplier: 3.0,
     enemySpeedMultiplier: 3.0,
     goldDropMultiplier: 3.0,
-  },
-] as const;
-
-const ENEMY_TYPE_ROWS = [
-  {
-    name: "Normal",
-    isBoss: false,
-    hpBase: 30,
-    speed: 2,
-    damage: 1.0,
-    attackSpeed: 1000,
-    color: "#ff0000",
-    scale: 1,
-  },
-  {
-    name: "Dasher",
-    isBoss: false,
-    hpBase: 15,
-    speed: 4,
-    damage: 0.8,
-    attackSpeed: 800,
-    color: "#f97316",
-    scale: 0.75,
-  },
-  {
-    name: "Ranged",
-    isBoss: false,
-    hpBase: 25,
-    speed: 1.5,
-    damage: 1.5,
-    attackSpeed: 2000,
-    color: "#2dd4bf",
-    scale: 0.92,
-  },
-  {
-    name: "Boss 1 (O Titã)",
-    isBoss: true,
-    hpBase: 1000,
-    speed: 0.8,
-    damage: 3.0,
-    attackSpeed: 1500,
-    color: "#5b21b6",
-    scale: 2.5,
-  },
-  {
-    name: "Boss 2 (O Ceifador)",
-    isBoss: true,
-    hpBase: 3500,
-    speed: 1.1,
-    damage: 5.0,
-    attackSpeed: 1000,
-    color: "#a16207",
-    scale: 3.0,
   },
 ] as const;
 
@@ -141,7 +92,15 @@ async function seed() {
     }
   }
 
-  for (const row of ENEMY_TYPE_ROWS) {
+  const removed = await db
+    .delete(enemyTypes)
+    .where(inArray(enemyTypes.name, [...OBSOLETE_ENEMY_TYPE_NAMES]))
+    .returning({ name: enemyTypes.name });
+  for (const row of removed) {
+    console.log(`[seed] enemy_types: removido legado "${row.name}"`);
+  }
+
+  for (const row of ENEMY_TYPE_SEEDS) {
     const found = await db
       .select()
       .from(enemyTypes)
@@ -162,6 +121,11 @@ async function seed() {
           attackSpeed: row.attackSpeed,
           color: row.color,
           scale: row.scale,
+          unlockTime: row.unlockTime,
+          xpReward: row.xpReward,
+          goldReward: row.goldReward,
+          normalDiamondChance: row.normalDiamondChance,
+          purpleDiamondChance: row.purpleDiamondChance,
         })
         .where(eq(enemyTypes.name, row.name));
       console.log(`[seed] enemy_types: atualizado "${row.name}"`);

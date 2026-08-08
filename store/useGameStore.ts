@@ -218,20 +218,23 @@ const HP_PER_LEVEL = 25;
 const DAMAGE_PER_LEVEL = 5;
 const UPGRADE_COST_BASE = 50;
 const INCOME_COST_BASE = 75;
-const INCOME_STEP = 0.2;
+/** Passo de renda por upgrade — menor = ouro de partida sobe mais devagar. */
+export const INCOME_STEP = 0.1;
 const ARMS_COST_GROWTH = 1.4;
 const ARMS_PRESTIGE_DAMAGE = 1.15;
 const ARMS_MAX = 6;
 const ARMS_MIN = 2;
 
-/** Crescimento de custo meta (ouro/diamantes): base × 1.15^nível. */
-export const UPGRADE_COST_GROWTH = 1.15;
+/** Crescimento de custo meta (ouro/diamantes): base × 1.25^nível. */
+export const UPGRADE_COST_GROWTH = 1.25;
 
 /**
- * Margem meta vs in-game: ouro cobre 65% do caminho até o hard cap;
- * 35% fica reservado aos cards de level-up na arena.
+ * Margem meta vs in-game: ouro cobre só parte do caminho até o hard cap;
+ * o restante fica reservado aos cards de level-up na arena.
  */
 export const META_PROGRESS_SHARE = 0.65;
+/** Attack speed meta mais fraco — exige cartas in-run para chegar perto do teto. */
+export const META_ATTACK_SPEED_SHARE = 0.4;
 
 /** Níveis máximos de meta-progresso (ouro). `Infinity` = sem teto. */
 export const MAX_UPGRADE_LEVELS = {
@@ -308,7 +311,7 @@ const ADVANCED_SKILL_UNLOCK_COST: Record<SkillUpgradeType, number> = {
 const XP_BONUS_COST_BASE = 5;
 const XP_BONUS_COST_GROWTH = 1.5;
 
-/** Custo exponencial controlado: floor(base × 1.15^currentLevel). */
+/** Custo exponencial controlado: floor(base × 1.25^currentLevel). */
 export function getUpgradeCost(baseCost: number, currentLevel: number): number {
   return Math.max(
     1,
@@ -355,7 +358,7 @@ function getMetaTreeLevel(
   return state[type];
 }
 
-/** Custo de um atributo: floor(base × 1.15^nívelAtual). */
+/** Custo de um atributo: floor(base × 1.25^nívelAtual). */
 export function getPurpleSkillCostAt(level: number): number {
   return getUpgradeCost(PURPLE_SKILL_STAT_COST_BASE, level);
 }
@@ -462,14 +465,14 @@ export const MIN_ATTACK_COOLDOWN_MS = 300;
 export const MAX_ATTACK_RANGE = 650;
 
 /**
- * Teto de meta-progresso (ouro) para CD: só 65% do caminho até 300ms.
- * Ex.: base 1500 → meta floor = 1500 − 1200×0.65 = 720ms.
+ * Teto de meta-progresso (ouro) para CD: só 40% do caminho até 300ms.
+ * Ex.: base 1500 → meta floor = 1500 − 1200×0.4 = 1020ms.
  */
 export function getMetaMaxCooldownMs(
   baseAttackSpeedMs = FALLBACK_GAME_SETTINGS.baseAttackSpeed,
 ): number {
   const span = Math.max(0, baseAttackSpeedMs - MIN_ATTACK_COOLDOWN_MS);
-  return Math.round(baseAttackSpeedMs - span * META_PROGRESS_SHARE);
+  return Math.round(baseAttackSpeedMs - span * META_ATTACK_SPEED_SHARE);
 }
 
 /**
@@ -485,7 +488,7 @@ export function getMetaMaxRangePx(
 
 /**
  * Cooldown só com upgrades de ouro (sem cards in-game).
- * Interpola linearmente até o teto meta (65%); hard cap 300ms fica para a arena.
+ * Interpola linearmente até o teto meta (40%); hard cap 300ms fica para a arena.
  */
 export function cooldownAtLevel(
   level: number,
@@ -773,7 +776,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Incrementa um atributo específico da skill com Diamantes Roxos.
-   * Custo: base × 1.15^nívelAtual do atributo. Persiste via syncWithDB.
+   * Custo: base × 1.25^nívelAtual do atributo. Persiste via syncWithDB.
    */
   upgradeSkillStat: (skillId, statKey) => {
     if (!isSkillUpgradeType(skillId) || !isSkillStatKey(skillId, statKey)) {

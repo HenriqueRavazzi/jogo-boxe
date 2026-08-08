@@ -47,6 +47,11 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
     ((matchBuffs.skillDamageMultiplier ?? 1) - 1) * 100,
   );
 
+  const totalSeconds = Math.max(0, Math.floor(timeAlive));
+  const timeLabel = `${Math.floor(totalSeconds / 60)}m ${String(
+    totalSeconds % 60,
+  ).padStart(2, "0")}s`;
+
   const rows: { label: string; value: string }[] = [
     { label: "HP", value: `${Math.ceil(currentHp)}/${stats.maxHp}` },
     { label: "Dano", value: String(damage) },
@@ -61,7 +66,7 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
     { label: "XP", value: xpPct > 0 ? `+${xpPct}%` : "0%" },
     { label: "Nível", value: String(matchLevel) },
     { label: "Renda", value: incomeMultiplier.toFixed(1) },
-    { label: "Tempo", value: `${Math.floor(timeAlive)}s` },
+    { label: "Tempo", value: timeLabel },
   ];
 
   return (
