@@ -17,7 +17,7 @@ const FRICTION = 0.85;
 const KNOCKBACK_BREAK_SWARM = 0.4;
 
 export type EnemyType = "normal" | "dasher" | "ranged" | "boss";
-export type StatusEffectType = "freeze" | "shock" | "burn";
+export type StatusEffectType = "freeze" | "shock" | "burn" | "quake";
 
 export type StatusEffect = {
   type: StatusEffectType;
@@ -36,6 +36,10 @@ export type StatusEffect = {
   vulnerable?: boolean;
   /** Multiplicador de dano recebido (ex.: 1.3 com gelo). */
   damageTakenMultiplier?: number;
+  /** Multiplicador de dano causado (ex.: 0.5 com terremoto). */
+  attackDamageMul?: number;
+  /** Multiplicador de attack speed (ex.: 0.5 = ataca pela metade). */
+  attackSpeedMul?: number;
 };
 
 export const ICE_VULNERABILITY_MULTIPLIER = 1.3;
@@ -381,6 +385,8 @@ export class Enemy {
       slowAmount?: number;
       vulnerable?: boolean;
       damageTakenMultiplier?: number;
+      attackDamageMul?: number;
+      attackSpeedMul?: number;
     },
   ): void {
     const existing = this.statusEffects.find((s) => s.type === type);
@@ -413,6 +419,18 @@ export class Enemy {
           meta.damageTakenMultiplier,
         );
       }
+      if (meta?.attackDamageMul != null) {
+        existing.attackDamageMul = Math.min(
+          existing.attackDamageMul ?? 1,
+          meta.attackDamageMul,
+        );
+      }
+      if (meta?.attackSpeedMul != null) {
+        existing.attackSpeedMul = Math.min(
+          existing.attackSpeedMul ?? 1,
+          meta.attackSpeedMul,
+        );
+      }
       return;
     }
     this.statusEffects.push({
@@ -424,6 +442,8 @@ export class Enemy {
       slowAmount: meta?.slowAmount,
       vulnerable: meta?.vulnerable,
       damageTakenMultiplier: meta?.damageTakenMultiplier,
+      attackDamageMul: meta?.attackDamageMul,
+      attackSpeedMul: meta?.attackSpeedMul,
     });
   }
 
@@ -520,6 +540,36 @@ export class Enemy {
     });
   }
 
+  /** Debuff de Pedra: −50% dano e attack speed. */
+  applyQuake(
+    now: number,
+    durationMs: number,
+    attackDamageMul = 0.5,
+    attackSpeedMul = 0.5,
+  ): void {
+    this.applyStatus("quake", now + durationMs, {
+      attackDamageMul: Math.min(1, Math.max(0.05, attackDamageMul)),
+      attackSpeedMul: Math.min(1, Math.max(0.05, attackSpeedMul)),
+      slowAmount: Math.max(0, 1 - attackSpeedMul) * 0.35,
+    });
+  }
+
+  /** Multiplicador de dano que o inimigo causa (1 = normal). */
+  getOutgoingDamageMultiplier(now: number): number {
+    const quake = this.statusEffects.find(
+      (s) => s.type === "quake" && s.expiresAt > now,
+    );
+    return quake?.attackDamageMul ?? 1;
+  }
+
+  /** Multiplicador de attack speed (0.5 = ataca 2× mais lento). */
+  getAttackSpeedMultiplier(now: number): number {
+    const quake = this.statusEffects.find(
+      (s) => s.type === "quake" && s.expiresAt > now,
+    );
+    return Math.max(0.05, quake?.attackSpeedMul ?? 1);
+  }
+
   /**
    * Tick de status: burn DPS, sync isBurning/slowAmount.
    * Chamar todo frame (dt em segundos).
@@ -536,9 +586,13 @@ export class Enemy {
     const shock = this.statusEffects.find(
       (s) => s.type === "shock" && s.expiresAt > now,
     );
-    this.slowAmount = shock
-      ? Math.min(1, Math.max(0, shock.slowAmount ?? 0.2))
-      : 0;
+    const quake = this.statusEffects.find(
+      (s) => s.type === "quake" && s.expiresAt > now,
+    );
+    this.slowAmount = Math.max(
+      shock ? Math.min(1, Math.max(0, shock.slowAmount ?? 0.2)) : 0,
+      quake ? Math.min(1, Math.max(0, quake.slowAmount ?? 0.15)) : 0,
+    );
 
     if (this.isBurning && this.burnDamage > 0) {
       this.burnAccumulatorMs += dt * 1000;
@@ -714,6 +768,7 @@ export class Enemy {
     const frozen = this.hasStatus("freeze", now);
     const shocked = this.hasStatus("shock", now);
     const burning = this.hasStatus("burn", now);
+    const quaked = this.hasStatus("quake", now);
     const vulnerable = this.isVulnerable(now);
 
     let bodyColor = `rgb(${Math.floor(255 * hpPercent)}, 0, 0)`;
@@ -907,6 +962,22 @@ export class Enemy {
       ctx.beginPath();
       ctx.arc(this.x, this.y, this.radius * 0.35, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(219, 234, 254, ${0.35 + 0.25 * Math.sin(now * 0.03)})`;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    if (quaked) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(168, 162, 158, 0.85)";
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = "#a8a29e";
+      ctx.shadowBlur = 10;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius * 0.55, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(120, 113, 108, 0.25)";
       ctx.fill();
       ctx.restore();
     }

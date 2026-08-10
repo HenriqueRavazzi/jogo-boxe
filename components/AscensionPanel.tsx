@@ -3,20 +3,22 @@
 import {
   Coins,
   Gem,
-  Magnet,
   Sparkles,
+  Swords,
+  TrendingUp,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   ASCENSION_PASSIVES,
-  MAX_ASCENSION_PASSIVE_LEVEL,
+  getAscensionPassiveMaxLevel,
   type AscensionPassiveId,
 } from "@/lib/ascensionPassives";
 import { syncWithDB } from "@/lib/syncWithDB";
 import { useGameStore } from "@/store/useGameStore";
 
 const PASSIVE_ICONS: Record<AscensionPassiveId, ReactNode> = {
-  magnetRadius: <Magnet className="h-4 w-4" aria-hidden />,
+  extraArms: <Swords className="h-4 w-4" aria-hidden />,
+  startingStats: <TrendingUp className="h-4 w-4" aria-hidden />,
   startingGold: <Coins className="h-4 w-4" aria-hidden />,
   diamondLuck: <Gem className="h-4 w-4" aria-hidden />,
 };
@@ -66,7 +68,8 @@ export function AscensionPanel({ embedded = false }: { embedded?: boolean }) {
       <ul className="flex flex-col gap-2">
         {ASCENSION_PASSIVES.map((def) => {
           const level = ascensionPassives[def.id] ?? 0;
-          const atMax = level >= MAX_ASCENSION_PASSIVE_LEVEL;
+          const maxLevel = getAscensionPassiveMaxLevel(def.id);
+          const atMax = level >= maxLevel;
           const cost = getAscensionPassiveCost(def.id);
           const canBuy =
             !atMax && Number.isFinite(cost) && ascensionShards >= cost;
@@ -92,8 +95,7 @@ export function AscensionPanel({ embedded = false }: { embedded?: boolean }) {
                     {def.description}
                   </p>
                   <p className="mt-1 text-[11px] font-medium text-fuchsia-200/85">
-                    Nv. {level}/{MAX_ASCENSION_PASSIVE_LEVEL} ·{" "}
-                    {def.bonusLabel(level)}
+                    Nv. {level}/{maxLevel} · {def.bonusLabel(level)}
                   </p>
                 </div>
               </div>

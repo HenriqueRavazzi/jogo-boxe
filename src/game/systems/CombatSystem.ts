@@ -21,12 +21,26 @@ import {
   createActiveSkillPulseState,
   FIRE_HIT_VFX_MS,
   isRicochetActive,
+  LIGHTNING_AOE_RADIUS,
+  LIGHTNING_BURST_VFX_MS,
+  LIGHTNING_HIT_SLOP_PX,
+  LIGHTNING_PROJECTILE_SPEED,
   LIGHTNING_VFX_MS,
   runActiveSkills,
   type ActiveSkillPulseState,
   type LightningProjectile,
   type SkillVfxEffect,
 } from "@/src/game/systems/ActiveSkillsSystem";
+import {
+  AURA_RICOCHET_SPLASH_RATIO,
+  getAuraStoneOutgoingDamageMul,
+  runAuraSystem,
+} from "@/src/game/systems/AuraSystem";
+import {
+  getShadowCloneCooldownMs,
+  runShadowCloneSystem,
+  type ShadowCloneState,
+} from "@/src/game/systems/ShadowCloneSystem";
 import type { MatchSkillsData } from "@/db/schema";
 import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
 import {
@@ -125,6 +139,8 @@ export type CombatSystemInput = {
   activeSkillPulse?: ActiveSkillPulseState;
   /** Projéteis elétricos em voo. */
   lightningProjectiles?: LightningProjectile[];
+  /** Clones de sombra ativos. */
+  shadowClones?: ShadowCloneState[];
 };
 
 export type CombatSystemResult = {
@@ -159,6 +175,8 @@ export type CombatSystemResult = {
   activeSkillPulse: ActiveSkillPulseState;
   lightningProjectiles: LightningProjectile[];
   skillVfx: SkillVfxEffect[];
+  /** Clones de sombra após o tick. */
+  shadowClones: ShadowCloneState[];
 };
 
 const DEFAULT_KNOCKBACK = 5;
@@ -261,6 +279,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     matchSkillBonuses: inputMatchSkillBonuses,
     activeSkillPulse: inputPulse = createActiveSkillPulseState(),
     lightningProjectiles: inputLightning = [],
+    shadowClones: inputShadowClones = [],
   } = input;
 
   let playerRotation = inputRotation;
@@ -381,77 +400,167 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     });
   }
 
-  // Projéteis de raio: move + impacto single-target (burst + mini-stun)
-  let skillDamageFromLightning = activeSkills.skillDamageDealt;
-  let skillHitsFromLightning = activeSkills.skillHitsLanded;
+  // Aura: área contínua com sinergia das skills liberadas (fogo/raio/gelo/shadow/pedra)
+  const aura = runAuraSystem({
+    enemies,
+    playerX: player.x,
+    playerY: player.y,
+    now,
+    dt,
+    baseDamage:
+      baseDamage * matchBuffs.damageMultiplier * skillDamageMult,
+    matchSkills,
+    unlockedSkills: gameState.unlockedSkills,
+    skills,
+    matchSkillBonuses,
+    pulseState: activeSkills.pulseState,
+    prestigeMul,
+  });
+  skillVfx.push(...aura.newSkillVfx);
+  if (aura.questFreeze > 0) {
+    questEvents.push({
+      type: "inflict_freeze",
+      amount: aura.questFreeze,
+    });
+  }
+
+  const auraStoneOutgoingMul = (enemy: Enemy) =>
+    getAuraStoneOutgoingDamageMul(
+      enemy,
+      player.x,
+      player.y,
+      aura.auraRadius,
+      aura.activeElements.stone,
+    );
+
+  // Projéteis de raio: homing garantido + explosão em área (dano + shock)
+  let skillDamageFromLightning =
+    activeSkills.skillDamageDealt + aura.skillDamageDealt;
+  let skillHitsFromLightning =
+    activeSkills.skillHitsLanded + aura.skillHitsLanded;
   const lightningProjectiles: LightningProjectile[] = [
     ...activeSkills.newLightningProjectiles,
   ];
   const boltMargin = 40;
   const pendingLightningSplats: HitSplat[] = [];
 
+  const findLightningTarget = (
+    preferredId: string | null,
+    fromX: number,
+    fromY: number,
+  ): Enemy | null => {
+    if (preferredId) {
+      const locked = enemies.find((e) => e.id === preferredId && !e.isDead);
+      if (locked) return locked;
+    }
+    let best: Enemy | null = null;
+    let bestDist = Infinity;
+    for (const enemy of enemies) {
+      if (enemy.isDead) continue;
+      const dist = Math.hypot(enemy.x - fromX, enemy.y - fromY);
+      if (dist < bestDist) {
+        best = enemy;
+        bestDist = dist;
+      }
+    }
+    return best;
+  };
+
   for (const bolt of inputLightning) {
-    const nx = bolt.x + bolt.vx * dt;
-    const ny = bolt.y + bolt.vy * dt;
+    let nx = bolt.x + bolt.vx * dt;
+    let ny = bolt.y + bolt.vy * dt;
+    let vx = bolt.vx;
+    let vy = bolt.vy;
+    let targetId = bolt.targetEnemyId;
+
+    const guided = findLightningTarget(targetId, nx, ny);
+    if (!guided) {
+      // Sem inimigos vivos: descarta o projétil (não explode no vazio)
+      continue;
+    }
+
+    targetId = guided.id;
+    const aimDx = guided.x - nx;
+    const aimDy = guided.y - ny;
+    const aimLen = Math.hypot(aimDx, aimDy) || 1;
+    vx = (aimDx / aimLen) * LIGHTNING_PROJECTILE_SPEED;
+    vy = (aimDy / aimLen) * LIGHTNING_PROJECTILE_SPEED;
+    // Reaplica o passo já mirando no alvo (evita “passar reto”)
+    nx = bolt.x + vx * dt;
+    ny = bolt.y + vy * dt;
+
     if (
       nx < -boltMargin ||
       ny < -boltMargin ||
       nx > canvasWidth + boltMargin ||
       ny > canvasHeight + boltMargin
     ) {
+      // Fora da tela: puxa impacto direto no alvo (sempre acerta)
+      nx = guided.x;
+      ny = guided.y;
+    }
+
+    const reach = guided.radius + bolt.radius + LIGHTNING_HIT_SLOP_PX;
+    const distToGuided = Math.hypot(guided.x - nx, guided.y - ny);
+    if (distToGuided > reach) {
+      lightningProjectiles.push({
+        ...bolt,
+        x: nx,
+        y: ny,
+        vx,
+        vy,
+        targetEnemyId: targetId,
+      });
       continue;
     }
 
-    let hitEnemy: Enemy | null = null;
-    let hitDist = Infinity;
-    // Preferência: alvo travado no disparo; senão o mais próximo do projétil
+    // Explosão em área no ponto do impacto
+    const blastX = guided.x;
+    const blastY = guided.y;
+    const dmg = bolt.damage;
+    let shocked = 0;
+
     for (const enemy of enemies) {
       if (enemy.isDead) continue;
-      if (bolt.targetEnemyId && enemy.id !== bolt.targetEnemyId) continue;
-      const dist = Math.hypot(nx - enemy.x, ny - enemy.y);
-      if (dist <= enemy.radius + bolt.radius && dist < hitDist) {
-        hitEnemy = enemy;
-        hitDist = dist;
-      }
-    }
-    if (!hitEnemy && bolt.targetEnemyId) {
-      for (const enemy of enemies) {
-        if (enemy.isDead) continue;
-        const dist = Math.hypot(nx - enemy.x, ny - enemy.y);
-        if (dist <= enemy.radius + bolt.radius && dist < hitDist) {
-          hitEnemy = enemy;
-          hitDist = dist;
-        }
-      }
-    }
+      const dist = Math.hypot(enemy.x - blastX, enemy.y - blastY);
+      if (dist > LIGHTNING_AOE_RADIUS + enemy.radius) continue;
 
-    if (!hitEnemy) {
-      lightningProjectiles.push({ ...bolt, x: nx, y: ny });
-      continue;
+      enemy.takeDamage(dmg, now);
+      enemy.applyStun(now, LIGHTNING_STUN_MS);
+      shocked += 1;
+      skillDamageFromLightning += dmg * enemy.getDamageTakenMultiplier(now);
+      skillHitsFromLightning += 1;
+      pendingLightningSplats.push({
+        id: crypto.randomUUID(),
+        x: enemy.x,
+        y: enemy.y - 6,
+        text: String(
+          Math.max(1, Math.round(dmg * enemy.getDamageTakenMultiplier(now))),
+        ),
+        age: 0,
+        color: "#e0f2fe",
+        scale: enemy.id === guided.id ? 1.35 : 1.1,
+      });
     }
 
-    const dmg = bolt.damage;
-    hitEnemy.takeDamage(dmg, now);
-    hitEnemy.applyStun(now, LIGHTNING_STUN_MS);
-    questEvents.push({ type: "inflict_shock", amount: 1 });
-    skillDamageFromLightning += dmg * hitEnemy.getDamageTakenMultiplier(now);
-    skillHitsFromLightning += 1;
-    pendingLightningSplats.push({
-      id: crypto.randomUUID(),
-      x: hitEnemy.x,
-      y: hitEnemy.y,
-      text: String(Math.max(1, Math.round(dmg * hitEnemy.getDamageTakenMultiplier(now)))),
-      age: 0,
-      color: "#e0f2fe",
-      scale: 1.35,
-    });
+    if (shocked > 0) {
+      questEvents.push({ type: "inflict_shock", amount: shocked });
+    }
 
-    const zig = buildZigzagPoints(player.x, player.y, hitEnemy.x, hitEnemy.y);
+    const zig = buildZigzagPoints(player.x, player.y, blastX, blastY);
     skillVfx.push({
       kind: "lightning",
       points: zig,
       startedAt: now,
       expiresAt: now + LIGHTNING_VFX_MS,
+    });
+    skillVfx.push({
+      kind: "lightning_burst",
+      x: blastX,
+      y: blastY,
+      maxRadius: LIGHTNING_AOE_RADIUS,
+      startedAt: now,
+      expiresAt: now + LIGHTNING_BURST_VFX_MS,
     });
   }
 
@@ -461,8 +570,65 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     pushKill(enemy);
   }
 
+  // Shadow Clone: spawn/move/ataque (sem skills; sem heal no herói)
+  const playerTargetIds = new Set(
+    enemies
+      .filter((e) => !e.isDead)
+      .map((enemy) => ({
+        id: enemy.id,
+        dist: Math.hypot(enemy.x - player.x, enemy.y - player.y),
+      }))
+      .filter(({ dist }) => dist <= effectiveRange)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, arms)
+      .map(({ id }) => id),
+  );
+
+  const statsForClone = {
+    maxHp: player.maxHp,
+    damage: baseDamage * matchBuffs.damageMultiplier,
+    range: effectiveRange,
+    attackCooldownMs: baseAttackSpeed / Math.max(0.1, matchBuffs.attackSpeed),
+    arms,
+  };
+
+  const shadow = runShadowCloneSystem({
+    clones: inputShadowClones,
+    enemies,
+    playerTargetIds,
+    playerX: player.x,
+    playerY: player.y,
+    now,
+    dt,
+    playerMaxHp: statsForClone.maxHp,
+    playerDamage: statsForClone.damage,
+    playerRange: statsForClone.range,
+    playerAttackCooldownMs: statsForClone.attackCooldownMs,
+    playerArms: statsForClone.arms,
+    matchSkills,
+    skills,
+    matchSkillBonuses,
+    pulseState: aura.pulseState,
+    prestigeMul,
+    knockbackPower,
+    punchDurationMs,
+  });
+  let pulseState = shadow.pulseState;
+  let shadowClones = shadow.clones;
+  const pendingShadowAttacks = shadow.newAttacks;
+  const pendingShadowSplats = shadow.hitSplats;
+
+  for (const [enemyId, dmg] of shadow.damagedEnemyIds) {
+    const enemy = enemies.find((e) => e.id === enemyId && !e.isDead);
+    if (!enemy || dmg <= 0) continue;
+    if (enemy.takeDamage(dmg, now)) {
+      pushKill(enemy);
+    }
+  }
+
   // Melee: inimigos encostados formam horda e batem periodicamente (não morrem no contato)
   let meleeDamageDealt = 0;
+  let cloneMeleeDamage = new Map<string, number>();
   for (const enemy of enemies) {
     if (enemy.isDead || enemy.type === "ranged") continue; // ranged só dispara projéteis
     if (enemy.hasStatus("freeze", now)) {
@@ -470,11 +636,49 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       continue;
     }
 
-    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
-    const touchDist = player.radius + enemy.radius;
+    const distPlayer = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+    const touchPlayer = player.radius + enemy.radius;
     const knockbackSpeed = Math.hypot(enemy.vx, enemy.vy);
 
-    if (dist <= touchDist) {
+    // Prefere bater no clone se estiver colado nele
+    let targetClone: ShadowCloneState | null = null;
+    let bestCloneDist = Infinity;
+    for (const clone of shadowClones) {
+      if (clone.hp <= 0) continue;
+      const d = Math.hypot(enemy.x - clone.x, enemy.y - clone.y);
+      if (d <= clone.radius + enemy.radius && d < bestCloneDist) {
+        bestCloneDist = d;
+        targetClone = clone;
+      }
+    }
+
+    if (targetClone) {
+      if (knockbackSpeed > 0.4) {
+        enemy.isAttacking = false;
+        continue;
+      }
+      enemy.isAttacking = true;
+      enemy.vx = 0;
+      enemy.vy = 0;
+      const speedMul = enemy.getAttackSpeedMultiplier(now);
+      const cooldown = (enemy.attackCooldown || 1000) / speedMul;
+      const damage =
+        (enemy.attackDamage > 0
+          ? enemy.attackDamage
+          : Math.max(0.5, 1.2 * difficulty.enemyDamageMultiplier)) *
+        enemy.getOutgoingDamageMultiplier(now) *
+        auraStoneOutgoingMul(enemy);
+      if (now - enemy.lastAttackTime >= cooldown) {
+        enemy.lastAttackTime = now;
+        cloneMeleeDamage.set(
+          targetClone.id,
+          (cloneMeleeDamage.get(targetClone.id) ?? 0) + damage,
+        );
+      }
+      continue;
+    }
+
+    if (distPlayer <= touchPlayer) {
       // Knockback ativo: força saída do swarm e não zera o impulso
       if (knockbackSpeed > 0.4) {
         enemy.isAttacking = false;
@@ -485,11 +689,14 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       enemy.vx = 0;
       enemy.vy = 0;
 
-      const cooldown = enemy.attackCooldown || 1000;
+      const speedMul = enemy.getAttackSpeedMultiplier(now);
+      const cooldown = (enemy.attackCooldown || 1000) / speedMul;
       const damage =
-        enemy.attackDamage > 0
+        (enemy.attackDamage > 0
           ? enemy.attackDamage
-          : Math.max(0.5, 1.2 * difficulty.enemyDamageMultiplier);
+          : Math.max(0.5, 1.2 * difficulty.enemyDamageMultiplier)) *
+        enemy.getOutgoingDamageMultiplier(now) *
+        auraStoneOutgoingMul(enemy);
 
       if (now - enemy.lastAttackTime >= cooldown) {
         enemy.lastAttackTime = now;
@@ -505,11 +712,36 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
   }
 
+  // Dano no clone — sem heal/regen de nenhuma forma
+  if (cloneMeleeDamage.size > 0) {
+    const before = shadowClones.length;
+    shadowClones = shadowClones
+      .map((clone) => {
+        const dmg = cloneMeleeDamage.get(clone.id) ?? 0;
+        if (dmg <= 0) return clone;
+        return { ...clone, hp: Math.max(0, clone.hp - dmg) };
+      })
+      .filter((c) => c.hp > 0 && c.expiresAt > now);
+    if (before > 0 && shadowClones.length === 0) {
+      pulseState = {
+        ...pulseState,
+        shadowActiveUntil: 0,
+        shadowNextSpawnAt:
+          now +
+          getShadowCloneCooldownMs(
+            skills.shadow.cooldown,
+            matchSkillBonuses?.shadow ?? DEFAULT_MATCH_SKILL_BONUS,
+            prestigeMul,
+          ),
+      };
+    }
+  }
+
   if (meleeDamageDealt > 0) {
     player.takeDamage(meleeDamageDealt * damageTakenMul);
   }
 
-  // Projéteis em voo: move + colisão com o jogador
+  // Projéteis em voo: move + colisão com clone ou jogador
   const projectiles: EnemyProjectile[] = [];
   const margin = 40;
   for (const p of inputProjectiles) {
@@ -523,6 +755,41 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     ) {
       continue;
     }
+
+    let hitClone: ShadowCloneState | null = null;
+    let hitCloneDist = Infinity;
+    for (const clone of shadowClones) {
+      if (clone.hp <= 0) continue;
+      const d = Math.hypot(nx - clone.x, ny - clone.y);
+      if (d <= clone.radius + p.radius && d < hitCloneDist) {
+        hitCloneDist = d;
+        hitClone = clone;
+      }
+    }
+    if (hitClone) {
+      shadowClones = shadowClones
+        .map((c) =>
+          c.id === hitClone!.id
+            ? { ...c, hp: Math.max(0, c.hp - p.damage) }
+            : c,
+        )
+        .filter((c) => c.hp > 0 && c.expiresAt > now);
+      if (shadowClones.length === 0) {
+        pulseState = {
+          ...pulseState,
+          shadowActiveUntil: 0,
+          shadowNextSpawnAt:
+            now +
+            getShadowCloneCooldownMs(
+              skills.shadow.cooldown,
+              matchSkillBonuses?.shadow ?? DEFAULT_MATCH_SKILL_BONUS,
+              prestigeMul,
+            ),
+        };
+      }
+      continue;
+    }
+
     const hitDist = Math.hypot(nx - player.x, ny - player.y);
     if (hitDist <= player.radius + p.radius) {
       contactHits += 1;
@@ -594,7 +861,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
     if (dist > effectivePlayerRange) continue;
 
-    const cooldown = enemy.attackCooldown || 2000;
+    const cooldown =
+      (enemy.attackCooldown || 2000) / enemy.getAttackSpeedMultiplier(now);
     if (now - enemy.lastAttackTime < cooldown) continue;
 
     enemy.lastAttackTime = now;
@@ -604,9 +872,11 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     const dy = player.y - enemy.y;
     const len = Math.hypot(dx, dy) || 1;
     const damage =
-      enemy.projectileDamage > 0
+      (enemy.projectileDamage > 0
         ? enemy.projectileDamage
-        : Math.max(0.5, enemy.attackDamage * 1.5);
+        : Math.max(0.5, enemy.attackDamage * 1.5)) *
+      enemy.getOutgoingDamageMultiplier(now) *
+      auraStoneOutgoingMul(enemy);
 
     projectiles.push({
       id: crypto.randomUUID(),
@@ -621,8 +891,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   let nextAttackTime = lastAttackTime;
   let nextPunchSide = lastPunchSide;
-  const newAttacks: ActiveAttack[] = [];
-  const hitSplats: HitSplat[] = [...pendingLightningSplats, ...pendingParrySplats];
+  const newAttacks: ActiveAttack[] = [...pendingShadowAttacks];
+  const hitSplats: HitSplat[] = [
+    ...pendingShadowSplats,
+    ...pendingLightningSplats,
+    ...pendingParrySplats,
+  ];
   const ricochetPaths: RicochetPathEffect[] = [];
   let living = enemies.filter((e) => !e.isDead);
 
@@ -768,6 +1042,30 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         });
 
         addDamage(enemy.id, damage, "physical");
+
+        // Aura + Ricochete liberado: splash 25% em todos os outros na aura
+        if (
+          aura.activeElements.ricochet &&
+          aura.auraRadius > 0 &&
+          damage > 0
+        ) {
+          const splash = damage * AURA_RICOCHET_SPLASH_RATIO;
+          for (const other of living) {
+            if (other.isDead || other.id === enemy.id) continue;
+            const dist = Math.hypot(other.x - player.x, other.y - player.y);
+            if (dist > aura.auraRadius + other.radius) continue;
+            addDamage(other.id, splash, "skill");
+            hitSplats.push({
+              id: crypto.randomUUID(),
+              x: other.x,
+              y: other.y,
+              text: String(Math.max(1, Math.round(splash))),
+              age: 0,
+              color: "#c4b5fd",
+              scale: 0.85,
+            });
+          }
+        }
 
         // Ricochete ativo: cadeia a partir do alvo do soco (1º alvo = dano cheio do soco)
         if (ricochetWindowActive && maxBounces > 1) {
@@ -932,8 +1230,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     milestoneEvents,
     playerRotation,
     projectiles,
-    activeSkillPulse: activeSkills.pulseState,
+    activeSkillPulse: pulseState,
     lightningProjectiles,
     skillVfx,
+    shadowClones,
   };
 }

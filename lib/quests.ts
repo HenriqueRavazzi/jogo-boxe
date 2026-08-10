@@ -12,16 +12,24 @@ export type QuestType =
  * diamante roxo ≪ diamante ≪≪ ouro
  * (chances ~0.1% / ~3% / quase sempre).
  */
-export const QUEST_GOLD_PER_DIAMOND = 45;
+export const QUEST_GOLD_PER_DIAMOND = 55;
 /** A cada N pontos de diamante base → +1 roxo (raro). */
-export const QUEST_DIAMONDS_PER_PURPLE = 12;
-/** +12% nas recompensas a cada quest coletada nesta run. */
-export const QUEST_CLAIM_SCALE_PER_CLAIM = 0.12;
+export const QUEST_DIAMONDS_PER_PURPLE = 10;
+/** +20% nas recompensas a cada quest coletada nesta run. */
+export const QUEST_CLAIM_SCALE_PER_CLAIM = 0.2;
+/** +30% na meta a cada quest coletada (runs longas ficam bem mais duras). */
+export const QUEST_TARGET_SCALE_PER_CLAIM = 0.3;
 
 export type QuestRewards = {
   gold: number;
   diamonds: number;
   purpleDiamonds: number;
+};
+
+/** Skills especiais disponíveis nesta run (filtra quests de gelo/raio). */
+export type QuestSkillContext = {
+  hasIce?: boolean;
+  hasLightning?: boolean;
 };
 
 export type ActiveQuest = {
@@ -47,24 +55,33 @@ type QuestTemplate = {
   baseDiamonds: number;
 };
 
-/** Modelos possíveis — sorteados no início e ao claim. */
+/**
+ * Modelos possíveis — metas altas (AoE de gelo/raio completa fácil se forem baixas).
+ * Skills só entram no pool se o jogador tiver a skill na run.
+ */
 const QUEST_TEMPLATES: QuestTemplate[] = [
-  { type: "kill_boss", targetAmount: 1, baseDiamonds: 8 },
-  { type: "kill_boss", targetAmount: 2, baseDiamonds: 14 },
-  { type: "inflict_freeze", targetAmount: 20, baseDiamonds: 5 },
-  { type: "inflict_freeze", targetAmount: 35, baseDiamonds: 7 },
-  { type: "inflict_freeze", targetAmount: 55, baseDiamonds: 10 },
-  { type: "inflict_shock", targetAmount: 25, baseDiamonds: 7 },
-  { type: "inflict_shock", targetAmount: 40, baseDiamonds: 9 },
-  { type: "inflict_shock", targetAmount: 60, baseDiamonds: 11 },
-  { type: "kill_enemies", targetAmount: 40, baseDiamonds: 4 },
-  { type: "kill_enemies", targetAmount: 50, baseDiamonds: 5 },
-  { type: "kill_enemies", targetAmount: 100, baseDiamonds: 9 },
-  { type: "kill_enemies", targetAmount: 150, baseDiamonds: 12 },
-  { type: "kill_dashers", targetAmount: 15, baseDiamonds: 5 },
-  { type: "kill_dashers", targetAmount: 30, baseDiamonds: 8 },
-  { type: "kill_dashers", targetAmount: 45, baseDiamonds: 11 },
+  { type: "kill_boss", targetAmount: 2, baseDiamonds: 10 },
+  { type: "kill_boss", targetAmount: 3, baseDiamonds: 16 },
+  { type: "kill_boss", targetAmount: 5, baseDiamonds: 24 },
+  { type: "inflict_freeze", targetAmount: 100, baseDiamonds: 9 },
+  { type: "inflict_freeze", targetAmount: 200, baseDiamonds: 14 },
+  { type: "inflict_freeze", targetAmount: 350, baseDiamonds: 20 },
+  { type: "inflict_shock", targetAmount: 80, baseDiamonds: 9 },
+  { type: "inflict_shock", targetAmount: 160, baseDiamonds: 15 },
+  { type: "inflict_shock", targetAmount: 280, baseDiamonds: 22 },
+  { type: "kill_enemies", targetAmount: 150, baseDiamonds: 7 },
+  { type: "kill_enemies", targetAmount: 350, baseDiamonds: 12 },
+  { type: "kill_enemies", targetAmount: 700, baseDiamonds: 18 },
+  { type: "kill_enemies", targetAmount: 1200, baseDiamonds: 26 },
+  { type: "kill_dashers", targetAmount: 50, baseDiamonds: 8 },
+  { type: "kill_dashers", targetAmount: 100, baseDiamonds: 14 },
+  { type: "kill_dashers", targetAmount: 180, baseDiamonds: 20 },
 ];
+
+const SKILL_QUEST_TYPES = new Set<QuestType>([
+  "inflict_freeze",
+  "inflict_shock",
+]);
 
 export const QUEST_LABELS: Record<QuestType, string> = {
   kill_boss: "Derrotar Boss",
@@ -94,7 +111,6 @@ export function computeQuestRewards(
     10,
     Math.round(scaledBase * QUEST_GOLD_PER_DIAMOND),
   );
-  // Roxo raro: sobe devagar com o tier e com claims da run
   const purpleDiamonds = Math.max(
     0,
     Math.floor(scaledBase / QUEST_DIAMONDS_PER_PURPLE),
@@ -103,8 +119,31 @@ export function computeQuestRewards(
   return { gold, diamonds, purpleDiamonds };
 }
 
+/** Escala a meta com o nº de claims (dificuldade sobe nas runs longas). */
+export function scaleQuestTarget(
+  baseTarget: number,
+  questsClaimedThisRun = 0,
+): number {
+  const claimed = Math.max(0, Math.floor(questsClaimedThisRun));
+  const mul = 1 + claimed * QUEST_TARGET_SCALE_PER_CLAIM;
+  return Math.max(1, Math.round(Math.max(1, baseTarget) * mul));
+}
+
 function templateKey(t: QuestTemplate): string {
   return `${t.type}:${t.targetAmount}`;
+}
+
+function isTemplateAllowed(
+  template: QuestTemplate,
+  skillCtx?: QuestSkillContext | null,
+): boolean {
+  if (template.type === "inflict_freeze") {
+    return Boolean(skillCtx?.hasIce);
+  }
+  if (template.type === "inflict_shock") {
+    return Boolean(skillCtx?.hasLightning);
+  }
+  return true;
 }
 
 function fromTemplate(
@@ -118,7 +157,10 @@ function fromTemplate(
   return {
     id: crypto.randomUUID(),
     type: template.type,
-    targetAmount: template.targetAmount,
+    targetAmount: scaleQuestTarget(
+      template.targetAmount,
+      questsClaimedThisRun,
+    ),
     currentAmount: 0,
     rewardGold: rewards.gold,
     rewardDiamonds: rewards.diamonds,
@@ -127,22 +169,50 @@ function fromTemplate(
   };
 }
 
-function pickTemplate(excludeKeys: Set<string>): QuestTemplate {
-  const pool = QUEST_TEMPLATES.filter((t) => !excludeKeys.has(templateKey(t)));
-  const source = pool.length > 0 ? pool : QUEST_TEMPLATES;
-  return source[Math.floor(Math.random() * source.length)]!;
+function pickTemplate(
+  excludeKeys: Set<string>,
+  excludeTypes: Set<QuestType>,
+  skillCtx?: QuestSkillContext | null,
+): QuestTemplate {
+  const allowed = QUEST_TEMPLATES.filter((t) => isTemplateAllowed(t, skillCtx));
+
+  // 1) Preferência: tipo ainda não presente nos slots + template único
+  let pool = allowed.filter(
+    (t) =>
+      !excludeKeys.has(templateKey(t)) && !excludeTypes.has(t.type),
+  );
+
+  // 2) Relaxa tipo: ainda evita template idêntico
+  if (pool.length === 0) {
+    pool = allowed.filter((t) => !excludeKeys.has(templateKey(t)));
+  }
+
+  // 3) Qualquer permitido
+  if (pool.length === 0) {
+    pool = allowed;
+  }
+
+  // 4) Sem skill liberada: só quests genéricas (nunca gelo/raio sem skill)
+  if (pool.length === 0) {
+    pool = QUEST_TEMPLATES.filter((t) => !SKILL_QUEST_TYPES.has(t.type));
+  }
+
+  return pool[Math.floor(Math.random() * pool.length)]!;
 }
 
 /** Gera N quests aleatórias sem repetir o mesmo template. */
 export function createRandomQuests(
   count = ACTIVE_QUEST_COUNT,
   questsClaimedThisRun = 0,
+  skillCtx?: QuestSkillContext | null,
 ): ActiveQuest[] {
   const used = new Set<string>();
+  const usedTypes = new Set<QuestType>();
   const quests: ActiveQuest[] = [];
   for (let i = 0; i < count; i++) {
-    const template = pickTemplate(used);
+    const template = pickTemplate(used, usedTypes, skillCtx);
     used.add(templateKey(template));
+    usedTypes.add(template.type);
     quests.push(fromTemplate(template, questsClaimedThisRun));
   }
   return quests;
@@ -152,9 +222,20 @@ export function createRandomQuests(
 export function createReplacementQuest(
   active: ActiveQuest[],
   questsClaimedThisRun = 0,
+  skillCtx?: QuestSkillContext | null,
 ): ActiveQuest {
   const used = new Set(active.map((q) => `${q.type}:${q.targetAmount}`));
-  return fromTemplate(pickTemplate(used), questsClaimedThisRun);
+  // Chave por tipo base aproximada: evita 3× "Aplicar Gelo" ao mesmo tempo
+  const usedTypes = new Set(active.map((q) => q.type));
+  // Templates usam target base; excludeKeys também por type só via usedTypes
+  const excludeKeys = new Set<string>([
+    ...used,
+    ...QUEST_TEMPLATES.filter((t) => usedTypes.has(t.type)).map(templateKey),
+  ]);
+  return fromTemplate(
+    pickTemplate(excludeKeys, usedTypes, skillCtx),
+    questsClaimedThisRun,
+  );
 }
 
 /** Aplica eventos de progresso e marca completed quando atingir a meta. */

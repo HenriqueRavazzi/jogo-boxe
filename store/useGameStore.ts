@@ -18,11 +18,12 @@ import {
   isSkillUpgradeType,
 } from "@/db/schema";
 import {
-  MAX_ASCENSION_PASSIVE_LEVEL,
   calcAscensionShardsGained,
   getAscensionPassiveCostAt,
+  getAscensionPassiveMaxLevel,
   getDiamondLuckBonus as diamondLuckBonusAt,
-  getMagnetRadiusMultiplier as magnetRadiusMulAt,
+  getExtraArmsBonus,
+  getStartingStatsMultiplier,
   getStartingGoldBonus as startingGoldBonusAt,
   normalizeAscensionPassives,
   type AscensionPassiveId,
@@ -304,8 +305,10 @@ export type GameStoreState = {
   /** Compra nível de passiva permanente com Ascension Shards. */
   upgradeAscensionPassive: (id: AscensionPassiveId) => boolean;
   getAscensionPassiveCost: (id: AscensionPassiveId) => number;
-  /** Multiplicador de raio de coleta (Ímã Primordial). */
+  /** Multiplicador de raio de coleta (ímã removido — sempre 1). */
   getMagnetRadiusMultiplier: () => number;
+  /** Braços extras permanentes da Ascensão. */
+  getAscensionExtraArms: () => number;
   /** Ouro bônus ao iniciar run (Herança de Ouro). */
   getStartingGoldBonus: () => number;
   /** Bônus absoluto na chance de diamante (Sorte do Campeão + equipe). */
@@ -812,6 +815,9 @@ export function clampSkillsToMaxLevel(
     ice: { ...skills.ice },
     fire: { ...skills.fire },
     lightning: { ...skills.lightning },
+    aura: { ...skills.aura },
+    shadow: { ...skills.shadow },
+    stone: { ...skills.stone },
   };
 
   for (const skillId of Object.keys(SKILL_STAT_KEYS) as SkillUpgradeType[]) {
@@ -1325,8 +1331,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   getMagnetRadiusMultiplier: () =>
-    magnetRadiusMulAt(get().ascensionPassives.magnetRadius) *
     getSkillMagnetRadiusMultiplier(get().skillTree),
+
+  getAscensionExtraArms: () =>
+    getExtraArmsBonus(get().ascensionPassives.extraArms),
 
   getStartingGoldBonus: () =>
     startingGoldBonusAt(get().ascensionPassives.startingGold),
@@ -1520,14 +1528,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getAscensionPassiveCost: (id) => {
     const level = get().ascensionPassives[id] ?? 0;
-    if (level >= MAX_ASCENSION_PASSIVE_LEVEL) return Number.POSITIVE_INFINITY;
-    return getAscensionPassiveCostAt(level);
+    const max = getAscensionPassiveMaxLevel(id);
+    if (level >= max) return Number.POSITIVE_INFINITY;
+    return getAscensionPassiveCostAt(level, id);
   },
 
   upgradeAscensionPassive: (id) => {
     const current = get().ascensionPassives[id] ?? 0;
-    if (current >= MAX_ASCENSION_PASSIVE_LEVEL) return false;
-    const cost = getAscensionPassiveCostAt(current);
+    const max = getAscensionPassiveMaxLevel(id);
+    if (current >= max) return false;
+    const cost = getAscensionPassiveCostAt(current, id);
     if (get().ascensionShards < cost) return false;
 
     set((s) => ({
@@ -1597,6 +1607,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ice: { ...DEFAULT_SKILLS_DATA.ice },
         fire: { ...DEFAULT_SKILLS_DATA.fire },
         lightning: { ...DEFAULT_SKILLS_DATA.lightning },
+        aura: { ...DEFAULT_SKILLS_DATA.aura },
+        shadow: { ...DEFAULT_SKILLS_DATA.shadow },
+        stone: { ...DEFAULT_SKILLS_DATA.stone },
       },
       totalMobsKilled: 0,
       totalBossesKilled: 0,
@@ -1826,6 +1839,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ice: { ...DEFAULT_SKILLS_DATA.ice },
         fire: { ...DEFAULT_SKILLS_DATA.fire },
         lightning: { ...DEFAULT_SKILLS_DATA.lightning },
+        aura: { ...DEFAULT_SKILLS_DATA.aura },
+        shadow: { ...DEFAULT_SKILLS_DATA.shadow },
+        stone: { ...DEFAULT_SKILLS_DATA.stone },
       },
     }));
 
@@ -1980,6 +1996,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const metaHpMul = metaHpMultiplier(s.metaHpLevel);
     const metaDmgMul = metaDamageMultiplier(s.metaDamageLevel);
     const metaAsMul = metaAttackSpeedMultiplier(s.metaAttackSpeedLevel);
+    const startingStatsMul = getStartingStatsMultiplier(
+      s.ascensionPassives.startingStats,
+    );
     const goldRange = rangeAtLevel(s.rangeLevel, cfg.baseRange);
     const goldCooldown = cooldownAtLevel(
       s.attackSpeedLevel,
@@ -1991,14 +2010,27 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       Math.round(goldCooldown - skillCd * prestigeMul),
     );
 
-    const hpFoundation =
-      (cfg.baseHp + skillHp * prestigeMul) * metaHpMul;
-    const damageFoundation =
-      (s.baseDamage + skillDmg + team.flatDamage) * prestigeMul * metaDmgMul;
+    // Stats iniciais (ouro + skill tree): recebem Fundação Primordial.
+    // Meta de diamantes entra à parte — não é amplificada pelo bônus.
+    const hpCore =
+      (cfg.baseHp + skillHp * prestigeMul) * goldHpMul * startingStatsMul;
+    const hpMetaExtra =
+      (cfg.baseHp + skillHp * prestigeMul) * goldHpMul * (metaHpMul - 1);
+
+    const damageCore =
+      (s.baseDamage + skillDmg + team.flatDamage) *
+      prestigeMul *
+      goldDmgMul *
+      startingStatsMul;
+    const damageMetaExtra =
+      (s.baseDamage + skillDmg + team.flatDamage) *
+      prestigeMul *
+      goldDmgMul *
+      (metaDmgMul - 1);
 
     return {
-      maxHp: Math.round(hpFoundation * goldHpMul + team.maxHpBonus),
-      damage: Math.round(damageFoundation * goldDmgMul),
+      maxHp: Math.round(hpCore + hpMetaExtra + team.maxHpBonus),
+      damage: Math.round(damageCore + damageMetaExtra),
       attackRange: Math.min(
         MAX_ATTACK_RANGE,
         Math.round(goldRange + skillRange * prestigeMul),
@@ -2007,14 +2039,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         MIN_ATTACK_COOLDOWN_MS,
         Math.round(
           cooldownBeforeTeam /
-            (team.attackSpeedMultiplier * metaAsMul),
+            (team.attackSpeedMultiplier * startingStatsMul * metaAsMul),
         ),
       ),
       xpMultiplier:
         xpMultiplierAt(s.xpBonusLevel) *
         prestigeMul *
         (1 + team.xpMultiplierBonus),
-      arms: s.arms + getSkillExtraArms(tree),
+      arms: s.arms + getSkillExtraArms(tree) + getExtraArmsBonus(s.ascensionPassives.extraArms),
       lifeStealLevel,
       lifeStealPercent:
         (getLifeStealRatio(tree) + metaLifeSteal) * prestigeMul,

@@ -43,11 +43,35 @@ export type LightningSkillStats = {
   cooldown: number;
 };
 
+/** Aura elemental: raio da área, poder (DPS) e pulso (intervalo do stun de gelo). */
+export type AuraSkillStats = {
+  radius: number;
+  damage: number;
+  pulse: number;
+};
+
+/** Shadow Clone: poder do clone, duração e cooldown de invocação. */
+export type ShadowSkillStats = {
+  damage: number;
+  duration: number;
+  cooldown: number;
+};
+
+/** Pedra: dano do terremoto, duração do debuff e cooldown. */
+export type StoneSkillStats = {
+  damage: number;
+  duration: number;
+  cooldown: number;
+};
+
 export type SkillsData = {
   ricochet: RicochetSkillStats;
   ice: IceSkillStats;
   fire: FireSkillStats;
   lightning: LightningSkillStats;
+  aura: AuraSkillStats;
+  shadow: ShadowSkillStats;
+  stone: StoneSkillStats;
 };
 
 export type SkillUpgradeType = keyof SkillsData;
@@ -61,16 +85,30 @@ export type LegacyFlatSkillsData = {
   ice: number;
   lightning: number;
   fire: number;
+  aura?: number;
+  shadow?: number;
+  stone?: number;
 };
 
 /** Níveis in-run (cartas de level-up) — independente do meta granular. */
-export type MatchSkillsData = LegacyFlatSkillsData;
+export type MatchSkillsData = {
+  ricochet: number;
+  ice: number;
+  lightning: number;
+  fire: number;
+  aura: number;
+  shadow: number;
+  stone: number;
+};
 
 export const DEFAULT_MATCH_SKILLS: MatchSkillsData = {
   ricochet: 0,
   ice: 0,
   lightning: 0,
   fire: 0,
+  aura: 0,
+  shadow: 0,
+  stone: 0,
 };
 
 export const DEFAULT_SKILLS_DATA: SkillsData = {
@@ -78,6 +116,9 @@ export const DEFAULT_SKILLS_DATA: SkillsData = {
   ice: { duration: 0, cooldown: 0 },
   fire: { damage: 0, duration: 0 },
   lightning: { damage: 0, hits: 0, cooldown: 0 },
+  aura: { radius: 0, damage: 0, pulse: 0 },
+  shadow: { damage: 0, duration: 0, cooldown: 0 },
+  stone: { damage: 0, duration: 0, cooldown: 0 },
 };
 
 export const SKILL_STAT_KEYS = {
@@ -85,6 +126,9 @@ export const SKILL_STAT_KEYS = {
   ice: ["duration", "cooldown"],
   fire: ["damage", "duration"],
   lightning: ["damage", "hits", "cooldown"],
+  aura: ["radius", "damage", "pulse"],
+  shadow: ["damage", "duration", "cooldown"],
+  stone: ["damage", "duration", "cooldown"],
 } as const satisfies {
   [K in SkillUpgradeType]: readonly (keyof SkillsData[K] & string)[];
 };
@@ -128,6 +172,9 @@ export type UnlockedSkillsData = {
   ice: boolean;
   fire: boolean;
   lightning: boolean;
+  aura: boolean;
+  shadow: boolean;
+  stone: boolean;
 };
 
 export const DEFAULT_UNLOCKED_SKILLS: UnlockedSkillsData = {
@@ -135,6 +182,9 @@ export const DEFAULT_UNLOCKED_SKILLS: UnlockedSkillsData = {
   ice: false,
   fire: false,
   lightning: false,
+  aura: false,
+  shadow: false,
+  stone: false,
 };
 
 /** Árvore de atributos permanentes (Diamantes Normais). */
@@ -255,7 +305,7 @@ export const gameSaves = pgTable("game_saves", {
     .$type<SkillsData>()
     .notNull()
     .default(
-      sql`'{"ricochet":{"damage":0,"cooldown":0,"hits":0},"ice":{"duration":0,"cooldown":0},"fire":{"damage":0,"duration":0},"lightning":{"damage":0,"hits":0,"cooldown":0}}'::jsonb`,
+      sql`'{"ricochet":{"damage":0,"cooldown":0,"hits":0},"ice":{"duration":0,"cooldown":0},"fire":{"damage":0,"duration":0},"lightning":{"damage":0,"hits":0,"cooldown":0},"aura":{"radius":0,"damage":0,"pulse":0},"shadow":{"damage":0,"duration":0,"cooldown":0},"stone":{"damage":0,"duration":0,"cooldown":0}}'::jsonb`,
     ),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

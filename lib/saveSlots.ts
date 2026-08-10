@@ -78,6 +78,18 @@ export function normalizeSkills(
         "lightning",
         skills.lightning,
       ) as SkillsData["lightning"],
+      aura: statsFromLevel(
+        "aura",
+        skills.aura ?? 0,
+      ) as SkillsData["aura"],
+      shadow: statsFromLevel(
+        "shadow",
+        skills.shadow ?? 0,
+      ) as SkillsData["shadow"],
+      stone: statsFromLevel(
+        "stone",
+        skills.stone ?? 0,
+      ) as SkillsData["stone"],
     };
   }
 
@@ -86,6 +98,9 @@ export function normalizeSkills(
     ice: mergeSkillStats("ice", skills.ice),
     fire: mergeSkillStats("fire", skills.fire),
     lightning: mergeSkillStats("lightning", skills.lightning),
+    aura: mergeSkillStats("aura", skills.aura),
+    shadow: mergeSkillStats("shadow", skills.shadow),
+    stone: mergeSkillStats("stone", skills.stone),
   };
 }
 
@@ -95,6 +110,9 @@ function cloneSkills(skills: SkillsData): SkillsData {
     ice: { ...skills.ice },
     fire: { ...skills.fire },
     lightning: { ...skills.lightning },
+    aura: { ...skills.aura },
+    shadow: { ...skills.shadow },
+    stone: { ...skills.stone },
   };
 }
 

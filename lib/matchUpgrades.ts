@@ -14,7 +14,14 @@ export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
-export type SpecialSkillKey = "ricochet" | "ice" | "fire" | "lightning";
+export type SpecialSkillKey =
+  | "ricochet"
+  | "ice"
+  | "fire"
+  | "lightning"
+  | "aura"
+  | "shadow"
+  | "stone";
 
 /** Categoria da carta — usada para evitar duplicatas no pack de level-up. */
 export type UpgradeCategory =
@@ -88,6 +95,9 @@ export const DEFAULT_MATCH_SKILL_BONUSES: MatchSkillBonuses = {
   ice: { ...DEFAULT_MATCH_SKILL_BONUS },
   fire: { ...DEFAULT_MATCH_SKILL_BONUS },
   lightning: { ...DEFAULT_MATCH_SKILL_BONUS },
+  aura: { ...DEFAULT_MATCH_SKILL_BONUS },
+  shadow: { ...DEFAULT_MATCH_SKILL_BONUS },
+  stone: { ...DEFAULT_MATCH_SKILL_BONUS },
 };
 
 export function createEmptyMatchSkillBonuses(): MatchSkillBonuses {
@@ -96,6 +106,9 @@ export function createEmptyMatchSkillBonuses(): MatchSkillBonuses {
     ice: { ...DEFAULT_MATCH_SKILL_BONUS },
     fire: { ...DEFAULT_MATCH_SKILL_BONUS },
     lightning: { ...DEFAULT_MATCH_SKILL_BONUS },
+    aura: { ...DEFAULT_MATCH_SKILL_BONUS },
+    shadow: { ...DEFAULT_MATCH_SKILL_BONUS },
+    stone: { ...DEFAULT_MATCH_SKILL_BONUS },
   };
 }
 
@@ -222,6 +235,84 @@ function buildSpecialSkillEffect(
       legendary: {
         delta: { damageMul: 1.35, cooldownMul: 0.75, extraHits: 2 },
         lines: ["+35% dano", "−25% cooldown", "+2 saltos"],
+      },
+    },
+    aura: {
+      common: {
+        delta: { damageMul: 1.12 },
+        lines: ["+12% poder da aura"],
+      },
+      uncommon: {
+        delta: { durationMul: 1.15 },
+        lines: ["+15% raio da aura"],
+      },
+      rare: {
+        delta: { damageMul: 1.2, durationMul: 1.12 },
+        lines: ["+20% poder", "+12% raio"],
+      },
+      epic: {
+        delta: { damageMul: 1.28, cooldownMul: 0.85, durationMul: 1.18 },
+        lines: ["+28% poder", "−15% intervalo stun", "+18% raio"],
+      },
+      legendary: {
+        delta: {
+          damageMul: 1.4,
+          cooldownMul: 0.75,
+          durationMul: 1.3,
+        },
+        lines: ["+40% poder", "−25% intervalo stun", "+30% raio"],
+      },
+    },
+    shadow: {
+      common: {
+        delta: { damageMul: 1.12 },
+        lines: ["+12% poder do clone"],
+      },
+      uncommon: {
+        delta: { durationMul: 1.15 },
+        lines: ["+15% duração do clone"],
+      },
+      rare: {
+        delta: { damageMul: 1.2, cooldownMul: 0.9 },
+        lines: ["+20% poder", "−10% cooldown"],
+      },
+      epic: {
+        delta: { damageMul: 1.28, cooldownMul: 0.82, durationMul: 1.2 },
+        lines: ["+28% poder", "−18% cooldown", "+20% duração"],
+      },
+      legendary: {
+        delta: {
+          damageMul: 1.4,
+          cooldownMul: 0.72,
+          durationMul: 1.35,
+        },
+        lines: ["+40% poder", "−28% cooldown", "+35% duração"],
+      },
+    },
+    stone: {
+      common: {
+        delta: { damageMul: 1.12 },
+        lines: ["+12% dano do terremoto"],
+      },
+      uncommon: {
+        delta: { durationMul: 1.15 },
+        lines: ["+15% duração do debuff"],
+      },
+      rare: {
+        delta: { damageMul: 1.2, cooldownMul: 0.9 },
+        lines: ["+20% dano", "−10% cooldown"],
+      },
+      epic: {
+        delta: { damageMul: 1.28, cooldownMul: 0.82, durationMul: 1.2 },
+        lines: ["+28% dano", "−18% cooldown", "+20% duração"],
+      },
+      legendary: {
+        delta: {
+          damageMul: 1.4,
+          cooldownMul: 0.72,
+          durationMul: 1.35,
+        },
+        lines: ["+40% dano", "−28% cooldown", "+35% duração"],
       },
     },
   };
@@ -355,7 +446,25 @@ const SPECIAL_SKILL_POOL: {
     type: "lightning",
     category: "lightning",
     name: "Raio",
-    short: "Estouro massivo no alvo mais próximo + stun",
+    short: "Homing elétrico; explode em área com shock",
+  },
+  {
+    type: "aura",
+    category: "aura",
+    name: "Aura",
+    short: "Área no herói: sinergia das skills liberadas (fogo/raio/gelo/shadow/pedra)",
+  },
+  {
+    type: "shadow",
+    category: "shadow",
+    name: "Shadow Clone",
+    short: "Clone com 15% dos stats; bate em alvos diferentes (exceto boss)",
+  },
+  {
+    type: "stone",
+    category: "stone",
+    name: "Pedra",
+    short: "Terremoto: dano em todos + −50% AS/dano inimigo por 10s",
   },
 ];
 
@@ -364,6 +473,9 @@ export const SPECIAL_SKILL_KEYS: SpecialSkillKey[] = [
   "ice",
   "fire",
   "lightning",
+  "aura",
+  "shadow",
+  "stone",
 ];
 
 export function isSpecialSkillType(type: UpgradeType): type is SpecialSkillKey {

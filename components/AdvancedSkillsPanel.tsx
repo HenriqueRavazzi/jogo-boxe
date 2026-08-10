@@ -9,12 +9,15 @@ import {
 import {
   Check,
   ChevronRight,
+  Circle,
   Coins,
   Crosshair,
   Crown,
   Flame,
   Gem,
+  Ghost,
   Lock,
+  Mountain,
   RotateCcw,
   Snowflake,
   Spline,
@@ -101,9 +104,73 @@ const CARDS: SkillCardDef[] = [
     },
   },
   {
+    type: "aura",
+    title: "Aura",
+    description:
+      "Área no herói. Sinergia: Fogo/Raio/Gelo/Shadow/Pedra/Ricochete (skills liberadas).",
+    icon: <Circle className="h-5 w-5" aria-hidden />,
+    statActions: {
+      radius: {
+        label: "Aumentar Raio",
+        icon: <Circle className="h-4 w-4" aria-hidden />,
+      },
+      damage: {
+        label: "Aumentar Poder",
+        icon: <Flame className="h-4 w-4" aria-hidden />,
+      },
+      pulse: {
+        label: "Acelerar Pulso",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
+    type: "shadow",
+    title: "Shadow Clone",
+    description:
+      "Invoca um clone com 15% dos seus stats (sem heal/skills). Na Aura: explosão em área.",
+    icon: <Ghost className="h-5 w-5" aria-hidden />,
+    statActions: {
+      damage: {
+        label: "Aumentar Poder",
+        icon: <Ghost className="h-4 w-4" aria-hidden />,
+      },
+      duration: {
+        label: "Aumentar Duração",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+      cooldown: {
+        label: "Reduzir Cooldown",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
+    type: "stone",
+    title: "Pedra",
+    description:
+      "Terremoto: dano em todos + −50% AS/dano por 10s. Na Aura: inimigos causam −50% dano.",
+    icon: <Mountain className="h-5 w-5" aria-hidden />,
+    statActions: {
+      damage: {
+        label: "Aumentar Dano",
+        icon: <Mountain className="h-4 w-4" aria-hidden />,
+      },
+      duration: {
+        label: "Aumentar Duração",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+      cooldown: {
+        label: "Reduzir Cooldown",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
     type: "ricochet",
     title: "Ricochete",
-    description: "Socos saltam entre inimigos na janela ativa.",
+    description:
+      "Socos saltam entre inimigos. Na Aura: cada hit espalha 25% do dano a todos dentro.",
     icon: <Spline className="h-5 w-5" aria-hidden />,
     statActions: {
       damage: {

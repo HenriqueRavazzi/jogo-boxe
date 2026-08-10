@@ -28,9 +28,13 @@ import {
 } from "@/src/game/systems/ActiveSkillsSystem";
 import {
   drawAllSkillVfx,
+  drawHeroAuraRing,
   drawLightningProjectile,
   drawRicochetArmPath,
+  drawShadowClone,
 } from "@/src/game/render/drawSkillEffects";
+import { getAuraRadius } from "@/src/game/systems/AuraSystem";
+import { DEFAULT_MATCH_SKILL_BONUS } from "@/lib/matchUpgrades";
 import { runSpawner } from "@/src/game/systems/Spawner";
 import {
   isHardOrInfernalDifficulty,
@@ -243,6 +247,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         matchSkillBonuses: arena.matchSkillBonuses,
         activeSkillPulse: arena.activeSkillPulse,
         lightningProjectiles: arena.lightningProjectiles ?? [],
+        shadowClones: arena.shadowClones ?? [],
       });
 
       const livingEnemies = combat.enemies
@@ -276,6 +281,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       let shakeFrames = arena.shakeFrames;
       if (combat.contactHits > 0) {
         shakeFrames = 10;
+      } else if (
+        combat.activeSkillPulse.stonePulseAt > 0 &&
+        gameNow - combat.activeSkillPulse.stonePulseAt < 80
+      ) {
+        shakeFrames = 16;
       } else if (shakeFrames > 0) {
         shakeFrames = Math.max(0, shakeFrames - gameSpeed);
       }
@@ -485,6 +495,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         activeSkillPulse: combat.activeSkillPulse,
         lightningProjectiles: combat.lightningProjectiles,
         skillVfxEffects,
+        shadowClones: combat.shadowClones,
       });
 
       if (spawn.hordeBossInvaded) {
@@ -712,6 +723,33 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.strokeStyle = `rgba(248, 113, 113, ${0.55 * (1 - t * 0.5)})`;
         ctx.lineWidth = 3;
         ctx.stroke();
+      }
+
+      // Aura contínua no herói
+      const matchSkills = useArenaStore.getState().matchSkills;
+      const matchSkillBonuses = useArenaStore.getState().matchSkillBonuses;
+      const gameSnap = useGameStore.getState();
+      if ((matchSkills.aura ?? 0) > 0) {
+        const auraRadius = getAuraRadius(
+          matchSkills.aura,
+          gameSnap.skills.aura.radius,
+          matchSkillBonuses.aura ?? DEFAULT_MATCH_SKILL_BONUS,
+          gameSnap.getPrestigeMultiplier(),
+        );
+        drawHeroAuraRing(ctx, playerX, playerY, auraRadius, {
+          fire: gameSnap.unlockedSkills.fire,
+          lightning: gameSnap.unlockedSkills.lightning,
+          ice: gameSnap.unlockedSkills.ice,
+          shadow: gameSnap.unlockedSkills.shadow,
+          stone: gameSnap.unlockedSkills.stone,
+          ricochet: gameSnap.unlockedSkills.ricochet,
+        }, now);
+      }
+
+      // Shadow clones
+      const shadowClones = useArenaStore.getState().shadowClones ?? [];
+      for (const clone of shadowClones) {
+        drawShadowClone(ctx, clone, now);
       }
 
       for (const enemy of enemies) {

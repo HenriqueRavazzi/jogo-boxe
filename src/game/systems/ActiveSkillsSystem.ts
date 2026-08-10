@@ -22,11 +22,17 @@ export const ICE_RANGE_RATIO = 0.4;
 export const ICE_VFX_MS = 520;
 /** Duração do VFX do raio single-target (ms). */
 export const LIGHTNING_VFX_MS = 380;
+/** Duração do flash da explosão em área (ms). */
+export const LIGHTNING_BURST_VFX_MS = 320;
 /** Duração do flash flamejante on-hit (ms). */
 export const FIRE_HIT_VFX_MS = 280;
 /** Velocidade do projétil elétrico (px/s). */
 export const LIGHTNING_PROJECTILE_SPEED = 920;
 export const LIGHTNING_PROJECTILE_RADIUS = 7;
+/** Raio da explosão no impacto (dano + shock). */
+export const LIGHTNING_AOE_RADIUS = 120;
+/** Folga extra de colisão para garantir o acerto no alvo. */
+export const LIGHTNING_HIT_SLOP_PX = 28;
 /**
  * Multiplicador base de burst do Raio (single-target).
  * hits/damage granulares empilham em cima disso.
@@ -38,8 +44,14 @@ export const LIGHTNING_LINK_RADIUS = 280;
 export const ICE_WAVE_RADIUS = 2400;
 /** @deprecated */
 export const LIGHTNING_FIRST_RANGE = 520;
-/** @deprecated */
-export const LIGHTNING_TICK_MS = 500;
+/** Duração do VFX do terremoto (ms). */
+export const STONE_VFX_MS = 640;
+/** Duração base do debuff de Pedra (ms). */
+export const STONE_DEBUFF_BASE_MS = 10_000;
+/** Fração de dano/AS dos inimigos sob terremoto. */
+export const STONE_ENEMY_POWER_MUL = 0.5;
+/** Multiplicador base de dano do terremoto vs dano do herói. */
+export const STONE_QUAKE_DAMAGE_RATIO = 1.35;
 
 export type ActiveSkillPulseState = {
   iceNextPulseAt: number;
@@ -57,6 +69,24 @@ export type ActiveSkillPulseState = {
   ricochetNextPulseAt: number;
   ricochetActiveUntil: number;
   ricochetPulseAt: number;
+  /** Próximo stun periódico da Aura (gelo liberado). */
+  auraStunNextAt: number;
+  /** Timestamp do último pulso de gelo da aura. */
+  auraPulseAt: number;
+  /** Próximo pulso de explosão sombra na aura. */
+  auraShadowNextAt: number;
+  /** Timestamp do último pulso sombra da aura. */
+  auraShadowPulseAt: number;
+  /** Quando o próximo Shadow Clone pode spawnar. */
+  shadowNextSpawnAt: number;
+  /** Timestamp do último spawn do clone. */
+  shadowPulseAt: number;
+  /** Até quando o clone atual permanece (TTL). */
+  shadowActiveUntil: number;
+  /** Próximo terremoto da Pedra. */
+  stoneNextPulseAt: number;
+  stoneActiveUntil: number;
+  stonePulseAt: number;
 };
 
 export function createActiveSkillPulseState(): ActiveSkillPulseState {
@@ -75,6 +105,16 @@ export function createActiveSkillPulseState(): ActiveSkillPulseState {
     ricochetNextPulseAt: 0,
     ricochetActiveUntil: 0,
     ricochetPulseAt: 0,
+    auraStunNextAt: 0,
+    auraPulseAt: 0,
+    auraShadowNextAt: 0,
+    auraShadowPulseAt: 0,
+    shadowNextSpawnAt: 0,
+    shadowPulseAt: 0,
+    shadowActiveUntil: 0,
+    stoneNextPulseAt: 0,
+    stoneActiveUntil: 0,
+    stonePulseAt: 0,
   };
 }
 
@@ -121,9 +161,41 @@ export type SkillVfxEffect =
       expiresAt: number;
     }
   | {
+      kind: "lightning_burst";
+      x: number;
+      y: number;
+      maxRadius: number;
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
       kind: "fire";
       x: number;
       y: number;
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
+      kind: "aura_ice_pulse";
+      x: number;
+      y: number;
+      maxRadius: number;
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
+      kind: "aura_shadow_burst";
+      x: number;
+      y: number;
+      maxRadius: number;
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
+      kind: "stone";
+      x: number;
+      y: number;
+      maxRadius: number;
       startedAt: number;
       expiresAt: number;
     }
@@ -342,17 +414,13 @@ export function runActiveSkills(
   next.fireNextPulseAt = 0;
   next.fireActiveUntil = 0;
 
-  // ——— Raio: dispara projétil(is) elétrico(s) a cada ciclo ———
+  // ——— Raio: só dispara se houver inimigo (nunca “no vazio”) ———
   if (matchSkills.lightning > 0) {
     if (next.lightningNextPulseAt <= 0) {
       next.lightningNextPulseAt = now;
     }
 
     if (now >= next.lightningNextPulseAt) {
-      next.lightningPulseAt = now;
-      next.lightningNextPulseAt = now + lightningCooldownMs;
-      next.lightningActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
-
       const boltCount = 1 + Math.max(0, lightningBonus.extraProjectiles);
       const livingSorted = enemies
         .filter((e) => !e.isDead)
@@ -363,29 +431,36 @@ export function runActiveSkills(
         .sort((a, b) => a.dist - b.dist)
         .slice(0, boltCount);
 
-      const lightningDamage =
-        getLightningBurstDamage(
-          baseDamage,
-          skills.lightning.damage,
-          skills.lightning.hits + Math.max(0, lightningBonus.extraHits),
-        ) *
-        prestigeMul *
-        lightningBonus.damageMul;
+      // Sem alvo vivo: mantém pronto (não gasta CD / não lança pro nada)
+      if (livingSorted.length > 0) {
+        next.lightningPulseAt = now;
+        next.lightningNextPulseAt = now + lightningCooldownMs;
+        next.lightningActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
 
-      for (const { enemy: target } of livingSorted) {
-        const dx = target.x - playerX;
-        const dy = target.y - playerY;
-        const len = Math.hypot(dx, dy) || 1;
-        newLightningProjectiles.push({
-          id: crypto.randomUUID(),
-          x: playerX,
-          y: playerY,
-          vx: (dx / len) * LIGHTNING_PROJECTILE_SPEED,
-          vy: (dy / len) * LIGHTNING_PROJECTILE_SPEED,
-          damage: lightningDamage,
-          radius: LIGHTNING_PROJECTILE_RADIUS,
-          targetEnemyId: target.id,
-        });
+        const lightningDamage =
+          getLightningBurstDamage(
+            baseDamage,
+            skills.lightning.damage,
+            skills.lightning.hits + Math.max(0, lightningBonus.extraHits),
+          ) *
+          prestigeMul *
+          lightningBonus.damageMul;
+
+        for (const { enemy: target } of livingSorted) {
+          const dx = target.x - playerX;
+          const dy = target.y - playerY;
+          const len = Math.hypot(dx, dy) || 1;
+          newLightningProjectiles.push({
+            id: crypto.randomUUID(),
+            x: playerX,
+            y: playerY,
+            vx: (dx / len) * LIGHTNING_PROJECTILE_SPEED,
+            vy: (dy / len) * LIGHTNING_PROJECTILE_SPEED,
+            damage: lightningDamage,
+            radius: LIGHTNING_PROJECTILE_RADIUS,
+            targetEnemyId: target.id,
+          });
+        }
       }
     }
   } else {
@@ -408,6 +483,73 @@ export function runActiveSkills(
   } else {
     next.ricochetNextPulseAt = 0;
     next.ricochetActiveUntil = 0;
+  }
+
+  // ——— Pedra: terremoto em todos os inimigos ———
+  const stoneBonus = matchSkillBonuses?.stone ?? DEFAULT_MATCH_SKILL_BONUS;
+  const stoneCooldownMs = Math.max(
+    6_000,
+    (18_000 - skills.stone.cooldown * 700 * prestigeMul) *
+      stoneBonus.cooldownMul,
+  );
+
+  if (matchSkills.stone > 0) {
+    if (next.stoneNextPulseAt <= 0) {
+      next.stoneNextPulseAt = now;
+    }
+
+    if (now >= next.stoneNextPulseAt) {
+      const living = enemies.filter((e) => !e.isDead);
+      if (living.length > 0) {
+        next.stonePulseAt = now;
+        next.stoneActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
+        next.stoneNextPulseAt = now + stoneCooldownMs;
+
+        const matchLevel = matchSkills.stone;
+        const quakeDamage =
+          baseDamage *
+          STONE_QUAKE_DAMAGE_RATIO *
+          (1 + matchLevel * 0.12) *
+          (1 + skills.stone.damage * 0.08 * prestigeMul) *
+          stoneBonus.damageMul;
+
+        const debuffMs = Math.round(
+          (STONE_DEBUFF_BASE_MS +
+            skills.stone.duration * 800 * prestigeMul) *
+            stoneBonus.durationMul,
+        );
+
+        for (const enemy of living) {
+          enemy.takeDamage(quakeDamage, now);
+          enemy.applyQuake(
+            now,
+            debuffMs,
+            STONE_ENEMY_POWER_MUL,
+            STONE_ENEMY_POWER_MUL,
+          );
+          skillDamageDealt +=
+            quakeDamage * enemy.getDamageTakenMultiplier(now);
+          skillHitsLanded += 1;
+        }
+
+        const maxDist = living.reduce((m, e) => {
+          const d = Math.hypot(e.x - playerX, e.y - playerY);
+          return Math.max(m, d + e.radius);
+        }, 180);
+
+        newSkillVfx.push({
+          kind: "stone",
+          x: playerX,
+          y: playerY,
+          maxRadius: Math.min(900, maxDist + 80),
+          startedAt: now,
+          expiresAt: now + STONE_VFX_MS,
+        });
+      }
+    }
+  } else {
+    next.stoneNextPulseAt = 0;
+    next.stoneActiveUntil = 0;
   }
 
   return {
@@ -442,7 +584,7 @@ export type SkillCooldownInfo = {
 };
 
 export function getSkillCycleMs(
-  key: "ricochet" | "ice" | "fire" | "lightning",
+  key: "ricochet" | "ice" | "fire" | "lightning" | "aura" | "shadow" | "stone",
   skills: SkillsData,
   cooldownMul = 1,
 ): number {
@@ -462,39 +604,81 @@ export function getSkillCycleMs(
         2_000,
         (7_000 - skills.ricochet.cooldown * 500) * cooldownMul,
       );
+    case "shadow":
+      return Math.max(
+        6_000,
+        (18_000 - skills.shadow.cooldown * 600) * cooldownMul,
+      );
+    case "stone":
+      return Math.max(
+        6_000,
+        (18_000 - skills.stone.cooldown * 700) * cooldownMul,
+      );
     case "fire":
+    case "aura":
       return 0;
   }
 }
 
 /**
  * Estado de cooldown/ativo para o anel da HUD.
- * Fogo é passivo (on-hit) — sempre "passive" com progress 1.
+ * Fogo e Aura são passivos — sempre "passive" com progress 1.
  */
 export function getSkillCooldownInfo(
-  key: "ricochet" | "ice" | "fire" | "lightning",
+  key: "ricochet" | "ice" | "fire" | "lightning" | "aura" | "shadow" | "stone",
   pulse: ActiveSkillPulseState,
   skills: SkillsData,
   now: number,
   cooldownMul = 1,
 ): SkillCooldownInfo {
-  if (key === "fire") {
+  if (key === "fire" || key === "aura") {
     return { mode: "passive", progress: 1, cycleMs: 0 };
   }
 
   const cycleMs = getSkillCycleMs(key, skills, cooldownMul);
+
+  if (key === "shadow") {
+    if (pulse.shadowActiveUntil > now) {
+      const life = Math.max(
+        1,
+        pulse.shadowActiveUntil - pulse.shadowPulseAt,
+      );
+      const remaining = pulse.shadowActiveUntil - now;
+      return {
+        mode: "active",
+        progress: Math.max(0, Math.min(1, remaining / life)),
+        cycleMs,
+      };
+    }
+    const nextAt = pulse.shadowNextSpawnAt;
+    if (nextAt <= 0 || now >= nextAt) {
+      return { mode: "ready", progress: 1, cycleMs };
+    }
+    const remaining = nextAt - now;
+    const elapsed = cycleMs - remaining;
+    return {
+      mode: "cooldown",
+      progress: Math.max(0, Math.min(1, elapsed / cycleMs)),
+      cycleMs,
+    };
+  }
+
   const nextAt =
     key === "ice"
       ? pulse.iceNextPulseAt
       : key === "lightning"
         ? pulse.lightningNextPulseAt
-        : pulse.ricochetNextPulseAt;
+        : key === "stone"
+          ? pulse.stoneNextPulseAt
+          : pulse.ricochetNextPulseAt;
   const activeUntil =
     key === "ice"
       ? pulse.iceActiveUntil
       : key === "lightning"
         ? pulse.lightningActiveUntil
-        : pulse.ricochetActiveUntil;
+        : key === "stone"
+          ? pulse.stoneActiveUntil
+          : pulse.ricochetActiveUntil;
 
   if (activeUntil > now) {
     const activeMs =

@@ -36,6 +36,27 @@ export const ADVANCED_SKILL_UNLOCK: Record<
     requiredMobs: 9_000,
     requiredBosses: 6,
   },
+  /** Sinergia elemental — exige progressão intermediária. */
+  aura: {
+    goldCost: 160_000,
+    diamondCost: 480,
+    requiredMobs: 20_000,
+    requiredBosses: 8,
+  },
+  /** Clone de sombra — entre aura e ricochete. */
+  shadow: {
+    goldCost: 240_000,
+    diamondCost: 720,
+    requiredMobs: 35_000,
+    requiredBosses: 9,
+  },
+  /** Terremoto — entre shadow e ricochete. */
+  stone: {
+    goldCost: 280_000,
+    diamondCost: 840,
+    requiredMobs: 44_000,
+    requiredBosses: 9,
+  },
   /** Mais difícil */
   ricochet: {
     goldCost: 320_000,

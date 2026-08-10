@@ -9,6 +9,7 @@ import {
   type ActiveQuest,
   type QuestProgressEvent,
   type QuestRewards,
+  type QuestSkillContext,
 } from "@/lib/quests";
 import {
   applySkillBonusDelta,
@@ -36,6 +37,7 @@ import {
   type LightningProjectile,
   type SkillVfxEffect,
 } from "@/src/game/systems/ActiveSkillsSystem";
+import type { ShadowCloneState } from "@/src/game/systems/ShadowCloneSystem";
 import type { RicochetPathEffect } from "@/src/game/systems/CombatSystem";
 import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import type { Drop } from "@/src/game/systems/LootSystem";
@@ -53,7 +55,7 @@ export type { Drop } from "@/src/game/systems/LootSystem";
 export type EnemyType = "normal" | "dasher" | "ranged" | "boss";
 
 export type EnemyStatusEffect = {
-  type: "freeze" | "shock" | "burn";
+  type: "freeze" | "shock" | "burn" | "quake";
   expiresAt: number;
   burnDps?: number;
   burnStacks?: number;
@@ -62,6 +64,8 @@ export type EnemyStatusEffect = {
   slowAmount?: number;
   vulnerable?: boolean;
   damageTakenMultiplier?: number;
+  attackDamageMul?: number;
+  attackSpeedMul?: number;
 };
 
 export type Enemy = {
@@ -218,6 +222,8 @@ export type ArenaStoreState = {
   lightningProjectiles: LightningProjectile[];
   /** VFX temporários (gelo / raio). */
   skillVfxEffects: SkillVfxEffect[];
+  /** Clones de sombra ativos. */
+  shadowClones: ShadowCloneState[];
   levelUpOptions: MatchUpgrade[];
   /**
    * Pausa de combate durante a escolha de carta de level-up.
@@ -355,6 +361,18 @@ function randomEdgePosition(canvasWidth: number, canvasHeight: number) {
   }
 }
 
+function getQuestSkillContext(
+  matchSkills: MatchSkillsData,
+  activeRunSkills: SpecialSkillKey[],
+): QuestSkillContext {
+  return {
+    hasIce: (matchSkills.ice ?? 0) > 0 || activeRunSkills.includes("ice"),
+    hasLightning:
+      (matchSkills.lightning ?? 0) > 0 ||
+      activeRunSkills.includes("lightning"),
+  };
+}
+
 function rollLevelUpOptions(
   matchSkills: MatchSkillsData,
   matchBuffs: MatchBuffs,
@@ -436,6 +454,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   activeSkillPulse: createActiveSkillPulseState(),
   lightningProjectiles: [],
   skillVfxEffects: [],
+  shadowClones: [],
   levelUpOptions: [],
   isPausedForLevelUp: false,
   levelUpTimeRemaining: 0,
@@ -502,6 +521,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
+      shadowClones: [],
       levelUpOptions: [],
       isPausedForLevelUp: false,
       levelUpTimeRemaining: 0,
@@ -511,7 +531,10 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
       bossHordeAlertUntil: 0,
-      activeQuests: createRandomQuests(ACTIVE_QUEST_COUNT, 0),
+      activeQuests: createRandomQuests(ACTIVE_QUEST_COUNT, 0, {
+        hasIce: false,
+        hasLightning: false,
+      }),
       questsClaimedThisRun: 0,
       isPaused: false,
       playerRotation: -Math.PI / 2,
@@ -551,6 +574,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
+      shadowClones: [],
       stageClearReward: null,
     }),
 
@@ -595,6 +619,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
+      shadowClones: [],
       stageClearReward,
     });
   },
@@ -633,6 +658,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
+      shadowClones: [],
       levelUpOptions: [],
       isPausedForLevelUp: false,
       levelUpTimeRemaining: 0,
@@ -698,7 +724,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     };
     const remaining = get().activeQuests.filter((q) => q.id !== questId);
     const nextClaimed = get().questsClaimedThisRun + 1;
-    const replacement = createReplacementQuest(remaining, nextClaimed);
+    const state = get();
+    const replacement = createReplacementQuest(
+      remaining,
+      nextClaimed,
+      getQuestSkillContext(state.matchSkills, state.activeRunSkills),
+    );
 
     set({
       activeQuests: [...remaining, replacement],
@@ -1101,6 +1132,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
+      shadowClones: [],
       levelUpOptions: [],
       isPausedForLevelUp: false,
       levelUpTimeRemaining: 0,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Flame, Snowflake, Spline, X, Zap } from "lucide-react";
+import { Circle, Flame, Ghost, Mountain, Snowflake, Spline, X, Zap } from "lucide-react";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
   MAX_ACTIVE_RUN_SKILLS,
@@ -10,10 +10,27 @@ import {
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
 import {
+  getAuraFireDps,
+  getAuraIceStunIntervalMs,
+  getAuraRadius,
+  getAuraShadowBurstDamage,
+  getAuraShadowBurstIntervalMs,
+} from "@/src/game/systems/AuraSystem";
+import {
   getLightningBurstDamage,
   getSkillCooldownInfo,
   getSkillCycleMs,
+  LIGHTNING_AOE_RADIUS,
+  STONE_DEBUFF_BASE_MS,
+  STONE_ENEMY_POWER_MUL,
+  STONE_QUAKE_DAMAGE_RATIO,
 } from "@/src/game/systems/ActiveSkillsSystem";
+import {
+  getShadowCloneCooldownMs,
+  getShadowCloneStatRatio,
+  getShadowCloneTtlMs,
+  SHADOW_CLONE_STAT_RATIO,
+} from "@/src/game/systems/ShadowCloneSystem";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -47,7 +64,32 @@ const SKILL_UI: Record<
     icon: <Zap className="h-5 w-5" aria-hidden />,
     ring: "stroke-yellow-300",
     fill: "text-yellow-100",
-    blurb: "Projétil elétrico no alvo mais próximo + mini-stun.",
+    blurb:
+      "Só dispara com alvo. Homing + explosão em área (dano e eletrificação).",
+  },
+  aura: {
+    name: "Aura",
+    icon: <Circle className="h-5 w-5" aria-hidden />,
+    ring: "stroke-fuchsia-400",
+    fill: "text-fuchsia-200",
+    blurb:
+      "Área no herói. Fogo=DPS, Raio=lentidão, Gelo=stun, Shadow=burst, Pedra=defesa, Ricochete=splash 25%.",
+  },
+  shadow: {
+    name: "Shadow Clone",
+    icon: <Ghost className="h-5 w-5" aria-hidden />,
+    ring: "stroke-violet-400",
+    fill: "text-violet-200",
+    blurb:
+      "Clone com 15% dos stats, sem heal/skills. Alvos diferentes (exceto boss).",
+  },
+  stone: {
+    name: "Pedra",
+    icon: <Mountain className="h-5 w-5" aria-hidden />,
+    ring: "stroke-stone-400",
+    fill: "text-stone-200",
+    blurb:
+      "Terremoto: dano em todos os inimigos e −50% AS/dano deles por 10s.",
   },
 };
 
@@ -279,6 +321,7 @@ function buildSkillStatRows(
           value: burst.toFixed(1),
           accent: true,
         },
+        { label: "Raio da explosão", value: `${LIGHTNING_AOE_RADIUS} px` },
         { label: "Raios por ciclo", value: String(boltCount) },
         {
           label: "Burst (meta+cartas)",
@@ -292,7 +335,174 @@ function buildSkillStatRows(
         },
       ],
       levelBonusNote: [
-        `Nível ${level}: skill ativa na run. Dano escala com meta roxa, prestígio e Dano das Skills.`,
+        `Nível ${level}: só dispara com inimigo na tela. Explode em área com shock.`,
+        runBonusNote,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      skillDmgNote,
+    };
+  }
+
+  if (key === "aura") {
+    const unlocked = useGameStore.getState().unlockedSkills;
+    const radius = getAuraRadius(
+      level,
+      skills.aura.radius,
+      bonus,
+      prestigeMul,
+    );
+    const dps = unlocked.fire
+      ? getAuraFireDps(
+          punchBase * skillDmgMul,
+          level,
+          skills.aura.damage,
+          bonus,
+          prestigeMul,
+        )
+      : 0;
+    const stunInterval = unlocked.ice
+      ? getAuraIceStunIntervalMs(skills.aura.pulse, bonus, prestigeMul)
+      : 0;
+    const shadowBurst = unlocked.shadow
+      ? getAuraShadowBurstDamage(
+          punchBase * skillDmgMul,
+          level,
+          skills.aura.damage,
+          bonus,
+          prestigeMul,
+        )
+      : 0;
+    const shadowInterval = unlocked.shadow
+      ? getAuraShadowBurstIntervalMs(skills.aura.pulse, bonus, prestigeMul)
+      : 0;
+    return {
+      rows: [
+        { label: "Tipo", value: "Aura passiva" },
+        { label: "Nível in-run", value: String(level) },
+        { label: "Raio", value: `${Math.round(radius)} px`, accent: true },
+        {
+          label: "Fogo (DPS)",
+          value: unlocked.fire ? `${dps.toFixed(1)}/s` : "— (não liberado)",
+        },
+        {
+          label: "Raio (slow)",
+          value: unlocked.lightning ? "45% lentidão" : "— (não liberado)",
+        },
+        {
+          label: "Gelo (stun)",
+          value: unlocked.ice
+            ? `a cada ${formatMs(stunInterval)}`
+            : "— (não liberado)",
+        },
+        {
+          label: "Shadow (burst)",
+          value: unlocked.shadow
+            ? `${shadowBurst.toFixed(0)} a cada ${formatMs(shadowInterval)}`
+            : "— (não liberado)",
+        },
+        {
+          label: "Pedra (defesa)",
+          value: unlocked.stone
+            ? "inimigos na aura −50% dano"
+            : "— (não liberado)",
+        },
+        {
+          label: "Ricochete (splash)",
+          value: unlocked.ricochet
+            ? "hits → 25% em todos na aura"
+            : "— (não liberado)",
+        },
+      ],
+      levelBonusNote: [
+        `Nível ${level}: aura contínua. Efeitos dependem das skills liberadas na base.`,
+        runBonusNote,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      skillDmgNote,
+    };
+  }
+
+  if (key === "shadow") {
+    const ratio = getShadowCloneStatRatio(
+      level,
+      skills.shadow.damage,
+      bonus,
+      prestigeMul,
+    );
+    const ttl = getShadowCloneTtlMs(
+      skills.shadow.duration,
+      bonus,
+      prestigeMul,
+    );
+    const cd = getShadowCloneCooldownMs(
+      skills.shadow.cooldown,
+      bonus,
+      prestigeMul,
+    );
+    return {
+      rows: [
+        { label: "Tipo", value: "Invocação" },
+        { label: "Nível in-run", value: String(level) },
+        {
+          label: "Poder do clone",
+          value: `${Math.round(ratio * 100)}% dos stats`,
+          accent: true,
+        },
+        {
+          label: "HP base",
+          value: `${Math.round(SHADOW_CLONE_STAT_RATIO * 100)}% do herói`,
+        },
+        { label: "Duração", value: formatMs(ttl) },
+        { label: "Cooldown", value: formatMs(cd) },
+        { label: "Heal / skills", value: "Nenhum" },
+        { label: "Alvos", value: "Diferentes do herói (boss ok)" },
+      ],
+      levelBonusNote: [
+        `Nível ${level}: 1 clone por vez. Sem recuperação de vida e sem skills.`,
+        runBonusNote,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      skillDmgNote,
+    };
+  }
+
+  if (key === "stone") {
+    const quakeDamage =
+      punchBase *
+      skillDmgMul *
+      STONE_QUAKE_DAMAGE_RATIO *
+      (1 + level * 0.12) *
+      (1 + skills.stone.damage * 0.08 * prestigeMul) *
+      bonus.damageMul;
+    const debuffMs = Math.round(
+      (STONE_DEBUFF_BASE_MS + skills.stone.duration * 800 * prestigeMul) *
+        bonus.durationMul,
+    );
+    const cycleMs = Math.max(
+      6_000,
+      (18_000 - skills.stone.cooldown * 700 * prestigeMul) * bonus.cooldownMul,
+    );
+    return {
+      rows: [
+        { label: "Tipo", value: "Terremoto global" },
+        { label: "Nível in-run", value: String(level) },
+        {
+          label: "Dano",
+          value: quakeDamage.toFixed(1),
+          accent: true,
+        },
+        {
+          label: "Debuff",
+          value: `−${Math.round((1 - STONE_ENEMY_POWER_MUL) * 100)}% AS e dano`,
+        },
+        { label: "Duração debuff", value: formatMs(debuffMs) },
+        { label: "Cooldown", value: formatMs(cycleMs) },
+      ],
+      levelBonusNote: [
+        `Nível ${level}: afeta todos os inimigos na tela.`,
         runBonusNote,
       ]
         .filter(Boolean)
