@@ -7,8 +7,6 @@ import type {
 } from "@/db/schema";
 import { getSkillMetaCap } from "@/db/schema";
 
-/** Para de oferecer cartas de alcance acima deste valor efetivo (px). */
-export const MATCH_RANGE_UPGRADE_CAP = 650;
 /** Para de oferecer cartas de velocidade abaixo deste cooldown efetivo (ms). */
 export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
 /** Teto de chance crítica efetiva in-run (meta + cartas). */
@@ -30,7 +28,6 @@ export type SpecialSkillKey =
 export type UpgradeCategory =
   | "damage"
   | "speed"
-  | "range"
   | "critDamage"
   | "critChance"
   | "skillDamage"
@@ -38,7 +35,6 @@ export type UpgradeCategory =
 
 export type UpgradeType =
   | "attackSpeed"
-  | "attackRange"
   | "damageMultiplier"
   | "critDamageMultiplier"
   | "critChanceBonus"
@@ -400,7 +396,6 @@ const RARITY_BONUS: Record<Rarity, number> = {
 type StatCategory =
   | "damage"
   | "speed"
-  | "range"
   | "critDamage"
   | "critChance"
   | "skillDamage";
@@ -416,12 +411,6 @@ const STAT_UPGRADE_POOL: {
     category: "speed",
     name: "Attack Speed",
     short: "Velocidade de Ataque",
-  },
-  {
-    type: "attackRange",
-    category: "range",
-    name: "Range",
-    short: "Alcance",
   },
   {
     type: "damageMultiplier",
@@ -757,7 +746,6 @@ export const SPECIAL_SKILL_CARD_CHANCE = 0.15;
 const ALL_STAT_CATEGORIES: StatCategory[] = [
   "damage",
   "speed",
-  "range",
   "critDamage",
   "critChance",
   "skillDamage",
@@ -771,15 +759,9 @@ export function getEligibleStatCategories(ctx?: {
   /** True se o jogador já tem ≥1 skill especial ativa na run. */
   hasActiveSkill?: boolean;
 }): StatCategory[] {
+  void ctx?.effectiveRange;
   return ALL_STAT_CATEGORIES.filter((category) => {
     if (category === "skillDamage" && !ctx?.hasActiveSkill) {
-      return false;
-    }
-    if (
-      category === "range" &&
-      ctx?.effectiveRange != null &&
-      ctx.effectiveRange >= MATCH_RANGE_UPGRADE_CAP
-    ) {
       return false;
     }
     if (
