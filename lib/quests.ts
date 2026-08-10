@@ -25,7 +25,11 @@ export const QUEST_TARGET_SCALE_PER_CLAIM = 0.3;
  */
 export const QUEST_RUN_GOLD_SHARE = 0.03;
 export const QUEST_RUN_DIAMOND_SHARE = 0.05;
-export const QUEST_RUN_PURPLE_SHARE = 0.03;
+/**
+ * Roxos NÃO usam % do loot da run — isso criava feedback explosivo
+ * em cima do drop de boss. Ficam só no pacote-template.
+ */
+export const QUEST_RUN_PURPLE_SHARE = 0;
 
 export type QuestRewards = {
   gold: number;
@@ -125,7 +129,6 @@ export function computeQuestRewards(
   const goldEco = Math.max(1, economy?.goldEconomyMul ?? 1);
   const runGold = Math.max(0, economy?.runGoldCollected ?? 0);
   const runDiamonds = Math.max(0, economy?.runDiamondsCollected ?? 0);
-  const runPurple = Math.max(0, economy?.runPurpleDiamondsCollected ?? 0);
 
   const templateGold = Math.round(
     scaledBase * QUEST_GOLD_PER_DIAMOND * goldEco,
@@ -149,10 +152,8 @@ export function computeQuestRewards(
     templateDiamonds,
     Math.round(runDiamonds * QUEST_RUN_DIAMOND_SHARE),
   );
-  const purpleDiamonds = Math.max(
-    templatePurple,
-    Math.round(runPurple * QUEST_RUN_PURPLE_SHARE),
-  );
+  // Roxos: só template (sem ancorar no total da run).
+  const purpleDiamonds = templatePurple;
 
   return { gold, diamonds, purpleDiamonds };
 }

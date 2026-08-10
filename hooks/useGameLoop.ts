@@ -430,6 +430,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         hasBossAlive,
         aliveBossCount,
         invasionBossCooldownMs: arena.invasionBossCooldownMs,
+        endlessBossCooldownMs: arena.endlessBossCooldownMs,
         spawnAccumulatorMs: spawnAccumulator,
         dt,
         difficulty: {
@@ -489,6 +490,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         bossesSpawned: spawn.bossesSpawned,
         bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
         invasionBossCooldownMs: spawn.invasionBossCooldownMs,
+        endlessBossCooldownMs: spawn.endlessBossCooldownMs,
         stageBossDefeated,
         stageCommonsSpawned: nextCommonsSpawned,
         stageEnemiesDefeated: nextStageDefeated,

@@ -28,8 +28,15 @@ export const ENEMY_HP_GROWTH_PER_CYCLE = 1.5;
 export const ENEMY_DAMAGE_GROWTH_PER_CYCLE = 1.5;
 /** Teto de crescimento visual (+50%). */
 export const ENEMY_VISUAL_SCALE_CAP = 0.5;
-/** Boss a cada 4 minutos. */
+/** Intervalo inicial entre bosses agendados no Endless (segundos). */
 export const BOSS_INTERVAL_SECONDS = 240;
+/** Intervalo mínimo entre bosses agendados no Endless (segundos). */
+export const BOSS_INTERVAL_MIN_SECONDS = 10;
+/**
+ * Em quanto tempo de partida o intervalo agendado chega ao piso.
+ * A cada spawn o próximo intervalo é recalculado com o tempo atual.
+ */
+export const BOSS_INTERVAL_RAMP_SECONDS = 20 * 60;
 /** Escala extra quando bossCount excede bosses cadastrados. */
 export const BOSS_OVERFLOW_HP_GROWTH = 1.8;
 export const BOSS_OVERFLOW_DAMAGE_GROWTH = 1.4;
@@ -96,6 +103,26 @@ export function getEnemyPowerMultiplier(timeAliveSeconds: number): number {
   return 1 + getEnemyPowerLevel(timeAliveSeconds) * ENEMY_POWER_STEP;
 }
 
+/**
+ * Bônus de XP no Endless por ciclo de densidade (30s).
+ * Ex.: 0.18 → +18% XP a cada 30s vivos.
+ */
+export const ENDLESS_XP_BONUS_PER_CYCLE = 0.18;
+/** Teto do multiplicador de XP só do Endless (antes do XP meta/prestígio). */
+export const ENDLESS_XP_MULTIPLIER_CAP = 12;
+
+/**
+ * Multiplicador de XP que cresce com o tempo no Endless.
+ * Campanha deve usar 1 (não chamar / ignorar).
+ */
+export function getEndlessXpMultiplier(timeAliveSeconds: number): number {
+  const cycles = getScalingCycle(timeAliveSeconds);
+  return Math.min(
+    ENDLESS_XP_MULTIPLIER_CAP,
+    1 + Math.max(0, cycles) * ENDLESS_XP_BONUS_PER_CYCLE,
+  );
+}
+
 export function getSpawnIntervalMs(timeAlive: number): number {
   const t = Math.max(0, timeAlive);
 
@@ -160,6 +187,11 @@ export type SpawnerInput = {
   aliveBossCount?: number;
   /** Cooldown restante (ms) até a próxima invasão de boss na horda. */
   invasionBossCooldownMs?: number;
+  /**
+   * Cooldown restante (ms) até o próximo boss agendado no Endless.
+   * Reinicia a cada spawn com getEndlessBossIntervalSeconds(timeAlive).
+   */
+  endlessBossCooldownMs?: number;
   spawnAccumulatorMs: number;
   dt: number;
   difficulty?: DifficultySpawnMultipliers;
@@ -187,7 +219,8 @@ export type SpawnerResult = {
   spawnIntervalMs: number;
   bossesSpawned: number;
   invasionBossCooldownMs: number;
-  /** True se um boss surgiu via invasão na horda (não o agendado de 240s). */
+  endlessBossCooldownMs: number;
+  /** True se um boss surgiu via invasão na horda (não o agendado). */
   hordeBossInvaded: boolean;
   /** Comuns spawnados neste tick (campanha). */
   commonsSpawnedDelta: number;
@@ -199,6 +232,28 @@ export const HORDE_BOSS_INVASION_COOLDOWN_MS = 45_000;
 export const MAX_ALIVE_BOSSES = 2;
 /** Tempo mínimo de partida antes de invasões (s). */
 export const HORDE_BOSS_INVASION_UNLOCK_SECONDS = 90;
+
+/**
+ * Intervalo até o próximo boss agendado no Endless.
+ * Começa em BOSS_INTERVAL_SECONDS e cai linearmente com o tempo vivo
+ * até BOSS_INTERVAL_MIN_SECONDS (aplicado a cada novo spawn).
+ */
+export function getEndlessBossIntervalSeconds(
+  timeAliveSeconds: number,
+): number {
+  const t = Math.max(0, timeAliveSeconds);
+  const ramp = Math.max(1, BOSS_INTERVAL_RAMP_SECONDS);
+  const progress = Math.min(1, t / ramp);
+  const interval =
+    BOSS_INTERVAL_SECONDS +
+    (BOSS_INTERVAL_MIN_SECONDS - BOSS_INTERVAL_SECONDS) * progress;
+  return Math.max(BOSS_INTERVAL_MIN_SECONDS, interval);
+}
+
+/** Cooldown inicial do primeiro boss agendado (ms). */
+export function getInitialEndlessBossCooldownMs(): number {
+  return BOSS_INTERVAL_SECONDS * 1000;
+}
 
 /**
  * Chance por lote de spawn de injetar um boss na horda.
@@ -422,7 +477,7 @@ function spawnFromConfig(
 }
 
 /**
- * Spawner: comuns por unlock_time; bosses agendados (240s) + invasões na horda.
+ * Spawner: comuns por unlock_time; bosses agendados (intervalo decrescente) + invasões.
  * Em campanha: cota finita de comuns + 1 chefe; para quando a cota acaba.
  */
 export function runSpawner(input: SpawnerInput): SpawnerResult {
@@ -458,6 +513,11 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
   let invasionBossCooldownMs = Math.max(
     0,
     (input.invasionBossCooldownMs ?? 0) - dt * 1000,
+  );
+  let endlessBossCooldownMs = Math.max(
+    0,
+    (input.endlessBossCooldownMs ?? getInitialEndlessBossCooldownMs()) -
+      dt * 1000,
   );
   let spawnAccumulatorMs = input.spawnAccumulatorMs + dt * 1000;
   const paceMul = Math.max(1, stage?.spawnPaceMul ?? 1);
@@ -590,11 +650,13 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
     }
   } else {
-    const expectedBosses = Math.floor(
-      timeAliveInSeconds / BOSS_INTERVAL_SECONDS,
-    );
-
-    if (expectedBosses > bossesSpawned && count < MAX_ENEMIES) {
+    // Boss agendado: timer próprio; a cada spawn o próximo intervalo
+    // encolhe com o tempo vivo (piso 10s).
+    if (
+      endlessBossCooldownMs <= 0 &&
+      bosses.length > 0 &&
+      count < MAX_ENEMIES
+    ) {
       const bossCount = bossesSpawned;
       const { config, overflow } = pickBossConfig(bosses, bossCount);
       spawned.push(
@@ -608,9 +670,11 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
           overflow,
         ),
       );
-      bossesSpawned = expectedBosses;
+      bossesSpawned += 1;
       bossesAlive += 1;
       count += 1;
+      endlessBossCooldownMs =
+        getEndlessBossIntervalSeconds(timeAliveInSeconds) * 1000;
       invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
     }
 
@@ -681,6 +745,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     spawnIntervalMs,
     bossesSpawned,
     invasionBossCooldownMs,
+    endlessBossCooldownMs,
     hordeBossInvaded,
     commonsSpawnedDelta,
   };

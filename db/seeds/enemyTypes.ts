@@ -359,7 +359,7 @@ export const EXPANSION_ENEMY_TYPE_SEEDS: EnemyTypeSeedRow[] = [
   },
 ];
 
-/** Bosses escalonados (a cada 240s no spawner / chefes de fase). */
+/** Bosses escalonados (agenda Endless com intervalo decrescente / chefes de fase). */
 export const BOSS_ENEMY_TYPE_SEEDS: EnemyTypeSeedRow[] = [
   {
     name: "Boss 1 (O Titã)",

@@ -80,10 +80,21 @@ export type CreateDropsResult = {
   totalXp: number;
 };
 
-/** Diamantes roxos garantidos no n-ésimo boss da run (1-indexed). */
+/**
+ * Diamantes roxos garantidos no n-ésimo boss da run (1-indexed).
+ * Crescimento linear suave + teto — evita explosão em Endless longo
+ * (o antigo 2×1.5^(n-1) chegava a bilhões em dezenas de bosses).
+ */
+export const BOSS_PURPLE_BASE = 2;
+/** +roxos por boss além do primeiro. */
+export const BOSS_PURPLE_PER_BOSS = 0.85;
+/** Teto por boss individual. */
+export const BOSS_PURPLE_CAP = 35;
+
 export function purpleDiamondsForBoss(bossCount: number): number {
   const n = Math.max(1, Math.floor(bossCount));
-  return Math.max(1, Math.floor(2 * Math.pow(1.5, n - 1)));
+  const raw = BOSS_PURPLE_BASE + (n - 1) * BOSS_PURPLE_PER_BOSS;
+  return Math.max(1, Math.min(BOSS_PURPLE_CAP, Math.floor(raw)));
 }
 
 function resolveRewards(site: KillSite): EnemyRewards {

@@ -30,6 +30,10 @@ import {
   getSkillGoldIncomeMultiplier,
 } from "@/lib/skillTree";
 import {
+  getEndlessXpMultiplier,
+  getInitialEndlessBossCooldownMs,
+} from "@/src/game/systems/Spawner";
+import {
   DEFAULT_MATCH_SKILLS,
   type MatchSkillsData,
 } from "@/db/schema";
@@ -243,12 +247,14 @@ export type ArenaStoreState = {
   levelUpDeadlineAt: number | null;
   /** Estatísticas da run atual. */
   runStats: RunStats;
-  /** Quantos bosses já foram invocados nesta run (ciclos de 240s / 4 min). */
+  /** Quantos bosses já foram invocados nesta run (agenda Endless + fase). */
   bossesSpawned: number;
   /** Quantos bosses já foram derrotados nesta run (scaling de diamante roxo). */
   bossesKilled: number;
   /** Cooldown (ms) até a próxima invasão de boss na horda. */
   invasionBossCooldownMs: number;
+  /** Cooldown (ms) até o próximo boss agendado no Endless. */
+  endlessBossCooldownMs: number;
   /**
    * Até quando (game clock ms) o alerta de boss na horda permanece ativo.
    * 0 = sem alerta.
@@ -501,6 +507,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   bossesSpawned: 0,
   bossesKilled: 0,
   invasionBossCooldownMs: 0,
+  endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
   bossHordeAlertUntil: 0,
   activeQuests: [],
   questsClaimedThisRun: 0,
@@ -568,6 +575,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
+      endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
       bossHordeAlertUntil: 0,
       activeQuests: createRandomQuests(
         ACTIVE_QUEST_COUNT,
@@ -689,6 +697,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
+      endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
       bossHordeAlertUntil: 0,
       activeQuests: [],
       questsClaimedThisRun: 0,
@@ -882,8 +891,14 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       return;
     }
 
+    const endlessMul =
+      state.runMode === "endless"
+        ? getEndlessXpMultiplier(state.timeAlive)
+        : 1;
     const finalXp = Math.round(
-      baseAmount * useGameStore.getState().getEffectiveStats().xpMultiplier,
+      baseAmount *
+        useGameStore.getState().getEffectiveStats().xpMultiplier *
+        endlessMul,
     );
 
     // Durante level_up, só acumula XP sem subir de novo
@@ -1279,6 +1294,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
+      endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
       bossHordeAlertUntil: 0,
     }),
 }));

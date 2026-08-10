@@ -305,9 +305,9 @@ export type GameStoreState = {
    */
   enforcePurpleSkillCap: () => number;
   /**
-   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades de ouro/níveis roxos
-   * e abates de unlock. Mantém upgrades de diamante (meta, XP, skill tree,
-   * skills liberadas), passivas de Ascensão, shards e equipe.
+   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades de ouro/níveis roxos,
+   * skills liberadas (in-game) e abates de unlock. Mantém upgrades de diamante
+   * (meta, XP, skill tree), passivas de Ascensão, shards e equipe.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -1576,9 +1576,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
-   * roxos), upgrades de base (ouro), árvore roxa granular e abates usados nos
-   * unlocks. Mantém upgrades de diamante (meta tree, XP, skill tree, skills
-   * liberadas), passivas de Ascensão, shards e equipe.
+   * roxos), upgrades de base (ouro), árvore roxa granular, skills liberadas
+   * (precisam ser desbloqueadas de novo para a roleta in-game) e abates usados
+   * nos unlocks. Mantém upgrades de diamante (meta tree, XP, skill tree),
+   * passivas de Ascensão, shards e equipe.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -1621,7 +1622,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       critChanceLevel: fresh.critChanceLevel,
       critDamageLevel: fresh.critDamageLevel,
       // Upgrades de diamante (normais) permanentes — não resetam
-      // xpBonusLevel, skillTree, unlockedSkills e meta tree são preservados
+      // xpBonusLevel, skillTree e meta tree são preservados
+      unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+      auraPrimaryElement: null,
       skills: {
         ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
         ice: { ...DEFAULT_SKILLS_DATA.ice },
