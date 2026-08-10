@@ -46,6 +46,7 @@ import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
   type MatchSkillBonuses,
+  type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
 import { LIGHTNING_STUN_MS } from "@/src/game/entities/Enemy";
 
@@ -133,6 +134,8 @@ export type CombatSystemInput = {
   canvasHeight?: number;
   /** Skills especiais ativos nesta run (0 = inativo). */
   matchSkills?: MatchSkillsData;
+  /** Slots de skills especiais já escolhidos nesta run. */
+  activeRunSkills?: SpecialSkillKey[];
   /** Bônus in-run das cartas de raridade (dano/CD/stacks/raios…). */
   matchSkillBonuses?: MatchSkillBonuses;
   /** Timers de pulso gelo/raio/ricochete. */
@@ -276,6 +279,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     canvasWidth = 2000,
     canvasHeight = 2000,
     matchSkills: inputMatchSkills,
+    activeRunSkills: inputActiveRunSkills = [],
     matchSkillBonuses: inputMatchSkillBonuses,
     activeSkillPulse: inputPulse = createActiveSkillPulseState(),
     lightningProjectiles: inputLightning = [],
@@ -400,7 +404,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     });
   }
 
-  // Aura: área contínua com sinergia das skills liberadas (fogo/raio/gelo/shadow/pedra)
+  // Aura: área contínua com sinergia das skills ativas na run
   const aura = runAuraSystem({
     enemies,
     playerX: player.x,
@@ -410,7 +414,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     baseDamage:
       baseDamage * matchBuffs.damageMultiplier * skillDamageMult,
     matchSkills,
-    unlockedSkills: gameState.unlockedSkills,
+    activeRunSkills: inputActiveRunSkills,
     skills,
     matchSkillBonuses,
     pulseState: activeSkills.pulseState,

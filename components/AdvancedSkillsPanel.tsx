@@ -23,6 +23,7 @@ import {
   Spline,
   Swords,
   Timer,
+  Wind,
   X,
   Zap,
 } from "lucide-react";
@@ -176,7 +177,7 @@ const CARDS: SkillCardDef[] = [
     type: "aura",
     title: "Aura",
     description:
-      "Área no herói. Escolha 1 atributo principal (100%); os demais liberados entram a 50%.",
+      "Área no herói. Sinergia só com skills ativas na run (1 = 100%; 2 = 100%/50%). Preferência de primário abaixo. Roleta: exige outra skill ativa primeiro.",
     icon: <Circle className="h-5 w-5" aria-hidden />,
     statActions: {
       radius: {
@@ -189,6 +190,27 @@ const CARDS: SkillCardDef[] = [
       },
       pulse: {
         label: "Acelerar Pulso",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
+    type: "vendaval",
+    title: "Vendaval",
+    description:
+      "Cria um vácuo periódico que puxa os inimigos para o centro. Na Aura: puxão gravitacional contínuo.",
+    icon: <Wind className="h-5 w-5" aria-hidden />,
+    statActions: {
+      damage: {
+        label: "Aumentar Dano",
+        icon: <Wind className="h-4 w-4" aria-hidden />,
+      },
+      radius: {
+        label: "Aumentar Raio",
+        icon: <Circle className="h-4 w-4" aria-hidden />,
+      },
+      cooldown: {
+        label: "Reduzir Cooldown",
         icon: <Timer className="h-4 w-4" aria-hidden />,
       },
     },
@@ -348,10 +370,12 @@ function SkillDetailModal({
         {card.type === "aura" && (
           <div className="shrink-0 border-b border-white/10 px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-200/90">
-              Atributo principal
+              Preferência de primário
             </p>
             <p className="mt-1 text-[11px] leading-snug text-zinc-500">
-              Primário em 100%. Os outros atributos liberados entram a 50%.
+              Na run, só skills ativas nos slots contam. Com 2 parceiras, esta
+              preferência define o 100% (a outra fica em 50%). Com 1, ela fica
+              sempre em 100%.
             </p>
             {auraElements.length === 0 ? (
               <p className="mt-2 text-[11px] text-zinc-500">
@@ -528,7 +552,7 @@ export function AdvancedSkillsPanel({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {CARDS.map((card) => {
           const unlocked = unlockedSkills[card.type];
           const skillStats = skills[card.type];

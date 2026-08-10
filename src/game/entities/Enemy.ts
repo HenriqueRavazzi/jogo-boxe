@@ -278,6 +278,11 @@ export class Enemy {
   public isBurning = false;
   public slowAmount = 0;
   private burnAccumulatorMs = 0;
+  /** Vendaval / vácuo: até quando o puxão permanece ativo. */
+  vacuumUntil = 0;
+  vacuumTx = 0;
+  vacuumTy = 0;
+  vacuumStrength = 0;
 
   constructor(
     public id: string,
@@ -637,6 +642,10 @@ export class Enemy {
       return;
     }
 
+    if (this.tickVacuumPull(dt, now, playerRadius)) {
+      return;
+    }
+
     const dx = playerX - this.x;
     const dy = playerY - this.y;
     const dist = Math.hypot(dx, dy) || 1;
@@ -717,6 +726,57 @@ export class Enemy {
     this.vx = (dirX / len) * power;
     this.vy = (dirY / len) * power;
     this.isAttacking = false;
+  }
+
+  /**
+   * Puxão de vácuo (Vendaval): interpola em direção ao alvo por `durationMs`.
+   * Bosses sofrem puxão reduzido (~35%).
+   */
+  applyVacuumPull(
+    targetX: number,
+    targetY: number,
+    now: number,
+    durationMs = 500,
+    strength = 1,
+  ): void {
+    const power = this.isBoss
+      ? Math.max(0, strength) * 0.35
+      : Math.max(0, strength);
+    if (power <= 0) return;
+    this.vacuumUntil = Math.max(this.vacuumUntil, now + durationMs);
+    this.vacuumTx = targetX;
+    this.vacuumTy = targetY;
+    this.vacuumStrength = Math.max(this.vacuumStrength, power);
+    this.vx = 0;
+    this.vy = 0;
+    this.isAttacking = false;
+  }
+
+  /** Aplica um passo de puxão suave; retorna true se o movimento chase deve ser pulado. */
+  tickVacuumPull(dt: number, now: number, playerRadius = 18): boolean {
+    if (now >= this.vacuumUntil || this.vacuumStrength <= 0) {
+      if (now >= this.vacuumUntil) this.vacuumStrength = 0;
+      return false;
+    }
+    const dx = this.vacuumTx - this.x;
+    const dy = this.vacuumTy - this.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const minDist = this.radius + playerRadius * 0.85;
+    if (dist <= minDist) {
+      this.vx = 0;
+      this.vy = 0;
+      this.isAttacking = false;
+      return true;
+    }
+    const rate = 7.5 * this.vacuumStrength;
+    const t = 1 - Math.exp(-rate * Math.max(0, dt));
+    const move = Math.min(dist - minDist, dist * t);
+    this.x += (dx / dist) * move;
+    this.y += (dy / dist) * move;
+    this.vx = 0;
+    this.vy = 0;
+    this.isAttacking = false;
+    return true;
   }
 
   takeDamage(amount: number, now?: number): boolean {

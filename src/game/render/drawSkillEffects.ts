@@ -522,6 +522,67 @@ export function drawStoneQuakeVfx(
   ctx.restore();
 }
 
+/** Anel de vácuo do Vendaval (contração). */
+export function drawVendavalVfx(
+  ctx: CanvasRenderingContext2D,
+  effect: Extract<SkillVfxEffect, { kind: "vendaval" }>,
+  now: number,
+): void {
+  if (effect.expiresAt <= now) return;
+  const life = effect.expiresAt - effect.startedAt;
+  const alpha = Math.max(
+    0,
+    Math.min(1, (effect.expiresAt - now) / Math.max(1, life)),
+  );
+  const progress = 1 - alpha;
+
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.95;
+
+  // Anéis que contraem em direção ao centro
+  for (let i = 0; i < 4; i++) {
+    const expand = Math.min(1, progress + i * 0.08);
+    const radius = Math.max(
+      16,
+      effect.maxRadius * (1 - expand * 0.72),
+    );
+    ctx.beginPath();
+    ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(125, 211, 252, ${0.85 - i * 0.15})`;
+    ctx.lineWidth = 4.5 - i * 0.6;
+    ctx.shadowColor = "#38bdf8";
+    ctx.shadowBlur = 16;
+    ctx.stroke();
+  }
+
+  // Traços radiais sugerindo sucção
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(186, 230, 253, 0.55)";
+  ctx.lineWidth = 1.6;
+  const spokes = 12;
+  for (let i = 0; i < spokes; i++) {
+    const ang = (Math.PI * 2 * i) / spokes + progress * 1.2;
+    const outer = effect.maxRadius * (0.85 - progress * 0.35);
+    const inner = effect.maxRadius * (0.2 + progress * 0.15);
+    ctx.beginPath();
+    ctx.moveTo(
+      effect.x + Math.cos(ang) * outer,
+      effect.y + Math.sin(ang) * outer,
+    );
+    ctx.lineTo(
+      effect.x + Math.cos(ang) * inner,
+      effect.y + Math.sin(ang) * inner,
+    );
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  ctx.arc(effect.x, effect.y, 10 + progress * 8, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(14, 165, 233, ${0.35 * alpha})`;
+  ctx.fill();
+  ctx.restore();
+}
+
 export function drawParrySkillVfx(
   ctx: CanvasRenderingContext2D,
   effect: Extract<SkillVfxEffect, { kind: "parry" }>,
@@ -711,6 +772,7 @@ export function drawAllSkillVfx(
     else if (effect.kind === "aura_shadow_burst")
       drawAuraShadowBurstVfx(ctx, effect, now);
     else if (effect.kind === "stone") drawStoneQuakeVfx(ctx, effect, now);
+    else if (effect.kind === "vendaval") drawVendavalVfx(ctx, effect, now);
     else if (effect.kind === "parry") drawParrySkillVfx(ctx, effect, now);
   }
 }

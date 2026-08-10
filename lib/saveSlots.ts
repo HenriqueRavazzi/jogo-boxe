@@ -92,6 +92,10 @@ export function normalizeSkills(
         "stone",
         skills.stone ?? 0,
       ) as SkillsData["stone"],
+      vendaval: statsFromLevel(
+        "vendaval",
+        skills.vendaval ?? 0,
+      ) as SkillsData["vendaval"],
     };
   }
 
@@ -103,6 +107,7 @@ export function normalizeSkills(
     aura: mergeSkillStats("aura", skills.aura),
     shadow: mergeSkillStats("shadow", skills.shadow),
     stone: mergeSkillStats("stone", skills.stone),
+    vendaval: mergeSkillStats("vendaval", skills.vendaval),
   };
 }
 
@@ -115,6 +120,7 @@ function cloneSkills(skills: SkillsData): SkillsData {
     aura: { ...skills.aura },
     shadow: { ...skills.shadow },
     stone: { ...skills.stone },
+    vendaval: { ...skills.vendaval },
   };
 }
 

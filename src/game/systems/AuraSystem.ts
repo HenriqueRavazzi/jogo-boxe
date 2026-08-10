@@ -1,4 +1,4 @@
-/** Aura elemental: área contínua no herói com sinergia das skills liberadas. */
+/** Aura: área contínua no herói com sinergia das skills ativas na run. */
 
 import type { Enemy } from "@/src/game/entities/Enemy";
 import type {
@@ -7,11 +7,13 @@ import type {
   SkillsData,
   UnlockedSkillsData,
 } from "@/db/schema";
-import { AURA_ELEMENT_KEYS } from "@/db/schema";
+import { AURA_ELEMENT_KEYS, isAuraElementKey } from "@/db/schema";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
+  SPECIAL_SKILL_KEYS,
   type MatchSkillBonusState,
   type MatchSkillBonuses,
+  type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
 import type { ActiveSkillPulseState } from "@/src/game/systems/ActiveSkillsSystem";
 import type { SkillVfxEffect } from "@/src/game/systems/ActiveSkillsSystem";
@@ -25,6 +27,10 @@ export const AURA_RADIUS_PER_MATCH_LEVEL = 10;
 export const AURA_RADIUS_PER_META = 6;
 /** Fração do dano base → DPS de fogo na aura. */
 export const AURA_FIRE_DPS_RATIO = 0.22;
+/** Fração do dano base → DPS neutro (Aura sozinha). */
+export const AURA_NEUTRAL_DPS_RATIO = 0.12;
+/** Slow neutro enquanto o inimigo está na aura (0–1). */
+export const AURA_NEUTRAL_SLOW = 0.15;
 /** Slow do raio enquanto o inimigo está na aura (0–1). */
 export const AURA_LIGHTNING_SLOW = 0.45;
 /** Intervalo base do stun de gelo (ms). */
@@ -39,12 +45,16 @@ export const AURA_SHADOW_BURST_INTERVAL_MS = 3_200;
 export const AURA_SHADOW_BURST_RATIO = 0.85;
 /** Duração do VFX da explosão sombra. */
 export const AURA_SHADOW_BURST_VFX_MS = 360;
-/** Com Pedra liberada: inimigos na aura causam esta fração de dano (primário). */
+/** Com Pedra na run: inimigos na aura causam esta fração de dano (primário). */
 export const AURA_STONE_OUTGOING_DAMAGE_MUL = 0.5;
-/** Com Ricochete liberado: splash nos outros inimigos da aura (fração do hit). */
+/** Com Ricochete na run: splash nos outros inimigos da aura (fração do hit). */
 export const AURA_RICOCHET_SPLASH_RATIO = 0.25;
-/** Potência dos atributos secundários da aura. */
+/** Potência do atributo secundário da aura (2ª skill ativa). */
 export const AURA_SECONDARY_POWER = 0.5;
+/** Força base do puxão contínuo da Aura + Vendaval. */
+export const AURA_VENDAVAL_PULL_STRENGTH = 0.42;
+/** Renovação curta do puxão contínuo (ms). */
+export const AURA_VENDAVAL_PULL_REFRESH_MS = 140;
 
 export type AuraElementPowers = Record<AuraElementKey, number>;
 
@@ -56,12 +66,13 @@ export type RunAuraInput = {
   dt: number;
   baseDamage: number;
   matchSkills: MatchSkillsData;
-  unlockedSkills: UnlockedSkillsData;
+  /** Skills especiais equipadas nesta run (slots ativos). */
+  activeRunSkills?: SpecialSkillKey[];
   skills: SkillsData;
   matchSkillBonuses?: MatchSkillBonuses;
   pulseState: ActiveSkillPulseState;
   prestigeMul: number;
-  /** Atributo principal escolhido pelo jogador. */
+  /** Preferência de primário (meta); só vale se a skill estiver ativa na run. */
   auraPrimaryElement?: AuraElementKey | null;
 };
 
@@ -81,11 +92,14 @@ export type RunAuraResult = {
     shadow: boolean;
     stone: boolean;
     ricochet: boolean;
+    vendaval: boolean;
   };
   /** 0 / 0.5 / 1.0 por elemento (secundário / primário). */
   elementPowers: AuraElementPowers;
-  /** Primário efetivo (fallback automático se inválido). */
+  /** Primário efetivo nesta run (null se neutra). */
   primaryElement: AuraElementKey | null;
+  /** True se Aura está sozinha (sem outra skill especial na run). */
+  neutralAura: boolean;
 };
 
 /** Labels curtos para UI. */
@@ -96,8 +110,10 @@ export const AURA_ELEMENT_LABELS: Record<AuraElementKey, string> = {
   stone: "Pedra",
   shadow: "Shadow",
   ricochet: "Ricochete",
+  vendaval: "Vendaval",
 };
 
+/** Elementos liberados no meta (preferência de UI / save). */
 export function listUnlockedAuraElements(
   unlockedSkills: UnlockedSkillsData,
 ): AuraElementKey[] {
@@ -105,7 +121,8 @@ export function listUnlockedAuraElements(
 }
 
 /**
- * Resolve o primário válido; se inválido/ausente, usa o primeiro elemento liberado.
+ * Resolve preferência de primário no meta (entre skills liberadas).
+ * Em combate use `resolveAuraPrimaryFromRun`.
  */
 export function resolveAuraPrimaryElement(
   primary: AuraElementKey | null | undefined,
@@ -115,7 +132,79 @@ export function resolveAuraPrimaryElement(
   return listUnlockedAuraElements(unlockedSkills)[0] ?? null;
 }
 
-/** Potência 1 (primário), 0.5 (secundário) ou 0 (não liberado). */
+/**
+ * Elementos das skills especiais ativas na run (exceto a própria Aura),
+ * na ordem em que entraram nos slots.
+ */
+export function listRunAuraElements(
+  activeRunSkills: readonly SpecialSkillKey[] = [],
+  matchSkills?: MatchSkillsData | null,
+): AuraElementKey[] {
+  const ordered: AuraElementKey[] = [];
+  const seen = new Set<AuraElementKey>();
+
+  const push = (key: string) => {
+    if (!isAuraElementKey(key) || seen.has(key)) return;
+    seen.add(key);
+    ordered.push(key);
+  };
+
+  for (const key of activeRunSkills) {
+    if (key === "aura") continue;
+    push(key);
+  }
+  if (matchSkills) {
+    for (const key of SPECIAL_SKILL_KEYS) {
+      if (key === "aura") continue;
+      if ((matchSkills[key] ?? 0) > 0) push(key);
+    }
+  }
+  return ordered;
+}
+
+export function resolveAuraPrimaryFromRun(
+  preferred: AuraElementKey | null | undefined,
+  runElements: readonly AuraElementKey[],
+): AuraElementKey | null {
+  if (runElements.length === 0) return null;
+  if (runElements.length === 1) return runElements[0]!;
+  if (preferred && runElements.includes(preferred)) return preferred;
+  return runElements[0]!;
+}
+
+/**
+ * Potências a partir do loadout da run:
+ * 0 skills → neutra; 1 → 100%; 2+ → primário 100% / demais 50%.
+ */
+export function buildAuraElementPowersFromRun(
+  runElements: readonly AuraElementKey[],
+  preferredPrimary?: AuraElementKey | null,
+): {
+  powers: AuraElementPowers;
+  primary: AuraElementKey | null;
+  neutral: boolean;
+} {
+  const powers = {} as AuraElementPowers;
+  for (const key of AURA_ELEMENT_KEYS) powers[key] = 0;
+
+  if (runElements.length === 0) {
+    return { powers, primary: null, neutral: true };
+  }
+
+  const primary = resolveAuraPrimaryFromRun(preferredPrimary, runElements);
+  if (runElements.length === 1) {
+    const only = runElements[0]!;
+    powers[only] = 1;
+    return { powers, primary: only, neutral: false };
+  }
+
+  for (const el of runElements) {
+    powers[el] = el === primary ? 1 : AURA_SECONDARY_POWER;
+  }
+  return { powers, primary, neutral: false };
+}
+
+/** @deprecated Prefer buildAuraElementPowersFromRun (loadout da run). */
 export function getAuraElementPower(
   element: AuraElementKey,
   unlockedSkills: UnlockedSkillsData,
@@ -127,6 +216,7 @@ export function getAuraElementPower(
   return element === resolved ? 1 : AURA_SECONDARY_POWER;
 }
 
+/** @deprecated Prefer buildAuraElementPowersFromRun. */
 export function buildAuraElementPowers(
   unlockedSkills: UnlockedSkillsData,
   primary: AuraElementKey | null | undefined,
@@ -169,6 +259,25 @@ export function getAuraFireDps(
     metaMul *
     bonus.damageMul *
     Math.max(0, elementPower)
+  );
+}
+
+/** DPS neutro quando a Aura está sozinha na run. */
+export function getAuraNeutralDps(
+  baseDamage: number,
+  matchLevel: number,
+  metaDamage: number,
+  bonus: MatchSkillBonusState = DEFAULT_MATCH_SKILL_BONUS,
+  prestigeMul = 1,
+): number {
+  const levelMul = 1 + Math.max(0, matchLevel) * 0.1;
+  const metaMul = 1 + Math.max(0, metaDamage) * 0.06 * prestigeMul;
+  return (
+    baseDamage *
+    AURA_NEUTRAL_DPS_RATIO *
+    levelMul *
+    metaMul *
+    bonus.damageMul
   );
 }
 
@@ -232,8 +341,8 @@ export function getAuraStoneOutgoingDamageMul(
 }
 
 /**
- * Tick da aura: efeitos das skills liberadas.
- * Primário = 100%; demais liberados = 50%.
+ * Tick da aura: sinergia só com skills ativas na run.
+ * 1 parceira → 100%; 2+ → primário 100% / secundárias 50%; nenhuma → neutra.
  */
 export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   const {
@@ -244,7 +353,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     dt,
     baseDamage,
     matchSkills,
-    unlockedSkills,
+    activeRunSkills = [],
     skills,
     matchSkillBonuses,
     pulseState,
@@ -258,14 +367,13 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   let skillHitsLanded = 0;
   let questFreeze = 0;
 
-  const primaryElement = resolveAuraPrimaryElement(
-    auraPrimaryElement,
-    unlockedSkills,
-  );
-  const elementPowers = buildAuraElementPowers(
-    unlockedSkills,
-    primaryElement,
-  );
+  const runElements = listRunAuraElements(activeRunSkills, matchSkills);
+  const {
+    powers: elementPowers,
+    primary: primaryElement,
+    neutral: neutralAura,
+  } = buildAuraElementPowersFromRun(runElements, auraPrimaryElement);
+
   const activeElements = {
     fire: elementPowers.fire > 0,
     lightning: elementPowers.lightning > 0,
@@ -273,6 +381,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     shadow: elementPowers.shadow > 0,
     stone: elementPowers.stone > 0,
     ricochet: elementPowers.ricochet > 0,
+    vendaval: elementPowers.vendaval > 0,
   };
 
   const auraLevel = matchSkills.aura ?? 0;
@@ -290,6 +399,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
       activeElements,
       elementPowers,
       primaryElement,
+      neutralAura: false,
     };
   }
 
@@ -307,6 +417,29 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
     if (dist <= radius + enemy.radius) {
       inAura.push(enemy);
+    }
+  }
+
+  // Neutra: DPS leve + lentidão leve (sem efeitos elementais)
+  if (neutralAura && inAura.length > 0 && dt > 0) {
+    const dps = getAuraNeutralDps(
+      baseDamage,
+      auraLevel,
+      skills.aura.damage,
+      bonus,
+      prestigeMul,
+    );
+    const tickDamage = dps * dt;
+    if (tickDamage > 0) {
+      for (const enemy of inAura) {
+        enemy.takeDamage(tickDamage, now);
+        skillDamageDealt +=
+          tickDamage * enemy.getDamageTakenMultiplier(now);
+        skillHitsLanded += 1;
+      }
+    }
+    for (const enemy of inAura) {
+      enemy.applyShockSlow(AURA_NEUTRAL_SLOW, now, 220);
     }
   }
 
@@ -360,7 +493,10 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
             elementPowers.ice,
         );
         for (const enemy of inAura) {
-          enemy.applyStun(now, Math.max(LIGHTNING_STUN_MS * elementPowers.ice, stunMs));
+          enemy.applyStun(
+            now,
+            Math.max(LIGHTNING_STUN_MS * elementPowers.ice, stunMs),
+          );
           questFreeze += 1;
         }
         newSkillVfx.push({
@@ -419,6 +555,21 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     next.auraShadowNextAt = 0;
   }
 
+  // Vendaval → puxão gravitacional contínuo dentro da aura
+  if (activeElements.vendaval && inAura.length > 0) {
+    const strength =
+      AURA_VENDAVAL_PULL_STRENGTH * elementPowers.vendaval;
+    for (const enemy of inAura) {
+      enemy.applyVacuumPull(
+        playerX,
+        playerY,
+        now,
+        AURA_VENDAVAL_PULL_REFRESH_MS,
+        strength,
+      );
+    }
+  }
+
   return {
     pulseState: next,
     skillDamageDealt,
@@ -429,5 +580,6 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     activeElements,
     elementPowers,
     primaryElement,
+    neutralAura,
   };
 }

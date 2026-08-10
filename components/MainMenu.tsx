@@ -474,22 +474,52 @@ export function MainMenu({
       {/* Overlay fullscreen de upgrades */}
       {showUpgrades && !isGameOver && (
         <div className="pointer-events-auto absolute inset-0 z-50 flex flex-col bg-zinc-950/95 backdrop-blur-md">
-          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-6">
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
-                Progressão
-              </p>
-              <h2 className="text-xl font-black text-zinc-50 sm:text-2xl">
-                Upgrades
-              </h2>
+          <header className="flex shrink-0 flex-col gap-3 border-b border-white/10 px-4 py-3 sm:px-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+                  Progressão
+                </p>
+                <h2 className="text-xl font-black text-zinc-50 sm:text-2xl">
+                  Upgrades
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUpgrades(false)}
+                className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
+              >
+                Fechar
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowUpgrades(false)}
-              className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
-            >
-              Fechar
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <CurrencyChip
+                icon={<Coins className="h-4 w-4 text-amber-300" aria-hidden />}
+                label="Ouro"
+                value={gold.toLocaleString("pt-BR")}
+                tone="border-amber-500/30 bg-amber-500/10 text-amber-200"
+              />
+              <CurrencyChip
+                icon={<Gem className="h-4 w-4 text-cyan-300" aria-hidden />}
+                label="Diamantes"
+                value={gems.toLocaleString("pt-BR")}
+                tone="border-cyan-400/30 bg-cyan-500/10 text-cyan-200"
+              />
+              <CurrencyChip
+                icon={<Gem className="h-4 w-4 text-violet-300" aria-hidden />}
+                label="Roxos"
+                value={purpleDiamonds.toLocaleString("pt-BR")}
+                tone="border-violet-400/30 bg-violet-500/10 text-violet-200"
+              />
+              <CurrencyChip
+                icon={
+                  <Sparkles className="h-4 w-4 text-pink-300" aria-hidden />
+                }
+                label="Shards"
+                value={ascensionShards.toLocaleString("pt-BR")}
+                tone="border-pink-400/30 bg-pink-500/10 text-pink-200"
+              />
+            </div>
           </header>
 
           <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-white/10 px-3 py-2 sm:px-6">

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Flame,
   Gauge,
@@ -30,6 +30,8 @@ import {
   metaDamageMultiplier,
   metaHpMultiplier,
   useGameStore,
+  type BulkUpgradePlan,
+  type GoldUpgradeQuantity,
 } from "@/store/useGameStore";
 
 type ShopMetaUpgradeType = Exclude<
@@ -43,6 +45,13 @@ type MetaCardDef = {
   icon: ReactNode;
   bonusLabel: (level: number) => string;
 };
+
+const QUANTITY_OPTIONS: { value: GoldUpgradeQuantity; label: string }[] = [
+  { value: 1, label: "x1" },
+  { value: 10, label: "x10" },
+  { value: 100, label: "x100" },
+  { value: "max", label: "Máx" },
+];
 
 const CARDS: MetaCardDef[] = [
   {
@@ -119,7 +128,7 @@ const CARDS: MetaCardDef[] = [
 
 /** Painel da árvore de atributos permanentes (Diamantes Normais). */
 export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
-  const gems = useGameStore((s) => s.gems);
+  const [quantity, setQuantity] = useState<GoldUpgradeQuantity>(1);
   const levels = {
     metaDamageLevel: useGameStore((s) => s.metaDamageLevel),
     metaHpLevel: useGameStore((s) => s.metaHpLevel),
@@ -128,13 +137,38 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
     metaSkillRegenLevel: useGameStore((s) => s.metaSkillRegenLevel),
     metaParryChance: useGameStore((s) => s.metaParryChance),
   };
-  const getMetaTreeUpgradeCost = useGameStore((s) => s.getMetaTreeUpgradeCost);
-  const upgradeMetaTree = useGameStore((s) => s.upgradeMetaTree);
+  const previewMetaTreeBulk = useGameStore((s) => s.previewMetaTreeBulk);
+  const buyMetaTreeBulk = useGameStore((s) => s.buyMetaTreeBulk);
 
-  const buy = (type: ShopMetaUpgradeType) => {
-    if (!upgradeMetaTree(type)) return;
-    void syncWithDB();
+  const buy = async (type: ShopMetaUpgradeType) => {
+    const bought = buyMetaTreeBulk(type, quantity);
+    if (bought > 0) await syncWithDB();
   };
+
+  const qtyBar = (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5 px-0.5">
+      <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+        Comprar
+      </span>
+      {QUANTITY_OPTIONS.map((opt) => {
+        const active = quantity === opt.value;
+        return (
+          <button
+            key={String(opt.value)}
+            type="button"
+            onClick={() => setQuantity(opt.value)}
+            className={`rounded-md px-2.5 py-1 text-[11px] font-bold tabular-nums transition ${
+              active
+                ? "bg-cyan-500/25 text-cyan-200 ring-1 ring-cyan-400/40"
+                : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className={embedded ? "" : "rounded-2xl border border-white/10 p-3"}>
@@ -147,42 +181,98 @@ export function MetaTreePanel({ embedded = false }: { embedded?: boolean }) {
         Upgrades permanentes mais caros e potentes. Roubo de vida até 10%; regen
         de skill até 5%.
       </p>
+      {qtyBar}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {CARDS.map((card) => {
           const level = levels[card.type];
-          const cost = getMetaTreeUpgradeCost(card.type);
           const maxLevel = getMetaTreeMaxLevel(card.type);
           const atMax = isLevelCapped(level, maxLevel);
-          const canAfford = !atMax && gems >= cost;
+          const plan = previewMetaTreeBulk(card.type, quantity);
 
           return (
-            <button
+            <MetaUpgradeCard
               key={card.type}
-              type="button"
-              disabled={!canAfford}
-              onClick={() => buy(card.type)}
-              className="flex flex-col gap-1.5 rounded-xl border border-cyan-400/25 bg-cyan-500/5 px-3 py-2.5 text-left transition hover:border-cyan-300/50 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-sm font-bold text-cyan-100">
-                  <span className="text-cyan-300">{card.icon}</span>
-                  {card.title}
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-200/60">
-                  {atMax ? "Máx" : formatLevelLabel(level, maxLevel)}
-                </span>
-              </div>
-              <p className="text-[11px] leading-snug text-zinc-400">
-                {card.bonusLabel(level)}
-              </p>
-              <span className="mt-auto inline-flex items-center gap-1 text-xs font-bold tabular-nums text-cyan-200">
-                <Gem className="h-3.5 w-3.5" aria-hidden />
-                {atMax ? "—" : cost.toLocaleString("pt-BR")}
-              </span>
-            </button>
+              icon={card.icon}
+              title={card.title}
+              levelLabel={atMax ? "Máx" : formatLevelLabel(level, maxLevel)}
+              bonus={card.bonusLabel(level)}
+              plan={plan}
+              atMax={atMax}
+              onUpgrade={() => void buy(card.type)}
+            />
           );
         })}
       </div>
+    </div>
+  );
+}
+
+type MetaUpgradeCardProps = {
+  icon: ReactNode;
+  title: string;
+  levelLabel: string;
+  bonus: string;
+  plan: BulkUpgradePlan;
+  atMax: boolean;
+  onUpgrade: () => void;
+};
+
+function MetaUpgradeCard({
+  icon,
+  title,
+  levelLabel,
+  bonus,
+  plan,
+  atMax,
+  onUpgrade,
+}: MetaUpgradeCardProps) {
+  const canAfford = !atMax && plan.count > 0;
+  const displayCost = canAfford ? plan.totalCost : plan.nextCost;
+  const buttonLabel = atMax
+    ? "MÁXIMO"
+    : plan.count > 0
+      ? `Upgrade x${plan.count}`
+      : "Upgrade";
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-cyan-400/25 bg-cyan-500/5 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-sm font-bold text-cyan-100">
+          <span className="text-cyan-300">{icon}</span>
+          {title}
+        </span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-200/60">
+          {levelLabel}
+        </span>
+      </div>
+      <p className="text-[11px] leading-snug text-zinc-400">{bonus}</p>
+      {atMax ? (
+        <p className="text-xs text-zinc-500">MÁXIMO</p>
+      ) : (
+        <>
+          <p
+            className={`inline-flex items-center gap-1 text-xs font-bold tabular-nums ${
+              canAfford ? "text-cyan-200" : "text-rose-400"
+            }`}
+          >
+            <Gem className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Custo: {displayCost.toLocaleString("pt-BR")} Diamantes
+          </p>
+          {!canAfford && (
+            <p className="text-[10px] font-semibold text-rose-400/90">
+              Diamantes insuficientes
+            </p>
+          )}
+        </>
+      )}
+      <button
+        type="button"
+        disabled={atMax || !canAfford}
+        onClick={onUpgrade}
+        className="mt-auto rounded-lg bg-cyan-600/90 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400 disabled:opacity-50"
+      >
+        {buttonLabel}
+      </button>
     </div>
   );
 }

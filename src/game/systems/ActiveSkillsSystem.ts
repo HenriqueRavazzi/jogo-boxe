@@ -52,6 +52,18 @@ export const STONE_DEBUFF_BASE_MS = 10_000;
 export const STONE_ENEMY_POWER_MUL = 0.5;
 /** Multiplicador base de dano do terremoto vs dano do herói. */
 export const STONE_QUAKE_DAMAGE_RATIO = 1.35;
+/** Duração do VFX do vendaval (ms). */
+export const VENDAVAL_VFX_MS = 560;
+/** Duração do puxão suave após o pulso (ms). */
+export const VENDAVAL_PULL_DURATION_MS = 500;
+/** Raio base do vácuo (px). */
+export const VENDAVAL_BASE_RADIUS = 350;
+/** +px por nível in-run. */
+export const VENDAVAL_RADIUS_PER_MATCH = 14;
+/** +px por nível meta de radius. */
+export const VENDAVAL_RADIUS_PER_META = 8;
+/** Fração do skillDamage → impacto do vácuo. */
+export const VENDAVAL_DAMAGE_RATIO = 1.15;
 
 export type ActiveSkillPulseState = {
   iceNextPulseAt: number;
@@ -87,6 +99,12 @@ export type ActiveSkillPulseState = {
   stoneNextPulseAt: number;
   stoneActiveUntil: number;
   stonePulseAt: number;
+  /** Próximo pulso do Vendaval. */
+  vendavalNextPulseAt: number;
+  vendavalActiveUntil: number;
+  vendavalPulseAt: number;
+  /** Raio do último vácuo (VFX). */
+  vendavalWaveRadius: number;
 };
 
 export function createActiveSkillPulseState(): ActiveSkillPulseState {
@@ -115,6 +133,10 @@ export function createActiveSkillPulseState(): ActiveSkillPulseState {
     stoneNextPulseAt: 0,
     stoneActiveUntil: 0,
     stonePulseAt: 0,
+    vendavalNextPulseAt: 0,
+    vendavalActiveUntil: 0,
+    vendavalPulseAt: 0,
+    vendavalWaveRadius: 0,
   };
 }
 
@@ -193,6 +215,14 @@ export type SkillVfxEffect =
     }
   | {
       kind: "stone";
+      x: number;
+      y: number;
+      maxRadius: number;
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
+      kind: "vendaval";
       x: number;
       y: number;
       maxRadius: number;
@@ -552,6 +582,80 @@ export function runActiveSkills(
     next.stoneActiveUntil = 0;
   }
 
+  // ——— Vendaval: anel de vácuo + puxão + dano de impacto ———
+  const vendavalBonus =
+    matchSkillBonuses?.vendaval ?? DEFAULT_MATCH_SKILL_BONUS;
+  const vendavalCooldownMs = Math.max(
+    5_000,
+    (7_500 - skills.vendaval.cooldown * 200 * prestigeMul) *
+      vendavalBonus.cooldownMul,
+  );
+
+  if (matchSkills.vendaval > 0) {
+    if (next.vendavalNextPulseAt <= 0) {
+      next.vendavalNextPulseAt = now;
+    }
+
+    if (now >= next.vendavalNextPulseAt) {
+      const matchLevel = matchSkills.vendaval;
+      const vacuumRadius =
+        Math.max(
+          120,
+          (VENDAVAL_BASE_RADIUS +
+            matchLevel * VENDAVAL_RADIUS_PER_MATCH +
+            skills.vendaval.radius * VENDAVAL_RADIUS_PER_META * prestigeMul) *
+            vendavalBonus.durationMul,
+        );
+
+      const inRange = enemies.filter((e) => {
+        if (e.isDead) return false;
+        const dist = Math.hypot(e.x - playerX, e.y - playerY);
+        return dist <= vacuumRadius + e.radius;
+      });
+
+      if (inRange.length > 0) {
+        next.vendavalPulseAt = now;
+        next.vendavalActiveUntil = now + VENDAVAL_PULL_DURATION_MS;
+        next.vendavalNextPulseAt = now + vendavalCooldownMs;
+        next.vendavalWaveRadius = vacuumRadius;
+
+        const impactDamage =
+          baseDamage *
+          VENDAVAL_DAMAGE_RATIO *
+          (1 + matchLevel * 0.1) *
+          (1 + skills.vendaval.damage * 0.08 * prestigeMul) *
+          vendavalBonus.damageMul;
+
+        for (const enemy of inRange) {
+          enemy.applyVacuumPull(
+            playerX,
+            playerY,
+            now,
+            VENDAVAL_PULL_DURATION_MS,
+            1,
+          );
+          enemy.takeDamage(impactDamage, now);
+          skillDamageDealt +=
+            impactDamage * enemy.getDamageTakenMultiplier(now);
+          skillHitsLanded += 1;
+        }
+
+        newSkillVfx.push({
+          kind: "vendaval",
+          x: playerX,
+          y: playerY,
+          maxRadius: vacuumRadius,
+          startedAt: now,
+          expiresAt: now + VENDAVAL_VFX_MS,
+        });
+      }
+    }
+  } else {
+    next.vendavalNextPulseAt = 0;
+    next.vendavalActiveUntil = 0;
+    next.vendavalWaveRadius = 0;
+  }
+
   return {
     pulseState: next,
     questFreeze,
@@ -584,7 +688,15 @@ export type SkillCooldownInfo = {
 };
 
 export function getSkillCycleMs(
-  key: "ricochet" | "ice" | "fire" | "lightning" | "aura" | "shadow" | "stone",
+  key:
+    | "ricochet"
+    | "ice"
+    | "fire"
+    | "lightning"
+    | "aura"
+    | "shadow"
+    | "stone"
+    | "vendaval",
   skills: SkillsData,
   cooldownMul = 1,
 ): number {
@@ -614,6 +726,11 @@ export function getSkillCycleMs(
         6_000,
         (18_000 - skills.stone.cooldown * 700) * cooldownMul,
       );
+    case "vendaval":
+      return Math.max(
+        5_000,
+        (7_500 - skills.vendaval.cooldown * 200) * cooldownMul,
+      );
     case "fire":
     case "aura":
       return 0;
@@ -625,7 +742,15 @@ export function getSkillCycleMs(
  * Fogo e Aura são passivos — sempre "passive" com progress 1.
  */
 export function getSkillCooldownInfo(
-  key: "ricochet" | "ice" | "fire" | "lightning" | "aura" | "shadow" | "stone",
+  key:
+    | "ricochet"
+    | "ice"
+    | "fire"
+    | "lightning"
+    | "aura"
+    | "shadow"
+    | "stone"
+    | "vendaval",
   pulse: ActiveSkillPulseState,
   skills: SkillsData,
   now: number,
@@ -670,7 +795,9 @@ export function getSkillCooldownInfo(
         ? pulse.lightningNextPulseAt
         : key === "stone"
           ? pulse.stoneNextPulseAt
-          : pulse.ricochetNextPulseAt;
+          : key === "vendaval"
+            ? pulse.vendavalNextPulseAt
+            : pulse.ricochetNextPulseAt;
   const activeUntil =
     key === "ice"
       ? pulse.iceActiveUntil
@@ -678,11 +805,17 @@ export function getSkillCooldownInfo(
         ? pulse.lightningActiveUntil
         : key === "stone"
           ? pulse.stoneActiveUntil
-          : pulse.ricochetActiveUntil;
+          : key === "vendaval"
+            ? pulse.vendavalActiveUntil
+            : pulse.ricochetActiveUntil;
 
   if (activeUntil > now) {
     const activeMs =
-      key === "ricochet" ? RICOCHET_ACTIVE_MS : ACTIVE_SKILL_DURATION_MS;
+      key === "ricochet"
+        ? RICOCHET_ACTIVE_MS
+        : key === "vendaval"
+          ? VENDAVAL_PULL_DURATION_MS
+          : ACTIVE_SKILL_DURATION_MS;
     const remaining = activeUntil - now;
     return {
       mode: "active",

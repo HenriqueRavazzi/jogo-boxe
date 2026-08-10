@@ -15,7 +15,7 @@ export type AdvancedSkillUnlockRequirements = {
 
 /**
  * Ordem de progressão:
- * gelo → raio → fogo → pedra → shadow clone → ricochete → aura
+ * gelo → raio → fogo → pedra → shadow clone → ricochete → aura → vendaval
  */
 export const ADVANCED_SKILL_UNLOCK: Record<
   SkillUpgradeType,
@@ -57,12 +57,19 @@ export const ADVANCED_SKILL_UNLOCK: Record<
     requiredMobs: 54_000,
     requiredBosses: 10,
   },
-  /** Mais difícil — sinergia de todas as skills liberadas. */
+  /** Sinergia de skills liberadas na run. */
   aura: {
     goldCost: 480_000,
     diamondCost: 1_440,
     requiredMobs: 80_000,
     requiredBosses: 12,
+  },
+  /** Última skill — vácuo de controle de multidões. */
+  vendaval: {
+    goldCost: 720_000,
+    diamondCost: 2_160,
+    requiredMobs: 120_000,
+    requiredBosses: 14,
   },
 };
 
@@ -75,6 +82,7 @@ export const ADVANCED_SKILL_ORDER: readonly SkillUpgradeType[] = [
   "shadow",
   "ricochet",
   "aura",
+  "vendaval",
 ] as const;
 
 export function getAdvancedSkillUnlockRequirements(

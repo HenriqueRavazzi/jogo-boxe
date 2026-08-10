@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Circle, Flame, Ghost, Mountain, Snowflake, Spline, X, Zap } from "lucide-react";
+import { Circle, Flame, Ghost, Mountain, Snowflake, Spline, Wind, X, Zap } from "lucide-react";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
   getMaxActiveRunSkills,
@@ -14,15 +14,18 @@ import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
 import {
   AURA_ELEMENT_LABELS,
   AURA_LIGHTNING_SLOW,
+  AURA_NEUTRAL_SLOW,
   AURA_RICOCHET_SPLASH_RATIO,
   AURA_STONE_OUTGOING_DAMAGE_MUL,
-  buildAuraElementPowers,
+  AURA_VENDAVAL_PULL_STRENGTH,
+  buildAuraElementPowersFromRun,
   getAuraFireDps,
   getAuraIceStunIntervalMs,
+  getAuraNeutralDps,
   getAuraRadius,
   getAuraShadowBurstDamage,
   getAuraShadowBurstIntervalMs,
-  resolveAuraPrimaryElement,
+  listRunAuraElements,
 } from "@/src/game/systems/AuraSystem";
 import {
   getLightningBurstDamage,
@@ -32,6 +35,11 @@ import {
   STONE_DEBUFF_BASE_MS,
   STONE_ENEMY_POWER_MUL,
   STONE_QUAKE_DAMAGE_RATIO,
+  VENDAVAL_BASE_RADIUS,
+  VENDAVAL_DAMAGE_RATIO,
+  VENDAVAL_PULL_DURATION_MS,
+  VENDAVAL_RADIUS_PER_MATCH,
+  VENDAVAL_RADIUS_PER_META,
 } from "@/src/game/systems/ActiveSkillsSystem";
 import {
   getShadowCloneCooldownMs,
@@ -97,7 +105,15 @@ const SKILL_UI: Record<
     ring: "stroke-fuchsia-400",
     fill: "text-fuchsia-200",
     blurb:
-      "Área no herói. Escolha 1 atributo principal (100%); os demais liberados entram a 50%.",
+      "Sinergia só com skills ativas na run. 1 parceira = 100%; 2 = 100%/50%. Sozinha = neutra.",
+  },
+  vendaval: {
+    name: "Vendaval",
+    icon: <Wind className="h-5 w-5" aria-hidden />,
+    ring: "stroke-cyan-400",
+    fill: "text-cyan-100",
+    blurb:
+      "Cria um vácuo periódico que puxa os inimigos para o centro.",
   },
 };
 
@@ -354,12 +370,16 @@ function buildSkillStatRows(
   }
 
   if (key === "aura") {
-    const unlocked = useGameStore.getState().unlockedSkills;
-    const primary = resolveAuraPrimaryElement(
-      useGameStore.getState().auraPrimaryElement,
-      unlocked,
+    const arena = useArenaStore.getState();
+    const preferred = useGameStore.getState().auraPrimaryElement;
+    const runElements = listRunAuraElements(
+      arena.activeRunSkills,
+      arena.matchSkills,
     );
-    const powers = buildAuraElementPowers(unlocked, primary);
+    const { powers, primary, neutral } = buildAuraElementPowersFromRun(
+      runElements,
+      preferred,
+    );
     const powerTag = (element: keyof typeof powers) => {
       const p = powers[element];
       if (p <= 0) return "";
@@ -372,6 +392,15 @@ function buildSkillStatRows(
       bonus,
       prestigeMul,
     );
+    const neutralDps = neutral
+      ? getAuraNeutralDps(
+          punchBase * skillDmgMul,
+          level,
+          skills.aura.damage,
+          bonus,
+          prestigeMul,
+        )
+      : 0;
     const dps = powers.fire
       ? getAuraFireDps(
           punchBase * skillDmgMul,
@@ -407,53 +436,77 @@ function buildSkillStatRows(
     const ricochetSplashPct = Math.round(
       AURA_RICOCHET_SPLASH_RATIO * powers.ricochet * 100,
     );
+    const synergyRows = neutral
+      ? [
+          {
+            label: "Neutro (DPS)",
+            value: `${neutralDps.toFixed(1)}/s`,
+          },
+          {
+            label: "Neutro (slow)",
+            value: `${Math.round(AURA_NEUTRAL_SLOW * 100)}% lentidão`,
+          },
+        ]
+      : [
+          {
+            label: `Fogo (DPS)${powerTag("fire")}`,
+            value: powers.fire ? `${dps.toFixed(1)}/s` : "— (não na run)",
+          },
+          {
+            label: `Raio (slow)${powerTag("lightning")}`,
+            value: powers.lightning
+              ? `${lightningSlowPct}% lentidão`
+              : "— (não na run)",
+          },
+          {
+            label: `Gelo (stun)${powerTag("ice")}`,
+            value: powers.ice
+              ? `a cada ${formatMs(stunInterval)}`
+              : "— (não na run)",
+          },
+          {
+            label: `Shadow (burst)${powerTag("shadow")}`,
+            value: powers.shadow
+              ? `${shadowBurst.toFixed(0)} a cada ${formatMs(shadowInterval)}`
+              : "— (não na run)",
+          },
+          {
+            label: `Pedra (defesa)${powerTag("stone")}`,
+            value: powers.stone
+              ? `inimigos na aura causam ${stoneOutgoingPct}% dano`
+              : "— (não na run)",
+          },
+          {
+            label: `Ricochete (splash)${powerTag("ricochet")}`,
+            value: powers.ricochet
+              ? `hits → ${ricochetSplashPct}% em todos na aura`
+              : "— (não na run)",
+          },
+          {
+            label: `Vendaval (puxão)${powerTag("vendaval")}`,
+            value: powers.vendaval
+              ? `puxão contínuo (${Math.round(AURA_VENDAVAL_PULL_STRENGTH * powers.vendaval * 100)}%)`
+              : "— (não na run)",
+          },
+        ];
     return {
       rows: [
         { label: "Tipo", value: "Aura passiva" },
         {
-          label: "Atributo principal",
-          value: primary ? AURA_ELEMENT_LABELS[primary] : "— (nenhum)",
+          label: "Modo",
+          value: neutral
+            ? "Neutra (DPS + slow leve)"
+            : primary
+              ? `Sinergia: ${AURA_ELEMENT_LABELS[primary]}`
+              : "Sinergia",
           accent: true,
         },
         { label: "Nível in-run", value: String(level) },
         { label: "Raio", value: `${Math.round(radius)} px` },
-        {
-          label: `Fogo (DPS)${powerTag("fire")}`,
-          value: powers.fire ? `${dps.toFixed(1)}/s` : "— (não liberado)",
-        },
-        {
-          label: `Raio (slow)${powerTag("lightning")}`,
-          value: powers.lightning
-            ? `${lightningSlowPct}% lentidão`
-            : "— (não liberado)",
-        },
-        {
-          label: `Gelo (stun)${powerTag("ice")}`,
-          value: powers.ice
-            ? `a cada ${formatMs(stunInterval)}`
-            : "— (não liberado)",
-        },
-        {
-          label: `Shadow (burst)${powerTag("shadow")}`,
-          value: powers.shadow
-            ? `${shadowBurst.toFixed(0)} a cada ${formatMs(shadowInterval)}`
-            : "— (não liberado)",
-        },
-        {
-          label: `Pedra (defesa)${powerTag("stone")}`,
-          value: powers.stone
-            ? `inimigos na aura causam ${stoneOutgoingPct}% dano`
-            : "— (não liberado)",
-        },
-        {
-          label: `Ricochete (splash)${powerTag("ricochet")}`,
-          value: powers.ricochet
-            ? `hits → ${ricochetSplashPct}% em todos na aura`
-            : "— (não liberado)",
-        },
+        ...synergyRows,
       ],
       levelBonusNote: [
-        `Nível ${level}: aura contínua. Primário 100%; demais liberados 50%. Escolha no painel de Skills Avançadas.`,
+        `Nível ${level}: sinergia só com skills ativas nesta run (1 = 100%; 2 = 100%/50%). Sem parceira → aura neutra.`,
         runBonusNote,
       ]
         .filter(Boolean)
@@ -541,6 +594,48 @@ function buildSkillStatRows(
       ],
       levelBonusNote: [
         `Nível ${level}: afeta todos os inimigos na tela.`,
+        runBonusNote,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      skillDmgNote,
+    };
+  }
+
+  if (key === "vendaval") {
+    const radius = Math.max(
+      120,
+      (VENDAVAL_BASE_RADIUS +
+        level * VENDAVAL_RADIUS_PER_MATCH +
+        skills.vendaval.radius * VENDAVAL_RADIUS_PER_META * prestigeMul) *
+        bonus.durationMul,
+    );
+    const impact =
+      skillPunchBase *
+      VENDAVAL_DAMAGE_RATIO *
+      (1 + level * 0.1) *
+      (1 + skills.vendaval.damage * 0.08 * prestigeMul) *
+      bonus.damageMul;
+    const cycleMs = Math.max(
+      5_000,
+      (7_500 - skills.vendaval.cooldown * 200 * prestigeMul) *
+        bonus.cooldownMul,
+    );
+    return {
+      rows: [
+        { label: "Tipo", value: "Vácuo periódico" },
+        { label: "Nível in-run", value: String(level) },
+        {
+          label: "Dano",
+          value: impact.toFixed(1),
+          accent: true,
+        },
+        { label: "Raio", value: `${Math.round(radius)}px` },
+        { label: "Puxão", value: formatMs(VENDAVAL_PULL_DURATION_MS) },
+        { label: "Cooldown", value: formatMs(cycleMs) },
+      ],
+      levelBonusNote: [
+        `Nível ${level}: puxa inimigos no raio para o centro.`,
         runBonusNote,
       ]
         .filter(Boolean)

@@ -64,6 +64,13 @@ export type StoneSkillStats = {
   cooldown: number;
 };
 
+/** Vendaval: dano do impacto, raio do vácuo e cooldown. */
+export type VendavalSkillStats = {
+  damage: number;
+  radius: number;
+  cooldown: number;
+};
+
 export type SkillsData = {
   ricochet: RicochetSkillStats;
   ice: IceSkillStats;
@@ -72,6 +79,7 @@ export type SkillsData = {
   aura: AuraSkillStats;
   shadow: ShadowSkillStats;
   stone: StoneSkillStats;
+  vendaval: VendavalSkillStats;
 };
 
 export type SkillUpgradeType = keyof SkillsData;
@@ -88,6 +96,7 @@ export type LegacyFlatSkillsData = {
   aura?: number;
   shadow?: number;
   stone?: number;
+  vendaval?: number;
 };
 
 /** Níveis in-run (cartas de level-up) — independente do meta granular. */
@@ -99,6 +108,7 @@ export type MatchSkillsData = {
   aura: number;
   shadow: number;
   stone: number;
+  vendaval: number;
 };
 
 export const DEFAULT_MATCH_SKILLS: MatchSkillsData = {
@@ -109,6 +119,7 @@ export const DEFAULT_MATCH_SKILLS: MatchSkillsData = {
   aura: 0,
   shadow: 0,
   stone: 0,
+  vendaval: 0,
 };
 
 export const DEFAULT_SKILLS_DATA: SkillsData = {
@@ -119,6 +130,7 @@ export const DEFAULT_SKILLS_DATA: SkillsData = {
   aura: { radius: 0, damage: 0, pulse: 0 },
   shadow: { damage: 0, duration: 0, cooldown: 0 },
   stone: { damage: 0, duration: 0, cooldown: 0 },
+  vendaval: { damage: 0, radius: 0, cooldown: 0 },
 };
 
 export const SKILL_STAT_KEYS = {
@@ -129,6 +141,7 @@ export const SKILL_STAT_KEYS = {
   aura: ["radius", "damage", "pulse"],
   shadow: ["damage", "duration", "cooldown"],
   stone: ["damage", "duration", "cooldown"],
+  vendaval: ["damage", "radius", "cooldown"],
 } as const satisfies {
   [K in SkillUpgradeType]: readonly (keyof SkillsData[K] & string)[];
 };
@@ -175,6 +188,7 @@ export type UnlockedSkillsData = {
   aura: boolean;
   shadow: boolean;
   stone: boolean;
+  vendaval: boolean;
 };
 
 export const DEFAULT_UNLOCKED_SKILLS: UnlockedSkillsData = {
@@ -185,6 +199,7 @@ export const DEFAULT_UNLOCKED_SKILLS: UnlockedSkillsData = {
   aura: false,
   shadow: false,
   stone: false,
+  vendaval: false,
 };
 
 /** Elementos que a Aura pode usar como atributo principal/secundário. */
@@ -194,7 +209,8 @@ export type AuraElementKey =
   | "fire"
   | "stone"
   | "shadow"
-  | "ricochet";
+  | "ricochet"
+  | "vendaval";
 
 export const AURA_ELEMENT_KEYS: readonly AuraElementKey[] = [
   "ice",
@@ -203,6 +219,7 @@ export const AURA_ELEMENT_KEYS: readonly AuraElementKey[] = [
   "stone",
   "shadow",
   "ricochet",
+  "vendaval",
 ] as const;
 
 export function isAuraElementKey(value: string): value is AuraElementKey {
@@ -332,7 +349,7 @@ export const gameSaves = pgTable("game_saves", {
     .$type<SkillsData>()
     .notNull()
     .default(
-      sql`'{"ricochet":{"damage":0,"cooldown":0,"hits":0},"ice":{"duration":0,"cooldown":0},"fire":{"damage":0,"duration":0},"lightning":{"damage":0,"hits":0,"cooldown":0},"aura":{"radius":0,"damage":0,"pulse":0},"shadow":{"damage":0,"duration":0,"cooldown":0},"stone":{"damage":0,"duration":0,"cooldown":0}}'::jsonb`,
+      sql`'{"ricochet":{"damage":0,"cooldown":0,"hits":0},"ice":{"duration":0,"cooldown":0},"fire":{"damage":0,"duration":0},"lightning":{"damage":0,"hits":0,"cooldown":0},"aura":{"radius":0,"damage":0,"pulse":0},"shadow":{"damage":0,"duration":0,"cooldown":0},"stone":{"damage":0,"duration":0,"cooldown":0},"vendaval":{"damage":0,"radius":0,"cooldown":0}}'::jsonb`,
     ),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

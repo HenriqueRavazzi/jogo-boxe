@@ -21,7 +21,8 @@ export type SpecialSkillKey =
   | "stone"
   | "shadow"
   | "ricochet"
-  | "aura";
+  | "aura"
+  | "vendaval";
 
 /** Categoria da carta — usada para evitar duplicatas no pack de level-up. */
 export type UpgradeCategory =
@@ -98,6 +99,7 @@ export const DEFAULT_MATCH_SKILL_BONUSES: MatchSkillBonuses = {
   aura: { ...DEFAULT_MATCH_SKILL_BONUS },
   shadow: { ...DEFAULT_MATCH_SKILL_BONUS },
   stone: { ...DEFAULT_MATCH_SKILL_BONUS },
+  vendaval: { ...DEFAULT_MATCH_SKILL_BONUS },
 };
 
 export function createEmptyMatchSkillBonuses(): MatchSkillBonuses {
@@ -109,6 +111,7 @@ export function createEmptyMatchSkillBonuses(): MatchSkillBonuses {
     aura: { ...DEFAULT_MATCH_SKILL_BONUS },
     shadow: { ...DEFAULT_MATCH_SKILL_BONUS },
     stone: { ...DEFAULT_MATCH_SKILL_BONUS },
+    vendaval: { ...DEFAULT_MATCH_SKILL_BONUS },
   };
 }
 
@@ -315,6 +318,32 @@ function buildSpecialSkillEffect(
         lines: ["+40% dano", "−28% cooldown", "+35% duração"],
       },
     },
+    vendaval: {
+      common: {
+        delta: { damageMul: 1.12 },
+        lines: ["+12% dano do vácuo"],
+      },
+      uncommon: {
+        delta: { durationMul: 1.15 },
+        lines: ["+15% raio do vácuo"],
+      },
+      rare: {
+        delta: { damageMul: 1.2, cooldownMul: 0.9 },
+        lines: ["+20% dano", "−10% cooldown"],
+      },
+      epic: {
+        delta: { damageMul: 1.28, cooldownMul: 0.82, durationMul: 1.2 },
+        lines: ["+28% dano", "−18% cooldown", "+20% raio"],
+      },
+      legendary: {
+        delta: {
+          damageMul: 1.4,
+          cooldownMul: 0.72,
+          durationMul: 1.35,
+        },
+        lines: ["+40% dano", "−28% cooldown", "+35% raio"],
+      },
+    },
   };
 
   const pkg = packages[key][rarity];
@@ -464,7 +493,13 @@ const SPECIAL_SKILL_POOL: {
     type: "aura",
     category: "aura",
     name: "Aura",
-    short: "Área no herói: sinergia das skills liberadas",
+    short: "Área no herói: sinergia com skills ativas na run (ou neutra)",
+  },
+  {
+    type: "vendaval",
+    category: "vendaval",
+    name: "Vendaval",
+    short: "Cria um vácuo periódico que puxa os inimigos para o centro",
   },
 ];
 
@@ -476,6 +511,7 @@ export const SPECIAL_SKILL_KEYS: SpecialSkillKey[] = [
   "shadow",
   "ricochet",
   "aura",
+  "vendaval",
 ];
 
 export function isSpecialSkillType(type: UpgradeType): type is SpecialSkillKey {
@@ -494,11 +530,23 @@ export function canOfferSpecialSkill(
   unlockedSkills: UnlockedSkillsData,
   matchSkills: MatchSkillsData,
   skills: SkillsData,
+  activeRunSkills: SpecialSkillKey[] = [],
 ): boolean {
   if (!unlockedSkills[key]) return false;
   const current = matchSkills[key] ?? 0;
   const max = getMatchSkillMaxLevel(getSkillMetaCap(skills[key]));
-  return current < max;
+  if (current >= max) return false;
+
+  // Aura: primeira ativação só se já houver outra skill especial na run
+  if (key === "aura" && current <= 0) {
+    const hasOther = SPECIAL_SKILL_KEYS.some((k) => {
+      if (k === "aura") return false;
+      return (matchSkills[k] ?? 0) > 0 || activeRunSkills.includes(k);
+    });
+    if (!hasOther) return false;
+  }
+
+  return true;
 }
 
 export type GenerateUpgradeOptionsContext = {
@@ -769,7 +817,17 @@ export function generateUpgradeOptions(
   const eligibleSpecials: SpecialSkillKey[] = [];
   if (unlocked && matchSkills && skills) {
     for (const key of SPECIAL_SKILL_KEYS) {
-      if (!canOfferSpecialSkill(key, unlocked, matchSkills, skills)) continue;
+      if (
+        !canOfferSpecialSkill(
+          key,
+          unlocked,
+          matchSkills,
+          skills,
+          activeRunSkills,
+        )
+      ) {
+        continue;
+      }
       const alreadyPicked = activeRunSkills.includes(key);
       // Cap atingido: só upgrades das skills já ativas na run
       if (atSkillCap && !alreadyPicked) continue;

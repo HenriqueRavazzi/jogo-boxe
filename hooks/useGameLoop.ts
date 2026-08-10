@@ -244,6 +244,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         canvasWidth: canvas.clientWidth,
         canvasHeight: canvas.clientHeight,
         matchSkills: arena.matchSkills,
+        activeRunSkills: arena.activeRunSkills,
         matchSkillBonuses: arena.matchSkillBonuses,
         activeSkillPulse: arena.activeSkillPulse,
         lightningProjectiles: arena.lightningProjectiles ?? [],

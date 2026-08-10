@@ -21,6 +21,7 @@ import {
   getMetaMaxRangePx,
   isLevelCapped,
   useGameStore,
+  type BulkUpgradePlan,
   type GoldUpgradeKind,
   type GoldUpgradeQuantity,
 } from "@/store/useGameStore";
@@ -126,7 +127,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         title={`Max HP: ${formatLevelLabel(maxHpLevel, MAX_UPGRADE_LEVELS.hp)}`}
         subtitle={`HP atual: ${getMaxHp()} · +${hpBonusPct}% (+${hpPctLabel}/nv)`}
         plan={planFor("hp")}
-        quantity={quantity}
         atMax={hpAtMax}
         onUpgrade={() => void buy("hp")}
       />
@@ -135,7 +135,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         title={`Dano: ${getBaseDamage()}`}
         subtitle={`${formatLevelLabel(baseDamageLevel, MAX_UPGRADE_LEVELS.damage)} · +${dmgBonusPct}% (+${dmgPctLabel}/nv)`}
         plan={planFor("damage")}
-        quantity={quantity}
         atMax={damageAtMax}
         onUpgrade={() => void buy("damage")}
       />
@@ -152,7 +151,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
             : `Nível ${rangeLevel}/${MAX_UPGRADE_LEVELS.range}`
         }
         plan={planFor("range")}
-        quantity={quantity}
         atMax={rangeAtMax}
         onUpgrade={() => void buy("range")}
       />
@@ -165,7 +163,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
             : `Nível ${critChanceLevel}/${MAX_UPGRADE_LEVELS.critChance}`
         }
         plan={planFor("critChance")}
-        quantity={quantity}
         atMax={critChanceAtMax}
         onUpgrade={() => void buy("critChance")}
       />
@@ -174,7 +171,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         title={`Multiplicador: ${incomeMultiplier.toFixed(1)}x`}
         subtitle={formatLevelLabel(incomeLevel, MAX_UPGRADE_LEVELS.income)}
         plan={planFor("income")}
-        quantity={quantity}
         atMax={incomeAtMax}
         onUpgrade={() => void buy("income")}
       />
@@ -190,7 +186,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
           arms === 6 ? "font-semibold text-amber-300" : undefined
         }
         plan={planFor("arms")}
-        quantity={quantity}
         atMax={false}
         onUpgrade={() => void buy("arms")}
       />
@@ -221,8 +216,7 @@ type UpgradeCardProps = {
   title: string;
   subtitle: string;
   subtitleClassName?: string;
-  plan: { count: number; totalCost: number };
-  quantity: GoldUpgradeQuantity;
+  plan: BulkUpgradePlan;
   atMax?: boolean;
   onUpgrade: () => void;
 };
@@ -233,17 +227,16 @@ function UpgradeCard({
   subtitle,
   subtitleClassName,
   plan,
-  quantity,
   atMax = false,
   onUpgrade,
 }: UpgradeCardProps) {
   const canAfford = !atMax && plan.count > 0;
-  const qtyLabel =
-    quantity === "max"
-      ? plan.count > 0
-        ? `Máx (${plan.count})`
-        : "Máx"
-      : `x${quantity}`;
+  const displayCost = canAfford ? plan.totalCost : plan.nextCost;
+  const buttonLabel = atMax
+    ? "MÁXIMO"
+    : plan.count > 0
+      ? `Upgrade x${plan.count}`
+      : "Upgrade";
 
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/60 px-4 py-3 shadow-lg backdrop-blur-md">
@@ -257,13 +250,24 @@ function UpgradeCard({
         >
           {subtitle}
         </p>
-        <p className="mt-0.5 text-xs text-amber-300/90">
-          {atMax
-            ? "MÁXIMO"
-            : plan.count > 0
-              ? `Custo ${qtyLabel}: ${plan.totalCost.toLocaleString("pt-BR")} Ouro`
-              : "Ouro insuficiente"}
-        </p>
+        {atMax ? (
+          <p className="mt-0.5 text-xs text-zinc-500">MÁXIMO</p>
+        ) : (
+          <>
+            <p
+              className={`mt-0.5 text-xs tabular-nums ${
+                canAfford ? "text-amber-300/90" : "text-rose-400"
+              }`}
+            >
+              Custo: {displayCost.toLocaleString("pt-BR")} Ouro
+            </p>
+            {!canAfford && (
+              <p className="text-[10px] font-semibold text-rose-400/90">
+                Ouro insuficiente
+              </p>
+            )}
+          </>
+        )}
       </div>
       <button
         type="button"
@@ -271,7 +275,7 @@ function UpgradeCard({
         onClick={onUpgrade}
         className="shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400 disabled:opacity-50"
       >
-        {atMax ? "MÁXIMO" : `Upgrade ${qtyLabel}`}
+        {buttonLabel}
       </button>
     </div>
   );

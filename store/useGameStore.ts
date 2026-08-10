@@ -378,7 +378,17 @@ export type GameStoreState = {
   previewGoldUpgradeBulk: (
     kind: GoldUpgradeKind,
     quantity: GoldUpgradeQuantity,
-  ) => { count: number; totalCost: number };
+  ) => BulkUpgradePlan;
+  /** Compra em lote da árvore de diamantes. Retorna níveis comprados. */
+  buyMetaTreeBulk: (
+    type: MetaTreeUpgradeType,
+    quantity: GoldUpgradeQuantity,
+  ) => number;
+  /** Prévia de lote da árvore de diamantes. */
+  previewMetaTreeBulk: (
+    type: MetaTreeUpgradeType,
+    quantity: GoldUpgradeQuantity,
+  ) => BulkUpgradePlan;
   /** Upgrade de XP com diamantes. */
   upgradeXpBonus: () => boolean;
   /** Upgrade da árvore de atributos (Diamantes Normais). */
@@ -498,9 +508,19 @@ function resolveBulkWanted(quantity: GoldUpgradeQuantity): number {
   return quantity;
 }
 
+export type BulkUpgradePlan = {
+  /** Níveis que o saldo atual permite no lote (já capped por teto). */
+  count: number;
+  /** Custo total do lote `count` (0 se count === 0). */
+  totalCost: number;
+  /** Custo do próximo nível único, mesmo sem saldo (0 se no teto). */
+  nextCost: number;
+};
+
 /**
- * Soma custos sequenciais até qty, ouro ou teto.
+ * Soma custos sequenciais até qty, saldo ou teto.
  * `getCostAt(level)` = custo para subir do nível atual.
+ * `currency` = ouro ou diamantes disponíveis.
  */
 export function planSequentialGoldUpgrades(options: {
   startLevel: number;
@@ -508,11 +528,16 @@ export function planSequentialGoldUpgrades(options: {
   quantity: GoldUpgradeQuantity;
   getCostAt: (level: number) => number;
   canBuyAt: (level: number) => boolean;
-}): { count: number; totalCost: number } {
+}): BulkUpgradePlan {
   const wanted = resolveBulkWanted(options.quantity);
   let count = 0;
   let totalCost = 0;
   let level = options.startLevel;
+
+  const nextCost =
+    options.canBuyAt(options.startLevel)
+      ? Math.max(0, options.getCostAt(options.startLevel))
+      : 0;
 
   while (count < wanted) {
     if (!options.canBuyAt(level)) break;
@@ -524,7 +549,7 @@ export function planSequentialGoldUpgrades(options: {
     level += 1;
   }
 
-  return { count, totalCost };
+  return { count, totalCost, nextCost };
 }
 
 export function getMetaTreeCostAt(
@@ -828,6 +853,7 @@ export function clampSkillsToMaxLevel(
     aura: { ...skills.aura },
     shadow: { ...skills.shadow },
     stone: { ...skills.stone },
+    vendaval: { ...skills.vendaval },
   };
 
   for (const skillId of Object.keys(SKILL_STAT_KEYS) as SkillUpgradeType[]) {
@@ -1633,6 +1659,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         aura: { ...DEFAULT_SKILLS_DATA.aura },
         shadow: { ...DEFAULT_SKILLS_DATA.shadow },
         stone: { ...DEFAULT_SKILLS_DATA.stone },
+        vendaval: { ...DEFAULT_SKILLS_DATA.vendaval },
       },
       totalMobsKilled: 0,
       totalBossesKilled: 0,
@@ -1896,6 +1923,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         aura: { ...DEFAULT_SKILLS_DATA.aura },
         shadow: { ...DEFAULT_SKILLS_DATA.shadow },
         stone: { ...DEFAULT_SKILLS_DATA.stone },
+        vendaval: { ...DEFAULT_SKILLS_DATA.vendaval },
       },
     }));
 
@@ -2012,6 +2040,30 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       get().prestigeLevel,
       type,
     ),
+
+  previewMetaTreeBulk: (type, quantity) => {
+    const s = get();
+    const maxLevel = getMetaTreeMaxLevel(type);
+    return planSequentialGoldUpgrades({
+      startLevel: getMetaTreeLevel(s, type),
+      gold: s.gems,
+      quantity,
+      getCostAt: (lv) => getMetaTreeCostAt(lv, s.prestigeLevel, type),
+      canBuyAt: (lv) => !isLevelCapped(lv, maxLevel),
+    });
+  },
+
+  buyMetaTreeBulk: (type, quantity) => {
+    const plan = get().previewMetaTreeBulk(type, quantity);
+    if (plan.count <= 0 || plan.totalCost <= 0) return 0;
+    if (get().gems < plan.totalCost) return 0;
+    const current = getMetaTreeLevel(get(), type);
+    set((s) => ({
+      gems: s.gems - plan.totalCost,
+      [type]: current + plan.count,
+    }));
+    return plan.count;
+  },
 
   upgradeMetaTree: (type) => {
     const current = getMetaTreeLevel(get(), type);
@@ -2174,6 +2226,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       let count = 0;
       let totalCost = 0;
       let stored = s.armsNextCost;
+      const nextCost = Math.max(
+        1,
+        Math.floor(stored * getPrestigeCostMultiplier(prestige)),
+      );
       while (count < wanted) {
         const cost = Math.max(
           1,
@@ -2184,7 +2240,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         stored = Math.floor(stored * ARMS_COST_GROWTH);
         count += 1;
       }
-      return { count, totalCost };
+      return { count, totalCost, nextCost };
     }
 
     if (kind === "hp") {
