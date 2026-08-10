@@ -596,8 +596,8 @@ export const MAX_UPGRADE_LEVELS = {
   damage: Number.POSITIVE_INFINITY,
   income: Number.POSITIVE_INFINITY,
   knockback: 0,
-  /** 5% + 35×2% = 75%. */
-  critChance: 35,
+  /** 5% + 22×2% = 49%; nível 23 fecha no teto 50%. */
+  critChance: 23,
   /** Só via cartas in-run (`matchBuffs.critDamageMultiplier`). */
   critDamage: 0,
   /** Só via cartas in-run (`matchBuffs.attackSpeed`). */
@@ -712,7 +712,7 @@ const KNOCKBACK_COST_BASE = 55;
 const KNOCKBACK_POWER_PER_LEVEL = 2;
 const CRIT_CHANCE_BASE = 0.05;
 const CRIT_CHANCE_PER_LEVEL = 0.02;
-export const MAX_CRIT_CHANCE = 0.75;
+export const MAX_CRIT_CHANCE = 0.5;
 const CRIT_DAMAGE_BASE = 1.5;
 const CRIT_DAMAGE_PER_LEVEL = 0.15;
 const CRIT_CHANCE_COST_BASE = 65;
@@ -891,7 +891,7 @@ export function getKnockbackCostAt(level: number, prestigeLevel = 0): number {
   return getUpgradeCost(KNOCKBACK_COST_BASE, level, prestigeLevel);
 }
 
-/** Chance crítica: 5% + 2%/nível, teto 75%. */
+/** Chance crítica: 5% + 2%/nível, teto 50% (ouro / upgrades permanentes). */
 export function getCritChanceAt(critChanceLevel: number): number {
   const capped = Number.isFinite(MAX_UPGRADE_LEVELS.critChance)
     ? Math.min(MAX_UPGRADE_LEVELS.critChance, Math.max(0, critChanceLevel))

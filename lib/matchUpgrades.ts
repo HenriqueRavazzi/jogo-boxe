@@ -24,7 +24,7 @@ export type SpecialSkillKey =
   | "aura"
   | "vendaval";
 
-/** Categoria da carta — usada para evitar duplicatas no pack de level-up. */
+/** Categoria da carta — até 2 por pack se raridades forem diferentes. */
 export type UpgradeCategory =
   | "damage"
   | "speed"
@@ -782,11 +782,33 @@ export function getEligibleStatCategories(ctx?: {
   });
 }
 
+/** Máx. de cartas da mesma área (ex.: dano) na mesma tela de level-up. */
+const MAX_SAME_CATEGORY_PER_PACK = 2;
+
 /**
- * Gera N cartas com raridade ponderada (pity por tempo/nível) e categorias distintas.
+ * Pode aceitar esta carta no pack atual?
+ * - Skills especiais: type único
+ * - Stats: até 2 da mesma área, desde que raridades diferentes
+ */
+function canAcceptUpgradeCard(
+  selected: MatchUpgrade[],
+  candidate: MatchUpgrade,
+): boolean {
+  if (isSpecialSkillType(candidate.type)) {
+    return !selected.some((c) => c.type === candidate.type);
+  }
+
+  const sameArea = selected.filter((c) => c.category === candidate.category);
+  if (sameArea.length >= MAX_SAME_CATEGORY_PER_PACK) return false;
+  if (sameArea.some((c) => c.rarity === candidate.rarity)) return false;
+  return true;
+}
+
+/**
+ * Gera N cartas com raridade ponderada (pity por tempo/nível).
  * Por slot: 15% tenta skill especial elegível; senão, upgrade de status.
  * No máx. getMaxActiveRunSkills skills novas por run — depois só upgrades delas.
- * Nunca repete a mesma categoria/`type` na mesma tela.
+ * Até 2 cartas da mesma área (ex.: dano) se forem de tiers/raridades diferentes.
  */
 export function generateUpgradeOptions(
   count = 3,
@@ -830,15 +852,13 @@ export function generateUpgradeOptions(
   }
 
   const selectedCards: MatchUpgrade[] = [];
-  const usedCategories = new Set<UpgradeCategory>();
-  const usedTypes = new Set<UpgradeType>();
   let specialPool = [...eligibleSpecials];
-  let statPool = getEligibleStatCategories({
+  const baseStatPool = getEligibleStatCategories({
     ...ctx,
     hasActiveSkill: activeRunSkills.length > 0,
   });
   let attempts = 0;
-  const maxAttempts = count * 8;
+  const maxAttempts = count * 24;
 
   while (selectedCards.length < count && attempts < maxAttempts) {
     attempts += 1;
@@ -849,40 +869,47 @@ export function generateUpgradeOptions(
         ? selectedCards[0]!.rarity
         : undefined;
     const rarity = rollRarity(luckBonus, sameRarityTwice);
+
+    const availableSpecials = specialPool.filter(
+      (key) =>
+        !selectedCards.some((c) => c.type === key),
+    );
+    const availableStats = baseStatPool.filter((category) => {
+      const sameArea = selectedCards.filter((c) => c.category === category);
+      if (sameArea.length >= MAX_SAME_CATEGORY_PER_PACK) return false;
+      if (sameArea.some((c) => c.rarity === rarity)) return false;
+      return true;
+    });
+
     let picked: MatchUpgrade | null = null;
 
     const canRollSpecial =
-      specialPool.length > 0 && Math.random() < SPECIAL_SKILL_CARD_CHANCE;
+      availableSpecials.length > 0 &&
+      Math.random() < SPECIAL_SKILL_CARD_CHANCE;
 
     if (canRollSpecial) {
-      const idx = Math.floor(Math.random() * specialPool.length);
-      const key = specialPool[idx]!;
+      const idx = Math.floor(Math.random() * availableSpecials.length);
+      const key = availableSpecials[idx]!;
       const nextLevel = (matchSkills?.[key] ?? 0) + 1;
       picked = createSpecialUpgrade(key, rarity, nextLevel);
       specialPool = specialPool.filter((k) => k !== key);
-    } else if (statPool.length > 0) {
-      const idx = Math.floor(Math.random() * statPool.length);
-      const category = statPool[idx]!;
+    } else if (availableStats.length > 0) {
+      const idx = Math.floor(Math.random() * availableStats.length);
+      const category = availableStats[idx]!;
       picked = createStatUpgrade(category, rarity);
-      statPool = statPool.filter((c) => c !== category);
-    } else if (specialPool.length > 0) {
-      // Fallback: só restam skills especiais (stats esgotados)
-      const idx = Math.floor(Math.random() * specialPool.length);
-      const key = specialPool[idx]!;
+    } else if (availableSpecials.length > 0) {
+      // Fallback: só restam skills especiais (stats indisponíveis nesta raridade)
+      const idx = Math.floor(Math.random() * availableSpecials.length);
+      const key = availableSpecials[idx]!;
       const nextLevel = (matchSkills?.[key] ?? 0) + 1;
       picked = createSpecialUpgrade(key, rarity, nextLevel);
       specialPool = specialPool.filter((k) => k !== key);
     } else {
-      break;
+      // Raridade batendo com duplicata de área — tenta de novo com outro roll
+      continue;
     }
 
-    if (
-      picked &&
-      !usedCategories.has(picked.category) &&
-      !usedTypes.has(picked.type)
-    ) {
-      usedCategories.add(picked.category);
-      usedTypes.add(picked.type);
+    if (picked && canAcceptUpgradeCard(selectedCards, picked)) {
       selectedCards.push(picked);
     }
   }
