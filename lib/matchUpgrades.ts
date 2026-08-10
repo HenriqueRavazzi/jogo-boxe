@@ -44,7 +44,205 @@ export type MatchUpgrade = {
   rarity: Rarity;
   label: string;
   description: string;
+  /** Linhas curtas do que a carta faz (skills especiais). */
+  effectLines?: string[];
+  /** Efeitos extras de raridade em cartas de skill especial. */
+  skillBonus?: MatchSkillBonusDelta;
 };
+
+/** Delta aplicado ao escolher uma carta de skill (raridade importa). */
+export type MatchSkillBonusDelta = {
+  /** Multiplica o dano da skill (ex.: 1.25 = +25%). */
+  damageMul?: number;
+  /** Multiplica o cooldown (ex.: 0.8 = −20% CD). */
+  cooldownMul?: number;
+  /** Multiplica duração (burn/gelo). */
+  durationMul?: number;
+  /** Hits/bounces/stacks extras. */
+  extraHits?: number;
+  /** Projéteis extras (Raio). */
+  extraProjectiles?: number;
+};
+
+/** Bônus acumulados in-run por skill especial. */
+export type MatchSkillBonusState = {
+  damageMul: number;
+  cooldownMul: number;
+  durationMul: number;
+  extraHits: number;
+  extraProjectiles: number;
+};
+
+export type MatchSkillBonuses = Record<SpecialSkillKey, MatchSkillBonusState>;
+
+export const DEFAULT_MATCH_SKILL_BONUS: MatchSkillBonusState = {
+  damageMul: 1,
+  cooldownMul: 1,
+  durationMul: 1,
+  extraHits: 0,
+  extraProjectiles: 0,
+};
+
+export const DEFAULT_MATCH_SKILL_BONUSES: MatchSkillBonuses = {
+  ricochet: { ...DEFAULT_MATCH_SKILL_BONUS },
+  ice: { ...DEFAULT_MATCH_SKILL_BONUS },
+  fire: { ...DEFAULT_MATCH_SKILL_BONUS },
+  lightning: { ...DEFAULT_MATCH_SKILL_BONUS },
+};
+
+export function createEmptyMatchSkillBonuses(): MatchSkillBonuses {
+  return {
+    ricochet: { ...DEFAULT_MATCH_SKILL_BONUS },
+    ice: { ...DEFAULT_MATCH_SKILL_BONUS },
+    fire: { ...DEFAULT_MATCH_SKILL_BONUS },
+    lightning: { ...DEFAULT_MATCH_SKILL_BONUS },
+  };
+}
+
+export function applySkillBonusDelta(
+  current: MatchSkillBonusState,
+  delta?: MatchSkillBonusDelta | null,
+): MatchSkillBonusState {
+  if (!delta) return current;
+  return {
+    damageMul: current.damageMul * (delta.damageMul ?? 1),
+    cooldownMul: current.cooldownMul * (delta.cooldownMul ?? 1),
+    durationMul: current.durationMul * (delta.durationMul ?? 1),
+    extraHits: current.extraHits + (delta.extraHits ?? 0),
+    extraProjectiles: current.extraProjectiles + (delta.extraProjectiles ?? 0),
+  };
+}
+
+/**
+ * Pacote de efeitos por raridade para cada skill.
+ * Lendário >> Épico >> Raro >> Incomum >> Comum.
+ */
+function buildSpecialSkillEffect(
+  key: SpecialSkillKey,
+  rarity: Rarity,
+  nextLevel: number,
+): { delta: MatchSkillBonusDelta; description: string; effectLines: string[] } {
+  const isFirst = nextLevel <= 1;
+  const pool = SPECIAL_SKILL_POOL.find((p) => p.type === key)!;
+
+  type Pkg = {
+    delta: MatchSkillBonusDelta;
+    lines: string[];
+  };
+
+  const packages: Record<SpecialSkillKey, Record<Rarity, Pkg>> = {
+    lightning: {
+      common: {
+        delta: { damageMul: 1.12 },
+        lines: ["+12% dano do raio"],
+      },
+      uncommon: {
+        delta: { cooldownMul: 0.88 },
+        lines: ["−12% cooldown"],
+      },
+      rare: {
+        delta: { damageMul: 1.2, extraHits: 1 },
+        lines: ["+20% dano", "+1 burst"],
+      },
+      epic: {
+        delta: { damageMul: 1.28, cooldownMul: 0.82 },
+        lines: ["+28% dano", "−18% cooldown"],
+      },
+      legendary: {
+        delta: {
+          damageMul: 1.4,
+          cooldownMul: 0.75,
+          extraProjectiles: 1,
+          extraHits: 1,
+        },
+        lines: ["+40% dano", "−25% cooldown", "+1 raio extra", "+1 burst"],
+      },
+    },
+    fire: {
+      common: {
+        delta: { damageMul: 1.12 },
+        lines: ["+12% dano de burn"],
+      },
+      uncommon: {
+        delta: { durationMul: 1.18 },
+        lines: ["+18% duração do burn"],
+      },
+      rare: {
+        delta: { damageMul: 1.18, extraHits: 1 },
+        lines: ["+18% burn", "+1 stack máx."],
+      },
+      epic: {
+        delta: { damageMul: 1.28, durationMul: 1.22 },
+        lines: ["+28% burn", "+22% duração"],
+      },
+      legendary: {
+        delta: { damageMul: 1.4, durationMul: 1.35, extraHits: 2 },
+        lines: ["+40% burn", "+35% duração", "+2 stacks máx."],
+      },
+    },
+    ice: {
+      common: {
+        delta: { durationMul: 1.12 },
+        lines: ["+12% duração do gelo"],
+      },
+      uncommon: {
+        delta: { cooldownMul: 0.88 },
+        lines: ["−12% cooldown"],
+      },
+      rare: {
+        delta: { durationMul: 1.22, cooldownMul: 0.9 },
+        lines: ["+22% duração", "−10% cooldown"],
+      },
+      epic: {
+        delta: { durationMul: 1.3, cooldownMul: 0.82 },
+        lines: ["+30% duração", "−18% cooldown"],
+      },
+      legendary: {
+        delta: { durationMul: 1.45, cooldownMul: 0.72 },
+        lines: ["+45% duração", "−28% cooldown"],
+      },
+    },
+    ricochet: {
+      common: {
+        delta: { damageMul: 1.12 },
+        lines: ["+12% dano dos saltos"],
+      },
+      uncommon: {
+        delta: { cooldownMul: 0.88 },
+        lines: ["−12% cooldown"],
+      },
+      rare: {
+        delta: { damageMul: 1.15, extraHits: 1 },
+        lines: ["+15% dano", "+1 salto"],
+      },
+      epic: {
+        delta: { damageMul: 1.25, cooldownMul: 0.82 },
+        lines: ["+25% dano", "−18% cooldown"],
+      },
+      legendary: {
+        delta: { damageMul: 1.35, cooldownMul: 0.75, extraHits: 2 },
+        lines: ["+35% dano", "−25% cooldown", "+2 saltos"],
+      },
+    },
+  };
+
+  const pkg = packages[key][rarity];
+  const lines = [...pkg.lines];
+
+  if (isFirst) {
+    return {
+      delta: pkg.delta,
+      effectLines: lines,
+      description: `Ativa: ${pool.short}. ${lines.join(" · ")}`,
+    };
+  }
+
+  return {
+    delta: pkg.delta,
+    effectLines: lines,
+    description: `+1 nível · ${lines.join(" · ")}`,
+  };
+}
 
 /**
  * Pesos base da roleta (somam ~100.5 → normalizados):
@@ -319,6 +517,8 @@ function createSpecialUpgrade(
 ): MatchUpgrade {
   const pool = SPECIAL_SKILL_POOL.find((p) => p.type === key)!;
   const isFirst = nextLevel <= 1;
+  const effect = buildSpecialSkillEffect(key, rarity, nextLevel);
+
   return {
     id: crypto.randomUUID(),
     type: pool.type,
@@ -326,9 +526,9 @@ function createSpecialUpgrade(
     value: 1,
     rarity,
     label: isFirst ? pool.name : `${pool.name} Lv.${nextLevel}`,
-    description: isFirst
-      ? `Ativa: ${pool.short}`
-      : `+1 nível (${pool.short})`,
+    description: effect.description,
+    effectLines: effect.effectLines,
+    skillBonus: effect.delta,
   };
 }
 

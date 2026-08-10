@@ -813,6 +813,24 @@ export class Enemy {
     }
 
     if (frozen) {
+      ctx.save();
+      // Aura gelada
+      const frost = ctx.createRadialGradient(
+        this.x,
+        this.y,
+        this.radius * 0.3,
+        this.x,
+        this.y,
+        this.radius + 10,
+      );
+      frost.addColorStop(0, "rgba(186, 230, 253, 0.35)");
+      frost.addColorStop(0.6, "rgba(125, 211, 252, 0.18)");
+      frost.addColorStop(1, "rgba(56, 189, 248, 0)");
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 10, 0, Math.PI * 2);
+      ctx.fillStyle = frost;
+      ctx.fill();
+
       ctx.beginPath();
       ctx.arc(this.x, this.y, this.radius + 2, 0, Math.PI * 2);
       ctx.strokeStyle = vulnerable
@@ -827,33 +845,69 @@ export class Enemy {
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
+
+      // Cristais de gelo ao redor
+      const shards = 6;
+      for (let i = 0; i < shards; i++) {
+        const ang = (Math.PI * 2 * i) / shards + now * 0.0015;
+        const d = this.radius + 4;
+        const sx = this.x + Math.cos(ang) * d;
+        const sy = this.y + Math.sin(ang) * d;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 4);
+        ctx.lineTo(sx + 2.5, sy);
+        ctx.lineTo(sx, sy + 4);
+        ctx.lineTo(sx - 2.5, sy);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(240, 249, 255, 0.9)";
+        ctx.fill();
+      }
+      ctx.restore();
     }
 
     if (shocked) {
       ctx.save();
-      ctx.strokeStyle = "rgba(250, 204, 21, 0.9)";
-      ctx.lineWidth = 1.5;
-      const sparks = 5;
+      // Aura azul elétrica
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(59, 130, 246, 0.65)";
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = "#3b82f6";
+      ctx.shadowBlur = 14;
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(125, 211, 252, 0.95)";
+      ctx.lineWidth = 1.6;
+      ctx.shadowColor = "#38bdf8";
+      ctx.shadowBlur = 8;
+      const sparks = 7;
       for (let i = 0; i < sparks; i++) {
-        const angle = (Math.PI * 2 * i) / sparks + now * 0.012;
-        const inner = this.radius * 0.55;
-        const outer = this.radius + 6 + (i % 2) * 3;
+        const angle = (Math.PI * 2 * i) / sparks + now * 0.018;
+        const inner = this.radius * 0.4;
+        const mid = this.radius * 0.85;
+        const outer = this.radius + 7 + (i % 2) * 4;
+        const a2 = angle + 0.35;
         ctx.beginPath();
         ctx.moveTo(
           this.x + Math.cos(angle) * inner,
           this.y + Math.sin(angle) * inner,
         );
         ctx.lineTo(
-          this.x + Math.cos(angle + 0.25) * outer,
-          this.y + Math.sin(angle + 0.25) * outer,
+          this.x + Math.cos(a2) * mid,
+          this.y + Math.sin(a2) * mid,
+        );
+        ctx.lineTo(
+          this.x + Math.cos(angle + 0.15) * outer,
+          this.y + Math.sin(angle + 0.15) * outer,
         );
         ctx.stroke();
       }
+
+      // Núcleo branco elétrico
       ctx.beginPath();
-      ctx.arc(this.x, this.y, this.radius + 3, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(253, 224, 71, 0.55)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      ctx.arc(this.x, this.y, this.radius * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(219, 234, 254, ${0.35 + 0.25 * Math.sin(now * 0.03)})`;
+      ctx.fill();
       ctx.restore();
     }
 
@@ -861,35 +915,66 @@ export class Enemy {
       ctx.save();
       const stacks = Math.max(1, this.getBurnStacks(now));
       const intensity = Math.min(1, 0.35 + stacks * 0.12);
-      const fireSparks = Math.min(28, 5 + stacks * 3);
+
+      // Halo vermelho flamejante
+      const fireGlow = ctx.createRadialGradient(
+        this.x,
+        this.y,
+        this.radius * 0.2,
+        this.x,
+        this.y,
+        this.radius + 8 + stacks,
+      );
+      fireGlow.addColorStop(0, `rgba(254, 240, 138, ${0.25 + intensity * 0.2})`);
+      fireGlow.addColorStop(0.45, `rgba(249, 115, 22, ${0.3 + intensity * 0.25})`);
+      fireGlow.addColorStop(1, "rgba(127, 29, 29, 0)");
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 8 + stacks, 0, Math.PI * 2);
+      ctx.fillStyle = fireGlow;
+      ctx.fill();
+
+      const fireSparks = Math.min(30, 6 + stacks * 3);
       for (let i = 0; i < fireSparks; i++) {
         const phase = (now * 0.004 + i * 0.9) % 1;
-        const spread = 0.4 + stacks * 0.08;
+        const spread = 0.45 + stacks * 0.08;
         const ox = Math.sin(now * 0.01 + i * 1.7) * this.radius * spread;
-        const oy = -phase * (this.radius + 10 + stacks * 2);
-        const r = 1.2 + (1 - phase) * (2 + stacks * 0.35);
+        const oy = -phase * (this.radius + 12 + stacks * 2.5);
+        const r = 1.3 + (1 - phase) * (2.2 + stacks * 0.4);
+        // Chama alongada
         ctx.beginPath();
-        ctx.arc(this.x + ox, this.y + oy, r, 0, Math.PI * 2);
-        const alpha = (0.55 + intensity * 0.4) - phase * 0.55;
+        ctx.moveTo(this.x + ox, this.y + oy + r);
+        ctx.quadraticCurveTo(
+          this.x + ox + r * 0.8,
+          this.y + oy,
+          this.x + ox,
+          this.y + oy - r * 1.6,
+        );
+        ctx.quadraticCurveTo(
+          this.x + ox - r * 0.8,
+          this.y + oy,
+          this.x + ox,
+          this.y + oy + r,
+        );
+        const alpha = 0.6 + intensity * 0.35 - phase * 0.55;
         ctx.fillStyle =
           i % 3 === 0
             ? `rgba(253, 224, 71, ${alpha})`
             : i % 2 === 0
               ? `rgba(249, 115, 22, ${alpha})`
-              : `rgba(239, 68, 68, ${alpha})`;
+              : `rgba(220, 38, 38, ${alpha})`;
         ctx.fill();
       }
       ctx.beginPath();
       ctx.arc(this.x, this.y, this.radius + 2 + stacks * 0.4, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(249, 115, 22, ${0.55 + intensity * 0.4})`;
-      ctx.lineWidth = 1.5 + stacks * 0.25;
+      ctx.strokeStyle = `rgba(239, 68, 68, ${0.6 + intensity * 0.35})`;
+      ctx.lineWidth = 1.6 + stacks * 0.25;
       ctx.stroke();
-      if (stacks >= 4) {
-        ctx.shadowColor = "#fb923c";
-        ctx.shadowBlur = 6 + stacks * 2;
+      if (stacks >= 3) {
+        ctx.shadowColor = "#ef4444";
+        ctx.shadowBlur = 8 + stacks * 2;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius * 0.55, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(251, 146, 60, ${0.12 + stacks * 0.03})`;
+        ctx.arc(this.x, this.y, this.radius * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(251, 146, 60, ${0.14 + stacks * 0.03})`;
         ctx.fill();
         ctx.shadowBlur = 0;
       }

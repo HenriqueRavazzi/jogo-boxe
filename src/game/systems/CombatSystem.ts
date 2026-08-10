@@ -19,6 +19,7 @@ import {
 import {
   buildZigzagPoints,
   createActiveSkillPulseState,
+  FIRE_HIT_VFX_MS,
   isRicochetActive,
   LIGHTNING_VFX_MS,
   runActiveSkills,
@@ -28,6 +29,10 @@ import {
 } from "@/src/game/systems/ActiveSkillsSystem";
 import type { MatchSkillsData } from "@/db/schema";
 import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
+import {
+  DEFAULT_MATCH_SKILL_BONUS,
+  type MatchSkillBonuses,
+} from "@/lib/matchUpgrades";
 import { LIGHTNING_STUN_MS } from "@/src/game/entities/Enemy";
 
 export type MatchBuffsInput = {
@@ -74,7 +79,7 @@ export type RicochetPathEffect = {
   expiresAt: number;
 };
 
-export const RICOCHET_PATH_DURATION_MS = 200;
+export const RICOCHET_PATH_DURATION_MS = 520;
 
 /** Projétil disparado por inimigo ranged. */
 export type EnemyProjectile = {
@@ -114,6 +119,8 @@ export type CombatSystemInput = {
   canvasHeight?: number;
   /** Skills especiais ativos nesta run (0 = inativo). */
   matchSkills?: MatchSkillsData;
+  /** Bônus in-run das cartas de raridade (dano/CD/stacks/raios…). */
+  matchSkillBonuses?: MatchSkillBonuses;
   /** Timers de pulso gelo/raio/ricochete. */
   activeSkillPulse?: ActiveSkillPulseState;
   /** Projéteis elétricos em voo. */
@@ -158,8 +165,8 @@ const DEFAULT_KNOCKBACK = 5;
 export const PUNCH_DURATION_MS = 150;
 /** Atraso leve entre socos no mesmo tick (ms de game clock). */
 const PUNCH_STAGGER_MS = 40;
-export const RICOCHET_SEGMENT_DURATION_MS = 120;
-export const RICOCHET_SEGMENT_STAGGER_MS = 55;
+export const RICOCHET_SEGMENT_DURATION_MS = 100;
+export const RICOCHET_SEGMENT_STAGGER_MS = 70;
 /** Redução de dano por salto consecutivo (1º bounce = 85% do base, 2º ≈ 72%, …). */
 export const RICOCHET_BOUNCE_FALLOFF = 0.85;
 /**
@@ -251,6 +258,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     canvasWidth = 2000,
     canvasHeight = 2000,
     matchSkills: inputMatchSkills,
+    matchSkillBonuses: inputMatchSkillBonuses,
     activeSkillPulse: inputPulse = createActiveSkillPulseState(),
     lightningProjectiles: inputLightning = [],
   } = input;
@@ -259,13 +267,19 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   const gameState = useGameStore.getState();
   const matchSkills = inputMatchSkills ?? { ...DEFAULT_MATCH_SKILLS };
+  const matchSkillBonuses = inputMatchSkillBonuses;
   const skills = gameState.skills;
   const fireLevel = matchSkills.fire;
+  const fireBonus = matchSkillBonuses?.fire ?? DEFAULT_MATCH_SKILL_BONUS;
+  const ricochetBonus =
+    matchSkillBonuses?.ricochet ?? DEFAULT_MATCH_SKILL_BONUS;
   /** maxStacks da árvore roxa (fire.damage); escala com prestígio. */
   const prestigeMul = gameState.getPrestigeMultiplier();
   const fireMaxStacks = Math.max(
     1,
-    1 + Math.round(skills.fire.damage * prestigeMul),
+    1 +
+      Math.round(skills.fire.damage * prestigeMul) +
+      Math.max(0, fireBonus.extraHits),
   );
   const lifeStealRatio =
     (getLifeStealRatio(gameState.skillTree) +
@@ -275,11 +289,15 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const metaSkillRegenLevel = gameState.metaSkillRegenLevel;
   // Ricochete: hits granulares até teto rígido; dano cai por salto
   const maxBounces = Math.min(
-    RICOCHET_MAX_TARGETS,
-    2 + Math.round(skills.ricochet.hits * prestigeMul),
+    RICOCHET_MAX_TARGETS + Math.max(0, ricochetBonus.extraHits),
+    2 +
+      Math.round(skills.ricochet.hits * prestigeMul) +
+      Math.max(0, ricochetBonus.extraHits),
   );
   const bounceDamageMult =
-    (0.6 + skills.ricochet.damage * 0.15) * Math.min(1.5, prestigeMul);
+    (0.6 + skills.ricochet.damage * 0.15) *
+    Math.min(1.5, prestigeMul) *
+    ricochetBonus.damageMul;
   const knockbackPower =
     (knockbackImpulse ??
       gameState.getKnockbackPower() ??
@@ -352,6 +370,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     skills,
     pulseState: inputPulse,
     effectiveRange,
+    matchSkillBonuses,
   });
   skillVfx.push(...activeSkills.newSkillVfx);
   ricochetWindowActive = isRicochetActive(activeSkills.pulseState, now);
@@ -763,13 +782,16 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             new Set([enemy.id]),
           );
 
-          // VFX: player → alvo primário → saltos
+          // VFX: caminho do braço pelos alvos (duração cobre a cadeia)
           ricochetPaths.push({
             points: [
               { x: enemy.x, y: enemy.y },
               ...bounceChain.map((t) => ({ x: t.x, y: t.y })),
             ],
-            expiresAt: now + RICOCHET_PATH_DURATION_MS,
+            expiresAt:
+              now +
+              RICOCHET_PATH_DURATION_MS +
+              bounceChain.length * RICOCHET_SEGMENT_STAGGER_MS,
           });
 
           let prevX = enemy.x;
@@ -792,7 +814,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
               targetX: target.x,
               targetY: target.y,
               startTime:
-                now + i * PUNCH_STAGGER_MS + (b + 1) * RICOCHET_SEGMENT_STAGGER_MS,
+                now +
+                i * PUNCH_STAGGER_MS +
+                (b + 1) * RICOCHET_SEGMENT_STAGGER_MS,
               duration: RICOCHET_SEGMENT_DURATION_MS,
               isRetracting: false,
               side: punchSide,
@@ -807,7 +831,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
               y: target.y,
               text: String(displayBounce),
               age: 0,
-              color: "#fbbf24",
+              color: "#fca5a5",
             });
 
             addDamage(target.id, currentBounceDamage, "skill");
@@ -824,14 +848,26 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         // Fogo on-hit: DoT = baseBurnDamage × stacks (pilhas individuais)
         if (fireLevel > 0) {
           const baseBurnDamage =
-            skillPunchBase * 0.2 * (1 + fireLevel * 0.15);
-          const burnDurationMs = 2000 + skills.fire.duration * 500;
+            skillPunchBase *
+            0.2 *
+            (1 + fireLevel * 0.15) *
+            fireBonus.damageMul;
+          const burnDurationMs = Math.round(
+            (2000 + skills.fire.duration * 500) * fireBonus.durationMul,
+          );
           const stacks = enemy.applyBurnStack(
             baseBurnDamage,
             fireMaxStacks,
             now,
             burnDurationMs,
           );
+          skillVfx.push({
+            kind: "fire",
+            x: enemy.x,
+            y: enemy.y,
+            startedAt: now,
+            expiresAt: now + FIRE_HIT_VFX_MS,
+          });
           hitSplats.push({
             id: crypto.randomUUID(),
             x: enemy.x + 10,

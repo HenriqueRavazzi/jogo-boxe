@@ -5,6 +5,10 @@ import type { MatchSkillsData, SkillsData } from "@/db/schema";
 import {
   ICE_VULNERABILITY_MULTIPLIER,
 } from "@/src/game/entities/Enemy";
+import {
+  DEFAULT_MATCH_SKILL_BONUS,
+  type MatchSkillBonuses,
+} from "@/lib/matchUpgrades";
 import { useGameStore } from "@/store/useGameStore";
 
 export const ACTIVE_SKILL_CYCLE_MS = 20_000;
@@ -15,9 +19,11 @@ export const RICOCHET_ACTIVE_MS = 2_000;
 /** Fração do alcance efetivo do herói usada pelo gelo. */
 export const ICE_RANGE_RATIO = 0.4;
 /** Duração do VFX da onda de gelo (ms). */
-export const ICE_VFX_MS = 450;
+export const ICE_VFX_MS = 520;
 /** Duração do VFX do raio single-target (ms). */
-export const LIGHTNING_VFX_MS = 320;
+export const LIGHTNING_VFX_MS = 380;
+/** Duração do flash flamejante on-hit (ms). */
+export const FIRE_HIT_VFX_MS = 280;
 /** Velocidade do projétil elétrico (px/s). */
 export const LIGHTNING_PROJECTILE_SPEED = 920;
 export const LIGHTNING_PROJECTILE_RADIUS = 7;
@@ -115,6 +121,13 @@ export type SkillVfxEffect =
       expiresAt: number;
     }
   | {
+      kind: "fire";
+      x: number;
+      y: number;
+      startedAt: number;
+      expiresAt: number;
+    }
+  | {
       kind: "parry";
       x: number;
       y: number;
@@ -134,6 +147,8 @@ export type RunActiveSkillsInput = {
   pulseState: ActiveSkillPulseState;
   /** Alcance efetivo do herói (base × buffs) — gelo usa 40%. */
   effectiveRange: number;
+  /** Bônus in-run acumulados das cartas de raridade. */
+  matchSkillBonuses?: MatchSkillBonuses;
 };
 
 export type RunActiveSkillsResult = {
@@ -247,6 +262,7 @@ export function runActiveSkills(
     skills,
     pulseState,
     effectiveRange,
+    matchSkillBonuses,
   } = input;
 
   const next: ActiveSkillPulseState = { ...pulseState };
@@ -258,18 +274,27 @@ export function runActiveSkills(
   const newLightningProjectiles: LightningProjectile[] = [];
   const newSkillVfx: SkillVfxEffect[] = [];
 
+  const iceBonus = matchSkillBonuses?.ice ?? DEFAULT_MATCH_SKILL_BONUS;
+  const lightningBonus =
+    matchSkillBonuses?.lightning ?? DEFAULT_MATCH_SKILL_BONUS;
+  const ricochetBonus =
+    matchSkillBonuses?.ricochet ?? DEFAULT_MATCH_SKILL_BONUS;
+
   const prestigeMul = useGameStore.getState().getPrestigeMultiplier();
   const iceCooldownMs = Math.max(
     5_000,
-    20_000 - skills.ice.cooldown * 1_000 * prestigeMul,
+    (20_000 - skills.ice.cooldown * 1_000 * prestigeMul) *
+      iceBonus.cooldownMul,
   );
   const lightningCooldownMs = Math.max(
     5_000,
-    20_000 - skills.lightning.cooldown * 1_000 * prestigeMul,
+    (20_000 - skills.lightning.cooldown * 1_000 * prestigeMul) *
+      lightningBonus.cooldownMul,
   );
   const ricochetCooldownMs = Math.max(
     2_000,
-    7_000 - skills.ricochet.cooldown * 500 * prestigeMul,
+    (7_000 - skills.ricochet.cooldown * 500 * prestigeMul) *
+      ricochetBonus.cooldownMul,
   );
 
   // ——— Gelo (onda periódica a 40% do range) ———
@@ -285,8 +310,10 @@ export function runActiveSkills(
       next.iceWaveRadius = iceRadius;
       next.iceNextPulseAt = now + iceCooldownMs;
 
-      const freezeDurationMs =
-        1000 + Math.round(skills.ice.duration * 500 * prestigeMul);
+      const freezeDurationMs = Math.round(
+        (1000 + Math.round(skills.ice.duration * 500 * prestigeMul)) *
+          iceBonus.durationMul,
+      );
       questFreeze = applyIceWave(
         enemies,
         playerX,
@@ -315,7 +342,7 @@ export function runActiveSkills(
   next.fireNextPulseAt = 0;
   next.fireActiveUntil = 0;
 
-  // ——— Raio: dispara projétil elétrico a cada ciclo ———
+  // ——— Raio: dispara projétil(is) elétrico(s) a cada ciclo ———
   if (matchSkills.lightning > 0) {
     if (next.lightningNextPulseAt <= 0) {
       next.lightningNextPulseAt = now;
@@ -326,27 +353,29 @@ export function runActiveSkills(
       next.lightningNextPulseAt = now + lightningCooldownMs;
       next.lightningActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
 
-      let nearest: Enemy | null = null;
-      let nearestDist = Infinity;
-      for (const enemy of enemies) {
-        if (enemy.isDead) continue;
-        const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
-        if (dist < nearestDist) {
-          nearest = enemy;
-          nearestDist = dist;
-        }
-      }
+      const boltCount = 1 + Math.max(0, lightningBonus.extraProjectiles);
+      const livingSorted = enemies
+        .filter((e) => !e.isDead)
+        .map((e) => ({
+          enemy: e,
+          dist: Math.hypot(e.x - playerX, e.y - playerY),
+        }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, boltCount);
 
-      if (nearest) {
-        const dx = nearest.x - playerX;
-        const dy = nearest.y - playerY;
+      const lightningDamage =
+        getLightningBurstDamage(
+          baseDamage,
+          skills.lightning.damage,
+          skills.lightning.hits + Math.max(0, lightningBonus.extraHits),
+        ) *
+        prestigeMul *
+        lightningBonus.damageMul;
+
+      for (const { enemy: target } of livingSorted) {
+        const dx = target.x - playerX;
+        const dy = target.y - playerY;
         const len = Math.hypot(dx, dy) || 1;
-        const lightningDamage =
-          getLightningBurstDamage(
-            baseDamage,
-            skills.lightning.damage,
-            skills.lightning.hits,
-          ) * prestigeMul;
         newLightningProjectiles.push({
           id: crypto.randomUUID(),
           x: playerX,
@@ -355,7 +384,7 @@ export function runActiveSkills(
           vy: (dy / len) * LIGHTNING_PROJECTILE_SPEED,
           damage: lightningDamage,
           radius: LIGHTNING_PROJECTILE_RADIUS,
-          targetEnemyId: nearest.id,
+          targetEnemyId: target.id,
         });
       }
     }
@@ -415,14 +444,24 @@ export type SkillCooldownInfo = {
 export function getSkillCycleMs(
   key: "ricochet" | "ice" | "fire" | "lightning",
   skills: SkillsData,
+  cooldownMul = 1,
 ): number {
   switch (key) {
     case "ice":
-      return Math.max(5_000, 20_000 - skills.ice.cooldown * 1_000);
+      return Math.max(
+        5_000,
+        (20_000 - skills.ice.cooldown * 1_000) * cooldownMul,
+      );
     case "lightning":
-      return Math.max(5_000, 20_000 - skills.lightning.cooldown * 1_000);
+      return Math.max(
+        5_000,
+        (20_000 - skills.lightning.cooldown * 1_000) * cooldownMul,
+      );
     case "ricochet":
-      return Math.max(2_000, 7_000 - skills.ricochet.cooldown * 500);
+      return Math.max(
+        2_000,
+        (7_000 - skills.ricochet.cooldown * 500) * cooldownMul,
+      );
     case "fire":
       return 0;
   }
@@ -437,12 +476,13 @@ export function getSkillCooldownInfo(
   pulse: ActiveSkillPulseState,
   skills: SkillsData,
   now: number,
+  cooldownMul = 1,
 ): SkillCooldownInfo {
   if (key === "fire") {
     return { mode: "passive", progress: 1, cycleMs: 0 };
   }
 
-  const cycleMs = getSkillCycleMs(key, skills);
+  const cycleMs = getSkillCycleMs(key, skills, cooldownMul);
   const nextAt =
     key === "ice"
       ? pulse.iceNextPulseAt

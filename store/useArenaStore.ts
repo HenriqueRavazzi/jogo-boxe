@@ -5,12 +5,18 @@ import {
   applyQuestProgress,
   createRandomQuests,
   createReplacementQuest,
+  ACTIVE_QUEST_COUNT,
   type ActiveQuest,
   type QuestProgressEvent,
+  type QuestRewards,
 } from "@/lib/quests";
 import {
+  applySkillBonusDelta,
+  createEmptyMatchSkillBonuses,
   generateUpgradeOptions,
   isSpecialSkillType,
+  type MatchSkillBonusDelta,
+  type MatchSkillBonuses,
   type MatchUpgrade,
   type SpecialSkillKey,
   type UpgradeType,
@@ -32,6 +38,7 @@ import {
 } from "@/src/game/systems/ActiveSkillsSystem";
 import type { RicochetPathEffect } from "@/src/game/systems/CombatSystem";
 import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
+import type { Drop } from "@/src/game/systems/LootSystem";
 import { useGameStore } from "@/store/useGameStore";
 import type { EnemyRewards } from "@/lib/gameConfig";
 import {
@@ -41,6 +48,7 @@ import {
 } from "@/lib/stages";
 
 export type { ActiveQuest, QuestProgressEvent } from "@/lib/quests";
+export type { Drop } from "@/src/game/systems/LootSystem";
 
 export type EnemyType = "normal" | "dasher" | "ranged" | "boss";
 
@@ -116,14 +124,6 @@ export type FloatingText = {
   color: string;
   /** Escala de fonte (ex.: críticos). */
   scale?: number;
-};
-
-export type Drop = {
-  id: string;
-  x: number;
-  y: number;
-  type: "gold" | "diamond" | "purple_diamond";
-  spawnTime: number;
 };
 
 export type RunStats = {
@@ -203,6 +203,11 @@ export type ArenaStoreState = {
    */
   matchSkills: MatchSkillsData;
   /**
+   * Bônus in-run acumulados por raridade das cartas de skill.
+   * Ex.: Raio lendário → mais dano / menos CD / raios extras.
+   */
+  matchSkillBonuses: MatchSkillBonuses;
+  /**
    * Skills especiais distintas já escolhidas nesta partida (máx. 2).
    * Controla quais cartas novas podem aparecer no level-up.
    */
@@ -238,6 +243,8 @@ export type ArenaStoreState = {
   bossHordeAlertUntil: number;
   /** Missões ativas da partida atual. */
   activeQuests: ActiveQuest[];
+  /** Quests coletadas nesta run (escala as próximas recompensas). */
+  questsClaimedThisRun: number;
   /** Partida pausada (ESC) — trava física/tempo. */
   isPaused: boolean;
   /** Campanha ou endless nesta run. */
@@ -278,11 +285,15 @@ export type ArenaStoreState = {
   progressQuests: (events: QuestProgressEvent[]) => void;
   /**
    * Coleta recompensa de uma quest concluída e gera outra no lugar.
-   * Retorna diamantes ganhos, ou null se inválida.
+   * Retorna o pacote de moedas, ou null se inválida.
    */
-  claimQuest: (questId: string) => number | null;
+  claimQuest: (questId: string) => QuestRewards | null;
   addXp: (amount: number) => void;
-  selectUpgrade: (upgradeType: UpgradeType, value: number) => void;
+  selectUpgrade: (
+    upgradeType: UpgradeType,
+    value: number,
+    skillBonus?: MatchSkillBonusDelta,
+  ) => void;
   /**
    * Sincroniza o countdown de level-up com o relógio real.
    * Em 0, escolhe uma carta aleatória automaticamente.
@@ -420,6 +431,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   matchLevel: 1,
   matchBuffs: { ...DEFAULT_BUFFS },
   matchSkills: { ...DEFAULT_MATCH_SKILLS },
+  matchSkillBonuses: createEmptyMatchSkillBonuses(),
   activeRunSkills: [],
   activeSkillPulse: createActiveSkillPulseState(),
   lightningProjectiles: [],
@@ -434,6 +446,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   invasionBossCooldownMs: 0,
   bossHordeAlertUntil: 0,
   activeQuests: [],
+  questsClaimedThisRun: 0,
   isPaused: false,
   runMode: "stage",
   runStageNumber: 1,
@@ -484,6 +497,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
+      matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
@@ -497,7 +511,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
       bossHordeAlertUntil: 0,
-      activeQuests: createRandomQuests(2),
+      activeQuests: createRandomQuests(ACTIVE_QUEST_COUNT, 0),
+      questsClaimedThisRun: 0,
       isPaused: false,
       playerRotation: -Math.PI / 2,
       playerX: playerX || w / 2,
@@ -531,6 +546,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       levelUpDeadlineAt: null,
       bossHordeAlertUntil: 0,
       activeQuests: [],
+      questsClaimedThisRun: 0,
       isPaused: false,
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
@@ -574,6 +590,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       levelUpDeadlineAt: null,
       bossHordeAlertUntil: 0,
       activeQuests: [],
+      questsClaimedThisRun: 0,
       isPaused: false,
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
@@ -606,10 +623,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       invasionBossCooldownMs: 0,
       bossHordeAlertUntil: 0,
       activeQuests: [],
+      questsClaimedThisRun: 0,
       isPaused: false,
       playerRotation: -Math.PI / 2,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
+      matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
@@ -672,11 +691,19 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     const quest = get().activeQuests.find((q) => q.id === questId);
     if (!quest || !quest.completed) return null;
 
-    const reward = quest.rewardDiamonds;
+    const reward: QuestRewards = {
+      gold: quest.rewardGold,
+      diamonds: quest.rewardDiamonds,
+      purpleDiamonds: quest.rewardPurpleDiamonds,
+    };
     const remaining = get().activeQuests.filter((q) => q.id !== questId);
-    const replacement = createReplacementQuest(remaining);
+    const nextClaimed = get().questsClaimedThisRun + 1;
+    const replacement = createReplacementQuest(remaining, nextClaimed);
 
-    set({ activeQuests: [...remaining, replacement] });
+    set({
+      activeQuests: [...remaining, replacement],
+      questsClaimedThisRun: nextClaimed,
+    });
     return reward;
   },
 
@@ -723,7 +750,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     set({ currentXp: xp });
   },
 
-  selectUpgrade: (upgradeType, value) => {
+  selectUpgrade: (upgradeType, value, skillBonus) => {
     if (isSpecialSkillType(upgradeType)) {
       set((s) => {
         const prevLevel = s.matchSkills[upgradeType] ?? 0;
@@ -738,6 +765,13 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
             : s.activeRunSkills;
         return {
           matchSkills: nextSkills,
+          matchSkillBonuses: {
+            ...s.matchSkillBonuses,
+            [upgradeType]: applySkillBonusDelta(
+              s.matchSkillBonuses[upgradeType],
+              skillBonus,
+            ),
+          },
           activeRunSkills,
           gameState: "playing" as const,
           levelUpOptions: [],
@@ -805,7 +839,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     const card =
       levelUpOptions[Math.floor(Math.random() * levelUpOptions.length)];
     if (!card) return;
-    get().selectUpgrade(card.type, card.value);
+    get().selectUpgrade(card.type, card.value, card.skillBonus);
   },
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),
@@ -1062,6 +1096,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchLevel: 1,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
+      matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],

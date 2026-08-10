@@ -58,7 +58,9 @@ export function LevelUpModal() {
             <UpgradeCard
               key={card.id}
               card={card}
-              onSelect={() => selectUpgrade(card.type, card.value)}
+              onSelect={() =>
+                selectUpgrade(card.type, card.value, card.skillBonus)
+              }
             />
           ))}
         </div>
@@ -88,7 +90,25 @@ function UpgradeCard({
         {RARITY_LABEL[card.rarity]}
       </span>
       <span className="text-xl font-black text-zinc-50">{card.label}</span>
-      <span className="text-xs text-zinc-400">{card.description}</span>
+      {card.effectLines && card.effectLines.length > 0 ? (
+        <>
+          {card.description.startsWith("Ativa:") && (
+            <span className="text-[11px] leading-snug text-zinc-500">
+              {card.description.split(" · ")[0]?.replace(/\.$/, "")}
+            </span>
+          )}
+          <ul className="mt-1 w-full space-y-0.5 text-left text-xs text-zinc-300">
+            {card.effectLines.map((line) => (
+              <li key={line} className="flex gap-1.5">
+                <span className={styles.text}>•</span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <span className="text-xs text-zinc-400">{card.description}</span>
+      )}
     </button>
   );
 }

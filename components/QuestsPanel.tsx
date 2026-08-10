@@ -1,27 +1,52 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Gem, ScrollText } from "lucide-react";
-import { QUEST_LABELS, type ActiveQuest } from "@/lib/quests";
+import { ChevronDown, ChevronUp, Coins, Gem, ScrollText } from "lucide-react";
+import {
+  QUEST_CLAIM_SCALE_PER_CLAIM,
+  QUEST_LABELS,
+  type ActiveQuest,
+} from "@/lib/quests";
 import { syncWithDB } from "@/lib/syncWithDB";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
-/** Painel flutuante de quests ativas (direita). */
+/** Painel flutuante de quests ativas (direita) — até 4 slots. */
 export function QuestsPanel() {
   const activeQuests = useArenaStore((s) => s.activeQuests);
+  const questsClaimedThisRun = useArenaStore((s) => s.questsClaimedThisRun);
   const claimQuest = useArenaStore((s) => s.claimQuest);
+  const recordLootCollected = useArenaStore((s) => s.recordLootCollected);
+  const addGold = useGameStore((s) => s.addGold);
   const addGems = useGameStore((s) => s.addGems);
+  const addPurpleDiamonds = useGameStore((s) => s.addPurpleDiamonds);
   const [collapsed, setCollapsed] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+
+  const bonusPct = Math.round(
+    questsClaimedThisRun * QUEST_CLAIM_SCALE_PER_CLAIM * 100,
+  );
 
   const handleClaim = async (quest: ActiveQuest) => {
     if (!quest.completed || claimingId) return;
     setClaimingId(quest.id);
     try {
       const reward = claimQuest(quest.id);
-      if (reward == null || reward <= 0) return;
-      addGems(reward);
+      if (!reward) return;
+      if (reward.gold > 0) {
+        addGold(reward.gold, { applyIncome: false });
+      }
+      if (reward.diamonds > 0) {
+        addGems(reward.diamonds);
+      }
+      if (reward.purpleDiamonds > 0) {
+        addPurpleDiamonds(reward.purpleDiamonds);
+      }
+      recordLootCollected(
+        reward.gold,
+        reward.diamonds,
+        reward.purpleDiamonds,
+      );
       await syncWithDB();
     } finally {
       setClaimingId(null);
@@ -31,7 +56,7 @@ export function QuestsPanel() {
   if (activeQuests.length === 0) return null;
 
   return (
-    <div className="pointer-events-none absolute right-4 top-36 z-20 w-56 max-h-[calc(100dvh-10rem)] overflow-y-auto">
+    <div className="pointer-events-none absolute right-4 top-36 z-20 w-60 max-h-[calc(100dvh-10rem)] overflow-y-auto">
       <div className="pointer-events-auto overflow-hidden rounded-xl border border-white/10 bg-black/65 shadow-lg backdrop-blur-md">
         <button
           type="button"
@@ -41,6 +66,11 @@ export function QuestsPanel() {
           <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-400">
             <ScrollText className="h-3.5 w-3.5 text-cyan-300" aria-hidden />
             Quests
+            {questsClaimedThisRun > 0 && (
+              <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] font-bold normal-case tracking-normal text-amber-300">
+                +{bonusPct}%
+              </span>
+            )}
           </span>
           {collapsed ? (
             <ChevronDown className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
@@ -70,9 +100,21 @@ export function QuestsPanel() {
                     <p className="text-xs font-semibold leading-snug text-zinc-100">
                       {QUEST_LABELS[quest.type]}
                     </p>
-                    <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-semibold tabular-nums text-cyan-300">
-                      <Gem className="h-3 w-3" aria-hidden />
-                      {quest.rewardDiamonds}
+                    <span className="flex shrink-0 flex-col items-end gap-0.5 text-[10px] font-semibold tabular-nums">
+                      <span className="inline-flex items-center gap-0.5 text-amber-300">
+                        <Coins className="h-3 w-3" aria-hidden />
+                        {quest.rewardGold}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 text-cyan-300">
+                        <Gem className="h-3 w-3" aria-hidden />
+                        {quest.rewardDiamonds}
+                      </span>
+                      {quest.rewardPurpleDiamonds > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-violet-300">
+                          <Gem className="h-3 w-3" aria-hidden />
+                          {quest.rewardPurpleDiamonds}
+                        </span>
+                      )}
                     </span>
                   </div>
 

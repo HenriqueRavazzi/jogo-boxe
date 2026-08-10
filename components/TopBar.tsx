@@ -27,6 +27,11 @@ export function TopBar() {
   const stageEnemiesDefeated = useArenaStore((s) => s.stageEnemiesDefeated);
   const stageCommonsSpawned = useArenaStore((s) => s.stageCommonsSpawned);
   const bossesSpawned = useArenaStore((s) => s.bossesSpawned);
+  const goldCollected = useArenaStore((s) => s.runStats.goldCollected);
+  const diamondsCollected = useArenaStore((s) => s.runStats.diamondsCollected);
+  const purpleCollected = useArenaStore(
+    (s) => s.runStats.purpleDiamondsCollected,
+  );
   const maxHp = getMaxHp();
   const hpPercent = Math.max(0, Math.min(100, (currentHp / maxHp) * 100));
   const xpPercent = Math.max(
@@ -52,6 +57,30 @@ export function TopBar() {
           <span className="inline-flex items-center gap-1.5 font-medium tabular-nums text-violet-200">
             <Gem className="h-4 w-4 text-violet-400" aria-hidden />
             {purpleDiamonds.toLocaleString("pt-BR")}
+          </span>
+        </div>
+
+        <div
+          className="flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-black/55 px-4 py-1.5 text-xs text-zinc-200 shadow-lg backdrop-blur-sm"
+          title="Recursos adquiridos nesta partida"
+        >
+          <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-400/90">
+            Partida
+          </span>
+          <span className="h-3.5 w-px bg-white/15" aria-hidden />
+          <span className="inline-flex items-center gap-1 font-medium tabular-nums text-amber-200">
+            <Coins className="h-3.5 w-3.5 text-amber-400" aria-hidden />
+            +{goldCollected.toLocaleString("pt-BR")}
+          </span>
+          <span className="h-3.5 w-px bg-white/15" aria-hidden />
+          <span className="inline-flex items-center gap-1 font-medium tabular-nums text-cyan-200">
+            <Gem className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
+            +{diamondsCollected.toLocaleString("pt-BR")}
+          </span>
+          <span className="h-3.5 w-px bg-white/15" aria-hidden />
+          <span className="inline-flex items-center gap-1 font-medium tabular-nums text-violet-200">
+            <Gem className="h-3.5 w-3.5 text-violet-400" aria-hidden />
+            +{purpleCollected.toLocaleString("pt-BR")}
           </span>
         </div>
 

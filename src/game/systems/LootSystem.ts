@@ -3,7 +3,7 @@
 import type { EnemyRewards } from "@/lib/gameConfig";
 import { DEFAULT_ENEMY_REWARDS } from "@/src/game/entities/Enemy";
 
-export type DropType = "gold" | "diamond" | "purple_diamond";
+export type DropType = "gold" | "diamond" | "purple_diamond" | "bundle";
 
 export type Drop = {
   id: string;
@@ -11,7 +11,19 @@ export type Drop = {
   y: number;
   type: DropType;
   spawnTime: number;
+  /**
+   * Valores embutidos no modo compacto (`bundle`).
+   * Em drops unitários, a coleta usa GOLD_DROP_VALUE / 1 diamante.
+   */
+  goldValue?: number;
+  diamondValue?: number;
+  purpleDiamondValue?: number;
 };
+
+/** Endless: após este tempo (s), loot vira 1 ícone por kill (anti-lag). */
+export const COMPACT_LOOT_TIME_ALIVE_SEC = 5 * 60;
+/** Se ainda houver muitos drops no chão no modo compacto, funde tudo num só. */
+export const COMPACT_LOOT_MERGE_THRESHOLD = 28;
 
 export type KillSite = {
   x: number;
@@ -53,6 +65,11 @@ export type CreateDropsOptions = {
   bossesKilled?: number;
   /** Bônus absoluto na chance de diamante (Sorte do Campeão). */
   diamondLuckBonus?: number;
+  /**
+   * Endless tardio: 1 drop `bundle` por kill com valores somados
+   * (evita dezenas de sprites de moeda/diamante).
+   */
+  compactLoot?: boolean;
 };
 
 export type CreateDropsResult = {
@@ -73,10 +90,129 @@ function resolveRewards(site: KillSite): EnemyRewards {
   return site.rewards ?? DEFAULT_ENEMY_REWARDS;
 }
 
+function rollLootForSite(
+  site: KillSite,
+  incomeMultiplier: number,
+  goldDropMultiplier: number,
+  diamondLuckBonus: number,
+  bossOrdinalIn: number,
+): {
+  coinCount: number;
+  diamonds: number;
+  purpleDiamonds: number;
+  bossesKilled: number;
+  bossOrdinal: number;
+  xp: number;
+} {
+  const isBoss = site.enemyType === "boss";
+  const rewards = resolveRewards(site);
+  const xp = Math.max(0, rewards.xpReward);
+
+  const incomeFactor = 1 + (incomeMultiplier - 1) * INCOME_DROP_WEIGHT;
+  const coinCount = Math.max(
+    1,
+    Math.floor(rewards.goldReward * incomeFactor * goldDropMultiplier),
+  );
+
+  const diamondChance = Math.min(
+    0.35,
+    Math.max(rewards.normalDiamondChance, DIAMOND_CHANCE) + diamondLuckBonus,
+  );
+  const diamonds = Math.random() < diamondChance ? 1 : 0;
+
+  let purpleDiamonds = 0;
+  let bossesKilled = 0;
+  let bossOrdinal = bossOrdinalIn;
+
+  if (isBoss) {
+    bossesKilled = 1;
+    bossOrdinal += 1;
+    purpleDiamonds = purpleDiamondsForBoss(bossOrdinal);
+  } else if (Math.random() < PURPLE_DIAMOND_CHANCE) {
+    purpleDiamonds = 1;
+  }
+
+  return {
+    coinCount,
+    diamonds,
+    purpleDiamonds,
+    bossesKilled,
+    bossOrdinal,
+    xp,
+  };
+}
+
+/**
+ * Soma valores de coleta de um drop (unitário ou bundle).
+ */
+export function getDropCollectValues(drop: Drop): {
+  gold: number;
+  diamonds: number;
+  purpleDiamonds: number;
+} {
+  if (drop.type === "bundle") {
+    return {
+      gold: Math.max(0, drop.goldValue ?? 0),
+      diamonds: Math.max(0, drop.diamondValue ?? 0),
+      purpleDiamonds: Math.max(0, drop.purpleDiamondValue ?? 0),
+    };
+  }
+  if (drop.type === "gold") {
+    return { gold: GOLD_DROP_VALUE, diamonds: 0, purpleDiamonds: 0 };
+  }
+  if (drop.type === "purple_diamond") {
+    return { gold: 0, diamonds: 0, purpleDiamonds: 1 };
+  }
+  return { gold: 0, diamonds: 1, purpleDiamonds: 0 };
+}
+
+/**
+ * Funde drops espalhados num único `bundle` (anti-lag no endless tardio).
+ * Mantém bundles existentes e junta o resto no centro de massa.
+ */
+export function mergeDropsIntoBundle(drops: Drop[], now: number): Drop[] {
+  if (drops.length <= 1) return drops;
+
+  let gold = 0;
+  let diamonds = 0;
+  let purple = 0;
+  let sx = 0;
+  let sy = 0;
+  let oldest = now;
+
+  for (const drop of drops) {
+    const v = getDropCollectValues(drop);
+    gold += v.gold;
+    diamonds += v.diamonds;
+    purple += v.purpleDiamonds;
+    sx += drop.x;
+    sy += drop.y;
+    oldest = Math.min(oldest, drop.spawnTime);
+  }
+
+  if (gold <= 0 && diamonds <= 0 && purple <= 0) return [];
+
+  const n = drops.length;
+  return [
+    {
+      id: crypto.randomUUID(),
+      x: sx / n,
+      y: sy / n,
+      type: "bundle",
+      spawnTime: oldest,
+      goldValue: gold,
+      diamondValue: diamonds,
+      purpleDiamondValue: purple,
+    },
+  ];
+}
+
 /**
  * Gera moedas espalhadas por kill + diamantes (normal / roxo).
  * Bosses: sempre dropam diamantes roxos progressivos ao redor do corpo.
  * Ouro / chances de diamante vêm de `enemy_types` via `site.rewards`.
+ *
+ * Com `compactLoot`: 1 ícone `bundle` por kill (mesmos valores totais).
  */
 export function createDropsFromKills(
   sites: KillSite[],
@@ -86,27 +222,39 @@ export function createDropsFromKills(
   const incomeMultiplier = options.incomeMultiplier ?? 1;
   const goldDropMultiplier = options.goldDropMultiplier ?? 1;
   const diamondLuckBonus = Math.max(0, options.diamondLuckBonus ?? 0);
+  const compactLoot = options.compactLoot === true;
   let bossOrdinal = options.bossesKilled ?? 0;
   const drops: Drop[] = [];
   let bossesKilledThisBatch = 0;
   let totalXp = 0;
 
   for (const site of sites) {
-    const isBoss = site.enemyType === "boss";
-    const rewards = resolveRewards(site);
-    totalXp += Math.max(0, rewards.xpReward);
-
-    // Renda da loja com peso reduzido (nerf econômico)
-    const incomeFactor =
-      1 + (incomeMultiplier - 1) * INCOME_DROP_WEIGHT;
-    const coinCount = Math.max(
-      1,
-      Math.floor(
-        rewards.goldReward * incomeFactor * goldDropMultiplier,
-      ),
+    const rolled = rollLootForSite(
+      site,
+      incomeMultiplier,
+      goldDropMultiplier,
+      diamondLuckBonus,
+      bossOrdinal,
     );
+    bossOrdinal = rolled.bossOrdinal;
+    bossesKilledThisBatch += rolled.bossesKilled;
+    totalXp += rolled.xp;
 
-    for (let i = 0; i < coinCount; i++) {
+    if (compactLoot) {
+      drops.push({
+        id: crypto.randomUUID(),
+        x: site.x + (Math.random() - 0.5) * 10,
+        y: site.y + (Math.random() - 0.5) * 10,
+        type: "bundle",
+        spawnTime: now,
+        goldValue: rolled.coinCount * GOLD_DROP_VALUE,
+        diamondValue: rolled.diamonds,
+        purpleDiamondValue: rolled.purpleDiamonds,
+      });
+      continue;
+    }
+
+    for (let i = 0; i < rolled.coinCount; i++) {
       drops.push({
         id: crypto.randomUUID(),
         x: site.x + (Math.random() - 0.5) * COIN_SCATTER_PX,
@@ -116,11 +264,7 @@ export function createDropsFromKills(
       });
     }
 
-    const diamondChance = Math.min(
-      0.35,
-      Math.max(rewards.normalDiamondChance, DIAMOND_CHANCE) + diamondLuckBonus,
-    );
-    if (Math.random() < diamondChance) {
+    if (rolled.diamonds > 0) {
       drops.push({
         id: crypto.randomUUID(),
         x: site.x + (Math.random() - 0.5) * 12,
@@ -130,29 +274,29 @@ export function createDropsFromKills(
       });
     }
 
-    if (isBoss) {
-      bossesKilledThisBatch += 1;
-      bossOrdinal += 1;
-      const purpleDropCount = purpleDiamondsForBoss(bossOrdinal);
-      for (let i = 0; i < purpleDropCount; i++) {
-        const angle = (Math.PI * 2 * i) / purpleDropCount + Math.random() * 0.4;
-        const radius = 18 + Math.random() * PURPLE_SCATTER_PX;
+    if (rolled.purpleDiamonds > 0) {
+      if (site.enemyType === "boss" && rolled.purpleDiamonds > 1) {
+        for (let i = 0; i < rolled.purpleDiamonds; i++) {
+          const angle =
+            (Math.PI * 2 * i) / rolled.purpleDiamonds + Math.random() * 0.4;
+          const radius = 18 + Math.random() * PURPLE_SCATTER_PX;
+          drops.push({
+            id: crypto.randomUUID(),
+            x: site.x + Math.cos(angle) * radius,
+            y: site.y + Math.sin(angle) * radius,
+            type: "purple_diamond",
+            spawnTime: now,
+          });
+        }
+      } else {
         drops.push({
           id: crypto.randomUUID(),
-          x: site.x + Math.cos(angle) * radius,
-          y: site.y + Math.sin(angle) * radius,
+          x: site.x,
+          y: site.y,
           type: "purple_diamond",
           spawnTime: now,
         });
       }
-    } else if (Math.random() < PURPLE_DIAMOND_CHANCE) {
-      drops.push({
-        id: crypto.randomUUID(),
-        x: site.x,
-        y: site.y,
-        type: "purple_diamond",
-        spawnTime: now,
-      });
     }
   }
 
@@ -217,13 +361,10 @@ export function runLootSystem(input: LootSystemInput): LootSystemResult {
 
     const distToPlayer = Math.hypot(playerX - x, playerY - y);
     if (distToPlayer < collectRadius) {
-      if (drop.type === "gold") {
-        collectedGold += GOLD_DROP_VALUE;
-      } else if (drop.type === "purple_diamond") {
-        collectedPurpleDiamonds += 1;
-      } else {
-        collectedDiamonds += 1;
-      }
+      const values = getDropCollectValues(drop);
+      collectedGold += values.gold;
+      collectedDiamonds += values.diamonds;
+      collectedPurpleDiamonds += values.purpleDiamonds;
       continue;
     }
 

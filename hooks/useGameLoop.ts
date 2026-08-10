@@ -12,11 +12,13 @@ import {
   rotateLocalOffset,
 } from "@/src/game/entities/Player";
 import {
-  RICOCHET_PATH_DURATION_MS,
   runCombatSystem,
 } from "@/src/game/systems/CombatSystem";
 import {
+  COMPACT_LOOT_MERGE_THRESHOLD,
+  COMPACT_LOOT_TIME_ALIVE_SEC,
   createDropsFromKills,
+  mergeDropsIntoBundle,
   runLootSystem,
 } from "@/src/game/systems/LootSystem";
 import {
@@ -24,6 +26,11 @@ import {
   isRicochetActive,
   RICOCHET_ACTIVE_MS,
 } from "@/src/game/systems/ActiveSkillsSystem";
+import {
+  drawAllSkillVfx,
+  drawLightningProjectile,
+  drawRicochetArmPath,
+} from "@/src/game/render/drawSkillEffects";
 import { runSpawner } from "@/src/game/systems/Spawner";
 import {
   isHardOrInfernalDifficulty,
@@ -61,6 +68,8 @@ function tickActiveAttacks(
     let progress = (now - a.startTime) / a.duration;
 
     if (!a.isRetracting && progress > 1) {
+      // Ricochete: braço só atravessa o alvo (sem retração = não parece ataque extra)
+      if (a.kind === "ricochet") continue;
       next.push({ ...a, isRetracting: true, startTime: now });
       continue;
     }
@@ -231,6 +240,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         canvasWidth: canvas.clientWidth,
         canvasHeight: canvas.clientHeight,
         matchSkills: arena.matchSkills,
+        matchSkillBonuses: arena.matchSkillBonuses,
         activeSkillPulse: arena.activeSkillPulse,
         lightningProjectiles: arena.lightningProjectiles ?? [],
       });
@@ -271,7 +281,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
 
       // Drops: ouro + diamantes conforme rewards do enemy_types
+      // Endless ≥5min: 1 ícone bundle por kill (anti-lag de sprites)
       const difficulty = game.getDifficultyMultipliers();
+      const compactLoot =
+        arena.runMode === "endless" &&
+        arena.timeAlive >= COMPACT_LOOT_TIME_ALIVE_SEC;
       const dropResult = createDropsFromKills(combat.killSites, gameNow, {
         incomeMultiplier:
           game.incomeMultiplier *
@@ -280,9 +294,16 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         goldDropMultiplier: difficulty.goldDropMultiplier,
         bossesKilled: arena.bossesKilled,
         diamondLuckBonus: game.getDiamondLuckBonus(),
+        compactLoot,
       });
       const newDrops = dropResult.drops;
-      const dropsWithNew = [...arena.drops, ...newDrops];
+      let dropsWithNew = [...arena.drops, ...newDrops];
+      if (
+        compactLoot &&
+        dropsWithNew.length > COMPACT_LOOT_MERGE_THRESHOLD
+      ) {
+        dropsWithNew = mergeDropsIntoBundle(dropsWithNew, gameNow);
+      }
 
       const loot = runLootSystem({
         drops: dropsWithNew,
@@ -497,12 +518,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
     };
 
-    const drawGlove = (x: number, y: number, ricochet = false) => {
+    const drawGlove = (x: number, y: number, _ricochet = false) => {
       ctx.beginPath();
       ctx.arc(x, y, GLOVE_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = ricochet ? "#fbbf24" : "#dc2626";
+      ctx.fillStyle = "#dc2626";
       ctx.fill();
-      ctx.strokeStyle = ricochet ? "#fef3c7" : "#7f1d1d";
+      ctx.strokeStyle = "#7f1d1d";
       ctx.lineWidth = 1.5;
       ctx.stroke();
     };
@@ -594,14 +615,15 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           ? shoulderOf(x, y, attack.side, facing)
           : { x: attack.startX, y: attack.startY };
 
-        const outer = isRicochet ? "#94a3b8" : "#1e3a5f";
-        const inner = isRicochet ? "#fbbf24" : "#f0c4a0";
+        // Mesmo visual de braço/luva — ricochete = continuação do soco
+        const outer = "#1e3a5f";
+        const inner = "#f0c4a0";
 
         ctx.beginPath();
         ctx.moveTo(origin.x, origin.y);
         ctx.lineTo(pos.x, pos.y);
         ctx.strokeStyle = outer;
-        ctx.lineWidth = isRicochet ? 5 : 6;
+        ctx.lineWidth = isRicochet ? 5.5 : 6;
         ctx.lineCap = "round";
         ctx.stroke();
 
@@ -609,16 +631,16 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.moveTo(origin.x, origin.y);
         ctx.lineTo(pos.x, pos.y);
         ctx.strokeStyle = inner;
-        ctx.lineWidth = isRicochet ? 2.5 : 3;
+        ctx.lineWidth = isRicochet ? 2.75 : 3;
         ctx.stroke();
 
-        // Rastro prateado extra no ricochete
         if (isRicochet) {
+          // Rastro de impacto do braço saltando
           ctx.beginPath();
           ctx.moveTo(origin.x, origin.y);
           ctx.lineTo(pos.x, pos.y);
-          ctx.strokeStyle = "rgba(248, 250, 252, 0.55)";
-          ctx.lineWidth = 1.25;
+          ctx.strokeStyle = "rgba(248, 113, 113, 0.45)";
+          ctx.lineWidth = 1.5;
           ctx.stroke();
         }
 
@@ -665,93 +687,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
-      // VFX de skills (gelo / raio) com fade-out
-      for (const effect of skillVfxEffects ?? []) {
-        if (effect.expiresAt <= now) continue;
-        const life = effect.expiresAt - effect.startedAt;
-        const alpha = Math.max(
-          0,
-          Math.min(1, (effect.expiresAt - now) / Math.max(1, life)),
-        );
-
-        if (effect.kind === "ice") {
-          const progress = 1 - alpha;
-          const radius = Math.max(8, effect.maxRadius * Math.min(1, progress * 1.35));
-          ctx.save();
-          ctx.globalAlpha = alpha;
-          ctx.beginPath();
-          ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
-          ctx.strokeStyle = "rgba(125, 211, 252, 0.9)";
-          ctx.lineWidth = 5;
-          ctx.shadowColor = "#7dd3fc";
-          ctx.shadowBlur = 18;
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(effect.x, effect.y, radius * 0.78, 0, Math.PI * 2);
-          ctx.strokeStyle = "rgba(186, 230, 253, 0.55)";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          // Cristais no anel
-          const crystals = 10;
-          for (let i = 0; i < crystals; i++) {
-            const ang = (i / crystals) * Math.PI * 2 + progress * 0.6;
-            const cx = effect.x + Math.cos(ang) * radius;
-            const cy = effect.y + Math.sin(ang) * radius;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy - 5);
-            ctx.lineTo(cx + 3, cy);
-            ctx.lineTo(cx, cy + 5);
-            ctx.lineTo(cx - 3, cy);
-            ctx.closePath();
-            ctx.fillStyle = "rgba(224, 242, 254, 0.85)";
-            ctx.fill();
-          }
-          ctx.restore();
-        } else if (effect.kind === "lightning" && effect.points.length > 1) {
-          ctx.save();
-          ctx.globalAlpha = alpha;
-          ctx.strokeStyle = "#e0f2fe";
-          ctx.lineWidth = 3.5;
-          ctx.lineJoin = "round";
-          ctx.lineCap = "round";
-          ctx.shadowColor = "#38bdf8";
-          ctx.shadowBlur = 16;
-          ctx.beginPath();
-          ctx.moveTo(effect.points[0]!.x, effect.points[0]!.y);
-          for (let i = 1; i < effect.points.length; i++) {
-            ctx.lineTo(effect.points[i]!.x, effect.points[i]!.y);
-          }
-          ctx.stroke();
-          ctx.strokeStyle = "rgba(255,255,255,0.85)";
-          ctx.lineWidth = 1.5;
-          ctx.shadowBlur = 6;
-          ctx.stroke();
-          ctx.restore();
-        } else if (effect.kind === "parry") {
-          const progress = 1 - alpha;
-          const radius = Math.max(
-            18,
-            effect.maxRadius * Math.min(1, 0.35 + progress * 1.1),
-          );
-          ctx.save();
-          ctx.globalAlpha = alpha;
-          ctx.beginPath();
-          ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
-          ctx.strokeStyle = "rgba(254, 240, 138, 0.95)";
-          ctx.lineWidth = 6;
-          ctx.shadowColor = "#fef08a";
-          ctx.shadowBlur = 28;
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(effect.x, effect.y, radius * 0.62, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255, 255, 255, ${0.22 * alpha})`;
-          ctx.fill();
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          ctx.restore();
-        }
-      }
+      // VFX de skills (gelo / raio / fogo / parry)
+      drawAllSkillVfx(ctx, skillVfxEffects, now);
 
       // Anel de ricochete (janela ativa)
       const ricoT = pulseVisualProgress(
@@ -772,7 +709,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         const radius = 28 + t * Math.max(w, h) * 0.35;
         ctx.beginPath();
         ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(251, 191, 36, ${0.7 * (1 - t * 0.5)})`;
+        ctx.strokeStyle = `rgba(248, 113, 113, ${0.55 * (1 - t * 0.5)})`;
         ctx.lineWidth = 3;
         ctx.stroke();
       }
@@ -793,53 +730,11 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           color: enemy.color ?? "",
         });
         enemyEntity.draw(ctx, now);
-
-        // Brasas de burn (stacks) — densidade e brilho sobem com as pilhas
-        const burnEffect = enemy.statusEffects?.find(
-          (s) => s.type === "burn" && s.expiresAt > now,
-        );
-        const burnStacks =
-          burnEffect?.burnStackExpires?.filter((t) => t > now).length ??
-          burnEffect?.burnStacks ??
-          0;
-        if (burnStacks > 0) {
-          const sparks = Math.min(28, 4 + burnStacks * 3);
-          const glow = Math.min(1, 0.4 + burnStacks * 0.1);
-          for (let i = 0; i < sparks; i++) {
-            const ang = (i / sparks) * Math.PI * 2 + now * 0.004;
-            const dist =
-              (enemy.radius ?? 12) + 3 + (i % 3) * (2 + burnStacks * 0.4);
-            const sx = enemy.x + Math.cos(ang) * dist;
-            const sy =
-              enemy.y +
-              Math.sin(ang) * dist -
-              ((now * 0.04 + i * 7) % (12 + burnStacks));
-            ctx.beginPath();
-            ctx.arc(sx, sy, 1.4 + (i % 2) * (0.6 + burnStacks * 0.08), 0, Math.PI * 2);
-            ctx.fillStyle =
-              i % 3 === 0
-                ? `rgba(253, 224, 71, ${0.55 + glow * 0.4})`
-                : i % 2 === 0
-                  ? `rgba(251, 146, 60, ${0.6 + glow * 0.35})`
-                  : `rgba(239, 68, 68, ${0.55 + glow * 0.35})`;
-            ctx.fill();
-          }
-        }
       }
 
       // Projéteis elétricos
       for (const bolt of lightningProjectiles ?? []) {
-        ctx.save();
-        ctx.shadowColor = "#38bdf8";
-        ctx.shadowBlur = 14;
-        ctx.beginPath();
-        ctx.arc(bolt.x, bolt.y, bolt.radius, 0, Math.PI * 2);
-        ctx.fillStyle = "#e0f2fe";
-        ctx.fill();
-        ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.restore();
+        drawLightningProjectile(ctx, bolt, now);
       }
 
       for (const proj of projectiles ?? []) {
@@ -852,33 +747,33 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
-      // Linhas de ricochete (player → cadeia de alvos)
+      // Caminho do braço ricocheteando entre inimigos
       for (const effect of ricochetPathEffects ?? []) {
-        if (effect.expiresAt <= now || effect.points.length === 0) continue;
-        const remaining = effect.expiresAt - now;
-        const alpha = Math.max(
-          0,
-          Math.min(1, remaining / RICOCHET_PATH_DURATION_MS),
-        );
-
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = "#00ffff";
-        ctx.lineWidth = 4;
-        ctx.lineJoin = "round";
-        ctx.lineCap = "round";
-        ctx.shadowColor = "#00ffff";
-        ctx.shadowBlur = 14;
-        ctx.beginPath();
-        ctx.moveTo(playerX, playerY);
-        for (const point of effect.points) {
-          ctx.lineTo(point.x, point.y);
-        }
-        ctx.stroke();
-        ctx.restore();
+        drawRicochetArmPath(ctx, effect, playerX, playerY, now);
       }
 
       for (const drop of drops) {
+        if (drop.type === "bundle") {
+          // Ícone único pós-5min: anéis ouro / diamante / roxo
+          const r = DROP_RADIUS + 3;
+          ctx.beginPath();
+          ctx.arc(drop.x, drop.y, r + 3, 0, Math.PI * 2);
+          ctx.fillStyle = "#facc15";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(drop.x, drop.y, r + 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#7dd3fc";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(drop.x, drop.y, r - 0.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#c084fc";
+          ctx.fill();
+          ctx.strokeStyle = "#fafafa";
+          ctx.lineWidth = 1.25;
+          ctx.stroke();
+          continue;
+        }
+
         ctx.beginPath();
         ctx.arc(drop.x, drop.y, DROP_RADIUS, 0, Math.PI * 2);
         if (drop.type === "gold") {
