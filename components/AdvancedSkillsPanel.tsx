@@ -58,6 +58,22 @@ type SkillCardDef = {
 
 const CARDS: SkillCardDef[] = [
   {
+    type: "fire",
+    title: "Fogo",
+    description: "Queimadura on-hit com stacks cumulativos.",
+    icon: <Flame className="h-5 w-5" aria-hidden />,
+    statActions: {
+      damage: {
+        label: "Aumentar Dano",
+        icon: <Flame className="h-4 w-4" aria-hidden />,
+      },
+      duration: {
+        label: "Aumentar Duração",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
     type: "ice",
     title: "Gelo",
     description:
@@ -95,22 +111,6 @@ const CARDS: SkillCardDef[] = [
     },
   },
   {
-    type: "fire",
-    title: "Fogo",
-    description: "Queimadura on-hit com stacks cumulativos.",
-    icon: <Flame className="h-5 w-5" aria-hidden />,
-    statActions: {
-      damage: {
-        label: "Aumentar Dano",
-        icon: <Flame className="h-4 w-4" aria-hidden />,
-      },
-      duration: {
-        label: "Aumentar Duração",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
-    },
-  },
-  {
     type: "stone",
     title: "Pedra",
     description:
@@ -120,27 +120,6 @@ const CARDS: SkillCardDef[] = [
       damage: {
         label: "Aumentar Dano",
         icon: <Mountain className="h-4 w-4" aria-hidden />,
-      },
-      duration: {
-        label: "Aumentar Duração",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
-      cooldown: {
-        label: "Reduzir Cooldown",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
-    },
-  },
-  {
-    type: "shadow",
-    title: "Shadow Clone",
-    description:
-      "Invoca um clone com 15% dos seus stats (sem heal/skills). Na Aura: explosão em área.",
-    icon: <Ghost className="h-5 w-5" aria-hidden />,
-    statActions: {
-      damage: {
-        label: "Aumentar Poder",
-        icon: <Ghost className="h-4 w-4" aria-hidden />,
       },
       duration: {
         label: "Aumentar Duração",
@@ -174,27 +153,6 @@ const CARDS: SkillCardDef[] = [
     },
   },
   {
-    type: "aura",
-    title: "Aura",
-    description:
-      "Área no herói. Sinergia só com skills ativas na run (1 = 100%; 2 = 100%/50%). Preferência de primário abaixo. Roleta: exige outra skill ativa primeiro.",
-    icon: <Circle className="h-5 w-5" aria-hidden />,
-    statActions: {
-      radius: {
-        label: "Aumentar Raio",
-        icon: <Circle className="h-4 w-4" aria-hidden />,
-      },
-      damage: {
-        label: "Aumentar Poder",
-        icon: <Flame className="h-4 w-4" aria-hidden />,
-      },
-      pulse: {
-        label: "Acelerar Pulso",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
-    },
-  },
-  {
     type: "vendaval",
     title: "Vendaval",
     description:
@@ -211,6 +169,48 @@ const CARDS: SkillCardDef[] = [
       },
       cooldown: {
         label: "Reduzir Cooldown",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
+    type: "shadow",
+    title: "Shadow Clone",
+    description:
+      "Invoca um clone com 15% dos seus stats (sem heal/skills). Na Aura: explosão em área.",
+    icon: <Ghost className="h-5 w-5" aria-hidden />,
+    statActions: {
+      damage: {
+        label: "Aumentar Poder",
+        icon: <Ghost className="h-4 w-4" aria-hidden />,
+      },
+      duration: {
+        label: "Aumentar Duração",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+      cooldown: {
+        label: "Reduzir Cooldown",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
+    type: "aura",
+    title: "Aura",
+    description:
+      "Área no herói. Sinergia só com skills ativas na run (1 = 100%; 2 = 100%/50%). Preferência de primário abaixo. Roleta: exige outra skill ativa primeiro.",
+    icon: <Circle className="h-5 w-5" aria-hidden />,
+    statActions: {
+      radius: {
+        label: "Aumentar Raio",
+        icon: <Circle className="h-4 w-4" aria-hidden />,
+      },
+      damage: {
+        label: "Aumentar Poder",
+        icon: <Flame className="h-4 w-4" aria-hidden />,
+      },
+      pulse: {
+        label: "Acelerar Pulso",
         icon: <Timer className="h-4 w-4" aria-hidden />,
       },
     },

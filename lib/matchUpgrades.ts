@@ -454,6 +454,12 @@ const SPECIAL_SKILL_POOL: {
   short: string;
 }[] = [
   {
+    type: "fire",
+    category: "fire",
+    name: "Fogo",
+    short: "Aplica queimadura nos socos",
+  },
+  {
     type: "ice",
     category: "ice",
     name: "Gelo",
@@ -466,22 +472,10 @@ const SPECIAL_SKILL_POOL: {
     short: "Homing elétrico; explode em área com shock",
   },
   {
-    type: "fire",
-    category: "fire",
-    name: "Fogo",
-    short: "Aplica queimadura nos socos",
-  },
-  {
     type: "stone",
     category: "stone",
     name: "Pedra",
     short: "Terremoto: dano em todos + −50% AS/dano inimigo por 10s",
-  },
-  {
-    type: "shadow",
-    category: "shadow",
-    name: "Shadow Clone",
-    short: "Clone com 15% dos stats; bate em alvos diferentes (exceto boss)",
   },
   {
     type: "ricochet",
@@ -490,28 +484,34 @@ const SPECIAL_SKILL_POOL: {
     short: "Soco ricocheteia entre inimigos",
   },
   {
-    type: "aura",
-    category: "aura",
-    name: "Aura",
-    short: "Área no herói: sinergia com skills ativas na run (ou neutra)",
-  },
-  {
     type: "vendaval",
     category: "vendaval",
     name: "Vendaval",
     short: "Cria um vácuo periódico que puxa os inimigos para o centro",
   },
+  {
+    type: "shadow",
+    category: "shadow",
+    name: "Shadow Clone",
+    short: "Clone com 15% dos stats; bate em alvos diferentes (exceto boss)",
+  },
+  {
+    type: "aura",
+    category: "aura",
+    name: "Aura",
+    short: "Área no herói: sinergia com skills ativas na run (ou neutra)",
+  },
 ];
 
 export const SPECIAL_SKILL_KEYS: SpecialSkillKey[] = [
+  "fire",
   "ice",
   "lightning",
-  "fire",
   "stone",
-  "shadow",
   "ricochet",
-  "aura",
   "vendaval",
+  "shadow",
+  "aura",
 ];
 
 export function isSpecialSkillType(type: UpgradeType): type is SpecialSkillKey {

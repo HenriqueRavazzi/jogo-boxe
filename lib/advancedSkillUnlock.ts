@@ -14,58 +14,64 @@ export type AdvancedSkillUnlockRequirements = {
 };
 
 /**
- * Ordem de progressão:
- * gelo → raio → fogo → pedra → shadow clone → ricochete → aura → vendaval
+ * Ordem de progressão (early → late):
+ * fogo → gelo → raio → pedra → ricochete → vendaval → sombra → aura
  */
 export const ADVANCED_SKILL_UNLOCK: Record<
   SkillUpgradeType,
   AdvancedSkillUnlockRequirements
 > = {
-  ice: {
+  /** Tier 1 — DPS contínuo on-hit. */
+  fire: {
     goldCost: 5_000,
     diamondCost: 15,
     requiredMobs: 250,
     requiredBosses: 1,
   },
-  lightning: {
+  /** Tier 2 — controle + vulnerabilidade. */
+  ice: {
     goldCost: 20_000,
     diamondCost: 60,
     requiredMobs: 1_500,
     requiredBosses: 3,
   },
-  fire: {
+  /** Tier 3 — burst single-target. */
+  lightning: {
     goldCost: 80_000,
     diamondCost: 240,
     requiredMobs: 9_000,
     requiredBosses: 6,
   },
+  /** Tier 4 — AoE + debuff global. */
   stone: {
     goldCost: 160_000,
     diamondCost: 480,
     requiredMobs: 20_000,
     requiredBosses: 8,
   },
-  shadow: {
+  /** Tier 5 — cadeia de socos. */
+  ricochet: {
     goldCost: 240_000,
     diamondCost: 720,
     requiredMobs: 35_000,
     requiredBosses: 9,
   },
-  ricochet: {
+  /** Tier 6 — CC de puxão (vácuo). */
+  vendaval: {
     goldCost: 320_000,
     diamondCost: 960,
     requiredMobs: 54_000,
     requiredBosses: 10,
   },
-  /** Sinergia de skills liberadas na run. */
-  aura: {
+  /** Tier 7 — clone ofensivo. */
+  shadow: {
     goldCost: 480_000,
     diamondCost: 1_440,
     requiredMobs: 80_000,
     requiredBosses: 12,
   },
-  /** Última skill — vácuo de controle de multidões. */
-  vendaval: {
+  /** Tier 8 — ápice: sinergia só com skills ativas na run. */
+  aura: {
     goldCost: 720_000,
     diamondCost: 2_160,
     requiredMobs: 120_000,
@@ -75,14 +81,14 @@ export const ADVANCED_SKILL_UNLOCK: Record<
 
 /** Ordem canônica de skills avançadas (UI / progressão). */
 export const ADVANCED_SKILL_ORDER: readonly SkillUpgradeType[] = [
+  "fire",
   "ice",
   "lightning",
-  "fire",
   "stone",
-  "shadow",
   "ricochet",
-  "aura",
   "vendaval",
+  "shadow",
+  "aura",
 ] as const;
 
 export function getAdvancedSkillUnlockRequirements(

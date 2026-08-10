@@ -213,13 +213,13 @@ export type AuraElementKey =
   | "vendaval";
 
 export const AURA_ELEMENT_KEYS: readonly AuraElementKey[] = [
+  "fire",
   "ice",
   "lightning",
-  "fire",
   "stone",
-  "shadow",
   "ricochet",
   "vendaval",
+  "shadow",
 ] as const;
 
 export function isAuraElementKey(value: string): value is AuraElementKey {

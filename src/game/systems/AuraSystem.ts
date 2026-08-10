@@ -10,7 +10,6 @@ import type {
 import { AURA_ELEMENT_KEYS, isAuraElementKey } from "@/db/schema";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
-  SPECIAL_SKILL_KEYS,
   type MatchSkillBonusState,
   type MatchSkillBonuses,
   type SpecialSkillKey,
@@ -133,31 +132,22 @@ export function resolveAuraPrimaryElement(
 }
 
 /**
- * Elementos das skills especiais ativas na run (exceto a própria Aura),
- * na ordem em que entraram nos slots.
+ * Elementos das skills especiais ativas nos slots da run (exceto a própria Aura).
+ * Não usa o meta desbloqueado — só o loadout equipado nesta partida.
  */
 export function listRunAuraElements(
   activeRunSkills: readonly SpecialSkillKey[] = [],
-  matchSkills?: MatchSkillsData | null,
+  _matchSkills?: MatchSkillsData | null,
 ): AuraElementKey[] {
+  void _matchSkills;
   const ordered: AuraElementKey[] = [];
   const seen = new Set<AuraElementKey>();
 
-  const push = (key: string) => {
-    if (!isAuraElementKey(key) || seen.has(key)) return;
-    seen.add(key);
-    ordered.push(key);
-  };
-
   for (const key of activeRunSkills) {
     if (key === "aura") continue;
-    push(key);
-  }
-  if (matchSkills) {
-    for (const key of SPECIAL_SKILL_KEYS) {
-      if (key === "aura") continue;
-      if ((matchSkills[key] ?? 0) > 0) push(key);
-    }
+    if (!isAuraElementKey(key) || seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(key);
   }
   return ordered;
 }
@@ -173,8 +163,9 @@ export function resolveAuraPrimaryFromRun(
 }
 
 /**
- * Potências a partir do loadout da run:
- * 0 skills → neutra; 1 → 100%; 2+ → primário 100% / demais 50%.
+ * Potências a partir do loadout da run (slots ativos):
+ * 0 parceiras → neutra; 1 → 100%; 2+ (Skill Arsenal) → primário 100% / demais 50%.
+ * Preferência de primário (meta) só vale se a skill estiver nos slots da run.
  */
 export function buildAuraElementPowersFromRun(
   runElements: readonly AuraElementKey[],
