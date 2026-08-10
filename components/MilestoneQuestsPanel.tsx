@@ -162,6 +162,13 @@ export function MilestoneQuestsPanel({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[11px] tabular-nums text-zinc-400">
                   {formatTarget(quest.id, row.current, target)}
+                  {quest.progressMode === "add" && row.current > target && (
+                    <span className="ml-1.5 text-emerald-400/90">
+                      (+
+                      {(row.current - target).toLocaleString("pt-BR")} p/
+                      próxima)
+                    </span>
+                  )}
                 </span>
 
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold tabular-nums">

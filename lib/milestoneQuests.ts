@@ -251,9 +251,12 @@ export function normalizeMilestoneQuests(
 
     base[id] = {
       phase: migratedPhase,
-      // Não capar no target se for carry-over após claim; no normalize capamos
-      // só se claimed antigo sem carry — progresso normal fica ≤ target
-      current: Math.min(target, current),
+      // Missões "add": permitem excedente (vai para a próxima fase no claim).
+      // Missões "max": capam no target da fase.
+      current:
+        def.progressMode === "add"
+          ? current
+          : Math.min(target, current),
     };
   }
 
@@ -273,13 +276,20 @@ export function applyMilestoneProgress(
     if (!def) return;
     const row = next[id] ?? { phase: 0, current: 0 };
     const target = getMilestonePhaseTarget(def, row.phase);
-    const value =
-      def.progressMode === "max"
-        ? Math.max(row.current, amount)
-        : row.current + amount;
+    if (def.progressMode === "max") {
+      next[id] = {
+        ...row,
+        current: Math.min(
+          target,
+          Math.max(row.current, Math.floor(amount)),
+        ),
+      };
+      return;
+    }
+    // add: continua somando mesmo após completar a fase (excedente → próxima)
     next[id] = {
       ...row,
-      current: Math.min(target, Math.max(0, Math.floor(value))),
+      current: Math.max(0, Math.floor(row.current + amount)),
     };
   };
 
@@ -332,7 +342,7 @@ export function canClaimMilestone(
 
 /**
  * Avança para a próxima fase após resgate.
- * add: carry-over do excedente · max: zera progresso.
+ * add: carry-over do excedente (pode completar a próxima de imediato) · max: zera.
  */
 export function advanceMilestonePhase(
   state: MilestoneQuestsState,
@@ -344,14 +354,11 @@ export function advanceMilestonePhase(
 
   const target = getMilestonePhaseTarget(def, row.phase);
   const nextPhase = row.phase + 1;
-  const nextTarget = getMilestonePhaseTarget(def, nextPhase);
 
   let nextCurrent = 0;
   if (def.progressMode === "add") {
-    nextCurrent = Math.min(
-      nextTarget,
-      Math.max(0, row.current - target),
-    );
+    // Ex.: meta 864k, progresso 1.2M → próxima fase começa com 360k
+    nextCurrent = Math.max(0, Math.floor(row.current - target));
   }
 
   return {
