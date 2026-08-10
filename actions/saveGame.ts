@@ -132,6 +132,54 @@ export async function createSave(
 }
 
 /**
+ * Autentica por nome + senha (sem listar saves).
+ * Erro genérico se nome ou senha estiverem errados (não vaza existência).
+ */
+export async function unlockSaveByName(
+  saveName: string,
+  password: string,
+): Promise<{
+  ok: boolean;
+  id?: string;
+  saveName?: string;
+  saveData?: SaveData;
+  error?: string;
+}> {
+  const name = sanitizeName(saveName);
+  const pass = sanitizePassword(password);
+
+  if (name.length < 2) {
+    return { ok: false, error: "Informe o nome do save" };
+  }
+  if (!pass) {
+    return { ok: false, error: "Informe a senha" };
+  }
+
+  try {
+    const rows = await db
+      .select()
+      .from(gameSaves)
+      .where(eq(gameSaves.saveName, name))
+      .limit(1);
+    const row = rows[0];
+
+    if (!row || row.password !== pass) {
+      return { ok: false, error: "Nome ou senha incorretos" };
+    }
+
+    return {
+      ok: true,
+      id: row.id,
+      saveName: row.saveName,
+      saveData: mergeSaveRow(row),
+    };
+  } catch (error) {
+    console.error("[unlockSaveByName]", error);
+    return { ok: false, error: "Falha ao autenticar save" };
+  }
+}
+
+/**
  * Verifica a senha e retorna o progresso do save.
  * Senha incorreta → ok: false sem vazar se o save existe além da mensagem genérica.
  */
