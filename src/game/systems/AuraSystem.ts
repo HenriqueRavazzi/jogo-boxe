@@ -16,6 +16,10 @@ import {
 } from "@/lib/matchUpgrades";
 import type { ActiveSkillPulseState } from "@/src/game/systems/ActiveSkillsSystem";
 import type { SkillVfxEffect } from "@/src/game/systems/ActiveSkillsSystem";
+import {
+  MASTERY_AURA_RADIUS_MULT,
+  MASTERY_AURA_SECONDARY_POWER,
+} from "@/lib/skillMastery";
 import { LIGHTNING_STUN_MS } from "@/src/game/entities/Enemy";
 
 /** Raio base da aura (px). */
@@ -73,6 +77,8 @@ export type RunAuraInput = {
   prestigeMul: number;
   /** Preferência de primário (meta); só vale se a skill estiver ativa na run. */
   auraPrimaryElement?: AuraElementKey | null;
+  /** Maestria Aura: Domínio Absoluto (raio ×2, secundários 100%). */
+  masteryAbsoluteDomain?: boolean;
 };
 
 export type RunAuraResult = {
@@ -170,6 +176,7 @@ export function resolveAuraPrimaryFromRun(
 export function buildAuraElementPowersFromRun(
   runElements: readonly AuraElementKey[],
   preferredPrimary?: AuraElementKey | null,
+  secondaryPower = AURA_SECONDARY_POWER,
 ): {
   powers: AuraElementPowers;
   primary: AuraElementKey | null;
@@ -190,7 +197,7 @@ export function buildAuraElementPowersFromRun(
   }
 
   for (const el of runElements) {
-    powers[el] = el === primary ? 1 : AURA_SECONDARY_POWER;
+    powers[el] = el === primary ? 1 : secondaryPower;
   }
   return { powers, primary, neutral: false };
 }
@@ -350,6 +357,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     pulseState,
     prestigeMul,
     auraPrimaryElement,
+    masteryAbsoluteDomain = false,
   } = input;
 
   const next: ActiveSkillPulseState = { ...pulseState };
@@ -359,11 +367,18 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   let questFreeze = 0;
 
   const runElements = listRunAuraElements(activeRunSkills, matchSkills);
+  const secondaryPower = masteryAbsoluteDomain
+    ? MASTERY_AURA_SECONDARY_POWER
+    : AURA_SECONDARY_POWER;
   const {
     powers: elementPowers,
     primary: primaryElement,
     neutral: neutralAura,
-  } = buildAuraElementPowersFromRun(runElements, auraPrimaryElement);
+  } = buildAuraElementPowersFromRun(
+    runElements,
+    auraPrimaryElement,
+    secondaryPower,
+  );
 
   const activeElements = {
     fire: elementPowers.fire > 0,
@@ -395,12 +410,9 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   }
 
   const bonus = matchSkillBonuses?.aura ?? DEFAULT_MATCH_SKILL_BONUS;
-  const radius = getAuraRadius(
-    auraLevel,
-    skills.aura.radius,
-    bonus,
-    prestigeMul,
-  );
+  const radius =
+    getAuraRadius(auraLevel, skills.aura.radius, bonus, prestigeMul) *
+    (masteryAbsoluteDomain ? MASTERY_AURA_RADIUS_MULT : 1);
 
   const inAura: Enemy[] = [];
   for (const enemy of enemies) {

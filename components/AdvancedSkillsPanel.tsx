@@ -35,6 +35,10 @@ import {
   type SkillUpgradeType,
 } from "@/db/schema";
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
+import {
+  areAllSkillStatsMaxed,
+  SKILL_MASTERY_CARD_INFO,
+} from "@/lib/skillMastery";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
   AURA_ELEMENT_LABELS,
@@ -471,7 +475,87 @@ function SkillDetailModal({
             );
           })}
         </ul>
+
+        <MasteryUnlockFooter skillType={card.type} />
       </div>
+    </div>
+  );
+}
+
+function MasteryUnlockFooter({ skillType }: { skillType: SkillUpgradeType }) {
+  const skills = useGameStore((s) => s.skills);
+  const skillMasteryUnlocked = useGameStore((s) => s.skillMasteryUnlocked);
+  const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
+  const ascensionShards = useGameStore((s) => s.ascensionShards);
+  const canUnlockSkillMastery = useGameStore((s) => s.canUnlockSkillMastery);
+  const unlockSkillMastery = useGameStore((s) => s.unlockSkillMastery);
+  const getSkillMasteryUnlockCost = useGameStore(
+    (s) => s.getSkillMasteryUnlockCost,
+  );
+  const cost = getSkillMasteryUnlockCost();
+  const allMaxed = areAllSkillStatsMaxed(skills, skillType);
+  const unlocked = skillMasteryUnlocked[skillType];
+  const canBuy = canUnlockSkillMastery(skillType);
+  const info = SKILL_MASTERY_CARD_INFO[skillType];
+
+  if (!allMaxed && !unlocked) return null;
+
+  const buy = async () => {
+    if (!unlockSkillMastery(skillType)) return;
+    await syncWithDB();
+  };
+
+  return (
+    <div className="shrink-0 border-t border-amber-400/30 bg-amber-500/[0.07] px-4 py-3">
+      <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-200">
+        <Crown className="h-3.5 w-3.5" aria-hidden />
+        Maestria Suprema
+      </p>
+      {unlocked ? (
+        <p className="mt-1.5 text-[12px] leading-snug text-amber-100/90">
+          Liberada: <span className="font-semibold">{info.title}</span>. Na run,
+          com a skill no Nv.5+, a carta lendária suprema pode surgir na roleta.
+        </p>
+      ) : (
+        <>
+          <p className="mt-1.5 text-[12px] leading-snug text-zinc-400">
+            {info.title} — {info.description}
+          </p>
+          <button
+            type="button"
+            disabled={!canBuy}
+            onClick={() => void buy()}
+            className={`mt-2.5 inline-flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-lg border px-2.5 py-2 text-xs font-bold transition ${
+              canBuy
+                ? "border-amber-400/50 bg-amber-500/25 text-amber-50 hover:bg-amber-500/40"
+                : "cursor-not-allowed border-zinc-700/60 bg-zinc-800/50 text-zinc-500"
+            }`}
+          >
+            <span>Desbloquear Maestria</span>
+            <span
+              className={`inline-flex items-center gap-1 tabular-nums ${
+                purpleDiamonds >= cost.purpleDiamonds
+                  ? "text-violet-200"
+                  : "text-rose-300"
+              }`}
+            >
+              <Gem className="h-3.5 w-3.5" aria-hidden />
+              {cost.purpleDiamonds}
+            </span>
+            <span className="text-zinc-500">+</span>
+            <span
+              className={`inline-flex items-center gap-1 tabular-nums ${
+                ascensionShards >= cost.ascensionShards
+                  ? "text-amber-200"
+                  : "text-rose-300"
+              }`}
+            >
+              <Crown className="h-3.5 w-3.5" aria-hidden />
+              {cost.ascensionShards} shards
+            </span>
+          </button>
+        </>
+      )}
     </div>
   );
 }

@@ -49,6 +49,27 @@ import {
   type MatchSkillBonuses,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
+import {
+  DEFAULT_MATCH_SKILL_MASTERY,
+  MASTERY_FIRE_SHARE_RADIUS,
+  MASTERY_FIRE_SHARE_RATIO,
+  MASTERY_FISSURE_RADIUS,
+  MASTERY_FISSURE_SLOW,
+  MASTERY_FISSURE_VULN,
+  MASTERY_ICE_SHATTER_DAMAGE_RATIO,
+  MASTERY_ICE_SHATTER_FREEZE_MS,
+  MASTERY_ICE_SHATTER_RADIUS,
+  MASTERY_RICOCHET_MAX_TARGETS,
+  MASTERY_TESLA_DPS_RATIO,
+  MASTERY_TESLA_DURATION_MS,
+  MASTERY_TESLA_RADIUS,
+  MASTERY_VENDAVAL_IMPLOSION_DAMAGE_RATIO,
+  MASTERY_VENDAVAL_IMPLOSION_RADIUS,
+  MASTERY_VENDAVAL_KNOCKBACK,
+  MASTERY_VENDAVAL_STUN_MS,
+  type MasteryGroundZone,
+  type MatchSkillMasteryData,
+} from "@/lib/skillMastery";
 import { LIGHTNING_STUN_MS } from "@/src/game/entities/Enemy";
 
 export type MatchBuffsInput = {
@@ -147,6 +168,10 @@ export type CombatSystemInput = {
   lightningProjectiles?: LightningProjectile[];
   /** Clones de sombra ativos. */
   shadowClones?: ShadowCloneState[];
+  /** Maestrias supremas ativas nesta run. */
+  matchSkillMastery?: MatchSkillMasteryData;
+  /** Zonas de chão da Maestria. */
+  masteryGroundZones?: MasteryGroundZone[];
 };
 
 export type CombatSystemResult = {
@@ -183,6 +208,8 @@ export type CombatSystemResult = {
   skillVfx: SkillVfxEffect[];
   /** Clones de sombra após o tick. */
   shadowClones: ShadowCloneState[];
+  /** Zonas de Maestria após o tick. */
+  masteryGroundZones: MasteryGroundZone[];
 };
 
 const DEFAULT_KNOCKBACK = 5;
@@ -303,9 +330,15 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     activeSkillPulse: inputPulse = createActiveSkillPulseState(),
     lightningProjectiles: inputLightning = [],
     shadowClones: inputShadowClones = [],
+    matchSkillMastery: inputMastery = DEFAULT_MATCH_SKILL_MASTERY,
+    masteryGroundZones: inputMasteryZones = [],
   } = input;
 
   let playerRotation = inputRotation;
+  const mastery = inputMastery;
+  let masteryGroundZones: MasteryGroundZone[] = inputMasteryZones.filter(
+    (z) => z.kind === "fissure" || z.expiresAt > now,
+  );
 
   const gameState = useGameStore.getState();
   const matchSkills = inputMatchSkills ?? { ...DEFAULT_MATCH_SKILLS };
@@ -329,13 +362,19 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     prestigeMul;
 
   const metaSkillRegenLevel = gameState.metaSkillRegenLevel;
-  // Ricochete: hits granulares até teto rígido; dano cai por salto
-  const maxBounces = Math.min(
-    RICOCHET_MAX_TARGETS + Math.max(0, ricochetBonus.extraHits),
-    2 +
-      Math.round(skills.ricochet.hits * prestigeMul) +
-      Math.max(0, ricochetBonus.extraHits),
-  );
+  // Ricochete: hits granulares até teto rígido; dano cai por salto (exceto Maestria)
+  const ricochetCap = mastery.ricochet
+    ? MASTERY_RICOCHET_MAX_TARGETS
+    : RICOCHET_MAX_TARGETS;
+  const ricochetFalloff = mastery.ricochet ? 1 : RICOCHET_BOUNCE_FALLOFF;
+  const maxBounces = mastery.ricochet
+    ? MASTERY_RICOCHET_MAX_TARGETS
+    : Math.min(
+        ricochetCap + Math.max(0, ricochetBonus.extraHits),
+        2 +
+          Math.round(skills.ricochet.hits * prestigeMul) +
+          Math.max(0, ricochetBonus.extraHits),
+      );
   const bounceDamageMult =
     (0.6 + skills.ricochet.damage * 0.15) *
     Math.min(1.5, prestigeMul) *
@@ -405,6 +444,23 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
     if (enemy.hasStatus("freeze", now)) {
       milestoneEvents.push({ type: "kill_with_ice", amount: 1 });
+      // Maestria Gelo: estilhaço glacial
+      if (mastery.ice) {
+        const shatterDmg =
+          baseDamage *
+          matchBuffs.damageMultiplier *
+          MASTERY_ICE_SHATTER_DAMAGE_RATIO;
+        for (const other of enemies) {
+          if (other.isDead || other.id === enemy.id) continue;
+          const dist = Math.hypot(other.x - enemy.x, other.y - enemy.y);
+          if (dist > MASTERY_ICE_SHATTER_RADIUS + other.radius) continue;
+          other.takeDamage(shatterDmg, now);
+          other.applyStatus("freeze", now + MASTERY_ICE_SHATTER_FREEZE_MS, {
+            vulnerable: true,
+            damageTakenMultiplier: 1.3,
+          });
+        }
+      }
     }
     if (enemy.hasStatus("shock", now)) {
       milestoneEvents.push({ type: "kill_with_shock", amount: 1 });
@@ -449,6 +505,43 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     milestoneEvents.push({ type: "skill_vendaval_cast", amount: 1 });
   }
 
+  // Maestria Pedra: fissura permanente no chão
+  if (mastery.stone && activeSkills.pulseState.stonePulseAt === now) {
+    masteryGroundZones.push({
+      id: crypto.randomUUID(),
+      kind: "fissure",
+      x: player.x,
+      y: player.y,
+      radius: MASTERY_FISSURE_RADIUS,
+      expiresAt: Number.POSITIVE_INFINITY,
+    });
+  }
+
+  // Maestria Vendaval: implosão no fim do puxão
+  if (mastery.vendaval) {
+    const prevUntil = inputPulse.vendavalActiveUntil;
+    const prevMs = Math.max(0, dt) * 1000;
+    if (prevUntil > 0 && now >= prevUntil && now - prevMs < prevUntil) {
+      const implosionDmg =
+        baseDamage *
+        matchBuffs.damageMultiplier *
+        skillDamageMult *
+        MASTERY_VENDAVAL_IMPLOSION_DAMAGE_RATIO;
+      for (const enemy of enemies) {
+        if (enemy.isDead) continue;
+        const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+        if (dist > MASTERY_VENDAVAL_IMPLOSION_RADIUS + enemy.radius) continue;
+        enemy.takeDamage(implosionDmg, now);
+        enemy.applyStun(now, MASTERY_VENDAVAL_STUN_MS);
+        enemy.applyKnockback(
+          enemy.x - player.x,
+          enemy.y - player.y,
+          MASTERY_VENDAVAL_KNOCKBACK,
+        );
+      }
+    }
+  }
+
   // Aura: área contínua com sinergia das skills ativas na run
   const aura = runAuraSystem({
     enemies,
@@ -465,6 +558,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     pulseState: activeSkills.pulseState,
     prestigeMul,
     auraPrimaryElement: gameState.auraPrimaryElement,
+    masteryAbsoluteDomain: mastery.aura,
   });
   skillVfx.push(...aura.newSkillVfx);
   if (aura.questFreeze > 0) {
@@ -593,6 +687,22 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       });
     }
 
+    if (mastery.lightning) {
+      masteryGroundZones.push({
+        id: crypto.randomUUID(),
+        kind: "tesla",
+        x: blastX,
+        y: blastY,
+        radius: MASTERY_TESLA_RADIUS,
+        expiresAt: now + MASTERY_TESLA_DURATION_MS,
+        dps:
+          baseDamage *
+          matchBuffs.damageMultiplier *
+          skillDamageMult *
+          MASTERY_TESLA_DPS_RATIO,
+      });
+    }
+
     if (shocked > 0) {
       questEvents.push({ type: "inflict_shock", amount: shocked });
     }
@@ -662,6 +772,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     prestigeMul,
     knockbackPower,
     punchDurationMs,
+    masteryMirroredArmy: mastery.shadow,
   });
   let pulseState = shadow.pulseState;
   let shadowClones = shadow.clones;
@@ -1159,7 +1270,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             // bounceIndex 1 = 2º alvo (85%), 2 = 3º (~72%), …
             const bounceIndex = b + 1;
             const currentBounceDamage =
-              baseBounceDamage * Math.pow(RICOCHET_BOUNCE_FALLOFF, bounceIndex);
+              baseBounceDamage * Math.pow(ricochetFalloff, bounceIndex);
             const displayBounce = Math.max(
               1,
               Math.round(currentBounceDamage),
@@ -1274,6 +1385,51 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   living = living.filter((e) => !e.isDead);
 
+  // Maestria Fogo: compartilha 10% do DoT com adjacentes
+  if (mastery.fire && dt > 0) {
+    for (const e of living) {
+      if (!e.isBurning || e.burnDamage <= 0) continue;
+      const share = e.burnDamage * dt * MASTERY_FIRE_SHARE_RATIO;
+      if (share <= 0) continue;
+      for (const other of living) {
+        if (other.id === e.id || other.isDead) continue;
+        const dist = Math.hypot(other.x - e.x, other.y - e.y);
+        if (dist > MASTERY_FIRE_SHARE_RADIUS + other.radius) continue;
+        other.hp -= share * other.getDamageTakenMultiplier(now);
+      }
+    }
+  }
+
+  // Zonas de Maestria (Tesla DoT + fissura slow/vuln)
+  if (masteryGroundZones.length > 0 && dt > 0) {
+    for (const zone of masteryGroundZones) {
+      for (const enemy of living) {
+        if (enemy.isDead) continue;
+        const dist = Math.hypot(enemy.x - zone.x, enemy.y - zone.y);
+        if (dist > zone.radius + enemy.radius) continue;
+        if (zone.kind === "tesla" && zone.dps) {
+          enemy.hp -= zone.dps * dt * enemy.getDamageTakenMultiplier(now);
+        } else if (zone.kind === "fissure") {
+          enemy.applyStatus("quake", now + 400, {
+            slowAmount: MASTERY_FISSURE_SLOW,
+            damageTakenMultiplier: MASTERY_FISSURE_VULN,
+            attackDamageMul: 0.7,
+            attackSpeedMul: 0.7,
+          });
+        }
+      }
+    }
+    living = living.filter((e) => {
+      if (!e.isDead) return true;
+      pushKill(e);
+      return false;
+    });
+  }
+
+  masteryGroundZones = masteryGroundZones.filter(
+    (z) => z.kind === "fissure" || z.expiresAt > now,
+  );
+
   return {
     player,
     enemies: living,
@@ -1294,5 +1450,6 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     lightningProjectiles,
     skillVfx,
     shadowClones,
+    masteryGroundZones,
   };
 }

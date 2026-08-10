@@ -27,6 +27,13 @@ import {
   type UpgradeType,
 } from "@/lib/matchUpgrades";
 import {
+  DEFAULT_MATCH_SKILL_MASTERY,
+  isSkillMasteryUpgradeType,
+  skillMasteryUpgradeToKey,
+  type MasteryGroundZone,
+  type MatchSkillMasteryData,
+} from "@/lib/skillMastery";
+import {
   getExtraActiveRunSkillSlots,
   getSkillGoldIncomeMultiplier,
 } from "@/lib/skillTree";
@@ -231,6 +238,10 @@ export type ArenaStoreState = {
    * Controla quais cartas novas podem aparecer no level-up.
    */
   activeRunSkills: SpecialSkillKey[];
+  /** Maestrias supremas ativadas nesta run (cartas lendárias). */
+  matchSkillMastery: MatchSkillMasteryData;
+  /** Zonas de chão da Maestria (Tesla / fissuras). */
+  masteryGroundZones: MasteryGroundZone[];
   /** Timers / janelas ativas de Gelo / Raio / Ricochete. */
   activeSkillPulse: ActiveSkillPulseState;
   /** Projéteis elétricos do Raio. */
@@ -423,6 +434,7 @@ function rollLevelUpOptions(
   activeRunSkills: SpecialSkillKey[],
   timeAlive: number,
   matchLevel: number,
+  matchSkillMastery: MatchSkillMasteryData,
 ): MatchUpgrade[] {
   const game = useGameStore.getState();
   const stats = game.getEffectiveStats();
@@ -443,6 +455,8 @@ function rollLevelUpOptions(
     ),
     timeAlive,
     matchLevel,
+    skillMasteryUnlocked: game.skillMasteryUnlocked,
+    matchSkillMastery,
   });
 }
 
@@ -474,6 +488,7 @@ function enterLevelUp(
       state.activeRunSkills,
       state.timeAlive,
       matchLevel,
+      state.matchSkillMastery,
     ),
   });
 }
@@ -503,6 +518,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   matchSkills: { ...DEFAULT_MATCH_SKILLS },
   matchSkillBonuses: createEmptyMatchSkillBonuses(),
   activeRunSkills: [],
+  matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
+  masteryGroundZones: [],
   activeSkillPulse: createActiveSkillPulseState(),
   lightningProjectiles: [],
   skillVfxEffects: [],
@@ -571,6 +588,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
+      matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
+      masteryGroundZones: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
@@ -715,6 +734,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
+      matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
+      masteryGroundZones: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],
@@ -931,7 +952,20 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   },
 
   selectUpgrade: (upgradeType, value, skillBonus) => {
-    if (isSpecialSkillType(upgradeType)) {
+    if (isSkillMasteryUpgradeType(upgradeType)) {
+      const key = skillMasteryUpgradeToKey(upgradeType);
+      set((s) => ({
+        matchSkillMastery: {
+          ...s.matchSkillMastery,
+          [key]: true,
+        },
+        gameState: "playing" as const,
+        levelUpOptions: [],
+        isPausedForLevelUp: false,
+        levelUpTimeRemaining: 0,
+        levelUpDeadlineAt: null,
+      }));
+    } else if (isSpecialSkillType(upgradeType)) {
       set((s) => {
         const prevLevel = s.matchSkills[upgradeType] ?? 0;
         const alreadyTracked = s.activeRunSkills.includes(upgradeType);
@@ -1311,6 +1345,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
+      matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
+      masteryGroundZones: [],
       activeSkillPulse: createActiveSkillPulseState(),
       lightningProjectiles: [],
       skillVfxEffects: [],

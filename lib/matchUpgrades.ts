@@ -6,6 +6,17 @@ import type {
   UnlockedSkillsData,
 } from "@/db/schema";
 import { getSkillMetaCap } from "@/db/schema";
+import {
+  SKILL_MASTERY_CARD_CHANCE,
+  SKILL_MASTERY_CARD_INFO,
+  SKILL_MASTERY_KEYS,
+  SKILL_MASTERY_MATCH_LEVEL_REQ,
+  isSkillMasteryUpgradeType,
+  toSkillMasteryUpgradeType,
+  type MatchSkillMasteryData,
+  type SkillMasteryUnlockedData,
+  type SkillMasteryUpgradeType,
+} from "@/lib/skillMastery";
 
 /** Para de oferecer cartas de velocidade abaixo deste cooldown efetivo (ms). */
 export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
@@ -31,7 +42,8 @@ export type UpgradeCategory =
   | "critDamage"
   | "critChance"
   | "skillDamage"
-  | SpecialSkillKey;
+  | SpecialSkillKey
+  | SkillMasteryUpgradeType;
 
 export type UpgradeType =
   | "attackSpeed"
@@ -39,7 +51,8 @@ export type UpgradeType =
   | "critDamageMultiplier"
   | "critChanceBonus"
   | "skillDamageMultiplier"
-  | SpecialSkillKey;
+  | SpecialSkillKey
+  | SkillMasteryUpgradeType;
 
 export type MatchUpgrade = {
   id: string;
@@ -561,6 +574,10 @@ export type GenerateUpgradeOptionsContext = {
   timeAlive?: number;
   /** Nível atual da arena — escala pity de raridade. */
   matchLevel?: number;
+  /** Maestrias liberadas no meta. */
+  skillMasteryUnlocked?: SkillMasteryUnlockedData;
+  /** Maestrias já ativadas nesta run. */
+  matchSkillMastery?: MatchSkillMasteryData;
 };
 
 /** Base de habilidades especiais distintas por partida (sem talentos). */
@@ -693,6 +710,34 @@ function createSpecialUpgrade(
   };
 }
 
+function createMasteryUpgrade(key: SpecialSkillKey): MatchUpgrade {
+  const info = SKILL_MASTERY_CARD_INFO[key];
+  const type = toSkillMasteryUpgradeType(key);
+  return {
+    id: crypto.randomUUID(),
+    type,
+    category: type,
+    value: 1,
+    rarity: "legendary",
+    label: info.label,
+    description: `${info.title} — ${info.description}`,
+    effectLines: info.effectLines,
+  };
+}
+
+/** Maestrias elegíveis para a roleta (meta + Lv.5 in-run + ainda não ativada). */
+export function getEligibleSkillMasteries(
+  ctx?: GenerateUpgradeOptionsContext,
+): SpecialSkillKey[] {
+  if (!ctx?.skillMasteryUnlocked || !ctx.matchSkills) return [];
+  const active = ctx.matchSkillMastery;
+  return SKILL_MASTERY_KEYS.filter((key) => {
+    if (!ctx.skillMasteryUnlocked?.[key]) return false;
+    if (active?.[key]) return false;
+    return (ctx.matchSkills?.[key] ?? 0) >= SKILL_MASTERY_MATCH_LEVEL_REQ;
+  });
+}
+
 export const RARITY_LABEL: Record<Rarity, string> = {
   common: "Comum",
   uncommon: "Incomum",
@@ -797,6 +842,9 @@ function canAcceptUpgradeCard(
   if (isSpecialSkillType(candidate.type)) {
     return !selected.some((c) => c.type === candidate.type);
   }
+  if (isSkillMasteryUpgradeType(candidate.type)) {
+    return !selected.some((c) => c.type === candidate.type);
+  }
 
   const sameArea = selected.filter((c) => c.category === candidate.category);
   if (sameArea.length >= MAX_SAME_CATEGORY_PER_PACK) return false;
@@ -853,6 +901,7 @@ export function generateUpgradeOptions(
 
   const selectedCards: MatchUpgrade[] = [];
   let specialPool = [...eligibleSpecials];
+  let masteryPool = getEligibleSkillMasteries(ctx);
   const baseStatPool = getEligibleStatCategories({
     ...ctx,
     hasActiveSkill: activeRunSkills.length > 0,
@@ -870,9 +919,14 @@ export function generateUpgradeOptions(
         : undefined;
     const rarity = rollRarity(luckBonus, sameRarityTwice);
 
-    const availableSpecials = specialPool.filter(
+    const availableMasteries = masteryPool.filter(
       (key) =>
-        !selectedCards.some((c) => c.type === key),
+        !selectedCards.some(
+          (c) => c.type === toSkillMasteryUpgradeType(key),
+        ),
+    );
+    const availableSpecials = specialPool.filter(
+      (key) => !selectedCards.some((c) => c.type === key),
     );
     const availableStats = baseStatPool.filter((category) => {
       const sameArea = selectedCards.filter((c) => c.category === category);
@@ -883,11 +937,19 @@ export function generateUpgradeOptions(
 
     let picked: MatchUpgrade | null = null;
 
+    const canRollMastery =
+      availableMasteries.length > 0 &&
+      Math.random() < SKILL_MASTERY_CARD_CHANCE;
     const canRollSpecial =
       availableSpecials.length > 0 &&
       Math.random() < SPECIAL_SKILL_CARD_CHANCE;
 
-    if (canRollSpecial) {
+    if (canRollMastery) {
+      const idx = Math.floor(Math.random() * availableMasteries.length);
+      const key = availableMasteries[idx]!;
+      picked = createMasteryUpgrade(key);
+      masteryPool = masteryPool.filter((k) => k !== key);
+    } else if (canRollSpecial) {
       const idx = Math.floor(Math.random() * availableSpecials.length);
       const key = availableSpecials[idx]!;
       const nextLevel = (matchSkills?.[key] ?? 0) + 1;
@@ -897,6 +959,11 @@ export function generateUpgradeOptions(
       const idx = Math.floor(Math.random() * availableStats.length);
       const category = availableStats[idx]!;
       picked = createStatUpgrade(category, rarity);
+    } else if (availableMasteries.length > 0) {
+      const idx = Math.floor(Math.random() * availableMasteries.length);
+      const key = availableMasteries[idx]!;
+      picked = createMasteryUpgrade(key);
+      masteryPool = masteryPool.filter((k) => k !== key);
     } else if (availableSpecials.length > 0) {
       // Fallback: só restam skills especiais (stats indisponíveis nesta raridade)
       const idx = Math.floor(Math.random() * availableSpecials.length);

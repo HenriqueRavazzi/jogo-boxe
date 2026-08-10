@@ -249,6 +249,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         activeSkillPulse: arena.activeSkillPulse,
         lightningProjectiles: arena.lightningProjectiles ?? [],
         shadowClones: arena.shadowClones ?? [],
+        matchSkillMastery: arena.matchSkillMastery,
+        masteryGroundZones: arena.masteryGroundZones ?? [],
       });
 
       const livingEnemies = combat.enemies
@@ -507,6 +509,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         lightningProjectiles: combat.lightningProjectiles,
         skillVfxEffects,
         shadowClones: combat.shadowClones,
+        masteryGroundZones: combat.masteryGroundZones,
       });
 
       if (spawn.hordeBossInvaded) {

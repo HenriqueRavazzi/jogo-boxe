@@ -289,6 +289,11 @@ export type SaveData = {
   /** Skills liberadas na base (Diamantes Normais) para a roleta in-game. */
   unlockedSkills: UnlockedSkillsData;
   /**
+   * Maestria Suprema liberada no meta (após maxear attrs Lv.20).
+   * Persiste na Ascensão — a carta lendária ainda exige Lv.5 in-run.
+   */
+  skillMasteryUnlocked: UnlockedSkillsData;
+  /**
    * Atributo principal da Aura (skill liberada).
    * Os demais atributos liberados atuam com 50% do efeito.
    */

@@ -20,6 +20,13 @@ import {
   isSkillUpgradeType,
 } from "@/db/schema";
 import {
+  areAllSkillStatsMaxed,
+  normalizeSkillMasteryUnlocked,
+  SKILL_MASTERY_PURPLE_COST,
+  SKILL_MASTERY_SHARD_COST,
+  type SkillMasteryUnlockedData,
+} from "@/lib/skillMastery";
+import {
   listUnlockedAuraElements,
   resolveAuraPrimaryElement,
 } from "@/src/game/systems/AuraSystem";
@@ -202,6 +209,8 @@ export type GameStoreState = {
   skills: SkillsData;
   /** Desbloqueio permanente na base (Diamantes Normais). */
   unlockedSkills: UnlockedSkillsData;
+  /** Maestria Suprema liberada (persiste na Ascensão). */
+  skillMasteryUnlocked: SkillMasteryUnlockedData;
   /** Atributo principal da Aura (skills liberadas → 100%; demais 50%). */
   auraPrimaryElement: AuraElementKey | null;
   /** Árvore de atributos permanentes (Diamantes Normais). */
@@ -279,6 +288,16 @@ export type GameStoreState = {
   unlockSkill: (nodeId: SkillNodeId, cost: number) => boolean;
   /** Desbloqueia skill avançada na base (Diamantes Normais / gems). */
   unlockAdvancedSkill: (skillType: SkillUpgradeType) => boolean;
+  /**
+   * Libera Maestria Suprema (attrs Lv.20 + diamantes roxos + shards).
+   * Persiste na Ascensão.
+   */
+  unlockSkillMastery: (skillType: SkillUpgradeType) => boolean;
+  canUnlockSkillMastery: (skillType: SkillUpgradeType) => boolean;
+  getSkillMasteryUnlockCost: () => {
+    purpleDiamonds: number;
+    ascensionShards: number;
+  };
   /** Define o atributo principal da Aura (deve estar liberado). */
   setAuraPrimaryElement: (element: AuraElementKey) => boolean;
   getAdvancedSkillUnlockRequirements: (
@@ -1067,6 +1086,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   skillTree: { ...DEFAULT_SKILL_TREE },
   skills: normalizeSkills(DEFAULT_SKILLS_DATA),
   unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+  skillMasteryUnlocked: { ...DEFAULT_UNLOCKED_SKILLS },
   auraPrimaryElement: defaults.auraPrimaryElement ?? null,
   metaDamageLevel: defaults.metaDamageLevel,
   metaKnockbackLevel: defaults.metaKnockbackLevel,
@@ -1145,6 +1165,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
       skills,
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
+      skillMasteryUnlocked: normalizeSkillMasteryUnlocked(
+        n.skillMasteryUnlocked,
+      ),
       auraPrimaryElement: resolveAuraPrimaryElement(
         n.auraPrimaryElement,
         { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
@@ -1227,6 +1250,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...DEFAULT_SKILL_TREE },
       skills: normalizeSkills(DEFAULT_SKILLS_DATA),
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+      skillMasteryUnlocked: { ...DEFAULT_UNLOCKED_SKILLS },
       auraPrimaryElement: null,
       ...DEFAULT_META_TREE,
     }),
@@ -1261,6 +1285,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...s.skillTree },
       skills,
       unlockedSkills: { ...s.unlockedSkills },
+      skillMasteryUnlocked: normalizeSkillMasteryUnlocked(
+        s.skillMasteryUnlocked,
+      ),
       auraPrimaryElement: resolveAuraPrimaryElement(
         s.auraPrimaryElement,
         s.unlockedSkills,
@@ -1654,6 +1681,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       // Upgrades de diamante (normais) permanentes — não resetam
       // xpBonusLevel, skillTree e meta tree são preservados
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+      // Maestria Suprema é permanente (paga com shards) — não reseta
+      skillMasteryUnlocked: normalizeSkillMasteryUnlocked(
+        s.skillMasteryUnlocked,
+      ),
       auraPrimaryElement: null,
       skills: {
         ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
@@ -1840,6 +1871,39 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       };
     });
 
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return true;
+  },
+
+  getSkillMasteryUnlockCost: () => ({
+    purpleDiamonds: SKILL_MASTERY_PURPLE_COST,
+    ascensionShards: SKILL_MASTERY_SHARD_COST,
+  }),
+
+  canUnlockSkillMastery: (skillType) => {
+    if (!isSkillUpgradeType(skillType)) return false;
+    const s = get();
+    if (!s.unlockedSkills[skillType]) return false;
+    if (s.skillMasteryUnlocked[skillType]) return false;
+    if (!areAllSkillStatsMaxed(s.skills, skillType)) return false;
+    return (
+      s.purpleDiamonds >= SKILL_MASTERY_PURPLE_COST &&
+      s.ascensionShards >= SKILL_MASTERY_SHARD_COST
+    );
+  },
+
+  unlockSkillMastery: (skillType) => {
+    if (!get().canUnlockSkillMastery(skillType)) return false;
+    set((state) => ({
+      purpleDiamonds: state.purpleDiamonds - SKILL_MASTERY_PURPLE_COST,
+      ascensionShards: state.ascensionShards - SKILL_MASTERY_SHARD_COST,
+      skillMasteryUnlocked: {
+        ...state.skillMasteryUnlocked,
+        [skillType]: true,
+      },
+    }));
     void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
       void syncWithDB();
     });

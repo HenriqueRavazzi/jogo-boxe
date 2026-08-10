@@ -77,17 +77,20 @@ function UpgradeCard({
   onSelect: () => void;
 }) {
   const styles = RARITY_STYLES[card.rarity];
+  const isMastery = card.type.startsWith("mastery_");
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`flex min-h-[11rem] flex-col items-center justify-center gap-2 rounded-2xl border-2 px-4 py-6 text-center shadow-lg transition hover:scale-[1.03] hover:shadow-xl ${styles.border} ${styles.bg} ${styles.glow}`}
+      className={`flex min-h-[11rem] flex-col items-center justify-center gap-2 rounded-2xl border-2 px-4 py-6 text-center shadow-lg transition hover:scale-[1.03] hover:shadow-xl ${styles.border} ${styles.bg} ${styles.glow} ${
+        isMastery ? "ring-2 ring-amber-300/80 shadow-amber-400/40" : ""
+      }`}
     >
       <span
         className={`text-[10px] font-bold uppercase tracking-[0.2em] ${styles.text}`}
       >
-        {RARITY_LABEL[card.rarity]}
+        {isMastery ? "Supremo" : RARITY_LABEL[card.rarity]}
       </span>
       <span className="text-xl font-black text-zinc-50">{card.label}</span>
       {card.effectLines && card.effectLines.length > 0 ? (

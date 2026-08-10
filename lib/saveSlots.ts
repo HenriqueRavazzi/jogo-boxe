@@ -34,6 +34,7 @@ import {
   type SkillUpgradeType,
   type UnlockedSkillsData,
 } from "@/db/schema";
+import { normalizeSkillMasteryUnlocked } from "@/lib/skillMastery";
 import { resolveAuraPrimaryElement } from "@/src/game/systems/AuraSystem";
 
 function isFlatLegacySkills(
@@ -218,6 +219,7 @@ export function createDefaultSaveData(): SaveData {
     skillTree: { ...DEFAULT_SKILL_TREE },
     skills: cloneSkills(DEFAULT_SKILLS_DATA),
     unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+    skillMasteryUnlocked: { ...DEFAULT_UNLOCKED_SKILLS },
     auraPrimaryElement: null,
     ...DEFAULT_META_TREE,
     prestigeLevel: 0,
@@ -317,6 +319,9 @@ export function normalizeSaveData(
     skillTree,
     skills,
     unlockedSkills,
+    skillMasteryUnlocked: normalizeSkillMasteryUnlocked(
+      (data as SaveData).skillMasteryUnlocked,
+    ),
     auraPrimaryElement: (() => {
       const raw = (data as SaveData).auraPrimaryElement;
       if (typeof raw === "string" && isAuraElementKey(raw) && unlockedSkills[raw]) {
