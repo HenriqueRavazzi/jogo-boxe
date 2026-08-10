@@ -13,11 +13,14 @@ export type AdvancedSkillUnlockRequirements = {
   requiredBosses: number;
 };
 
+/**
+ * Ordem de progressão:
+ * gelo → raio → fogo → pedra → shadow clone → ricochete → aura
+ */
 export const ADVANCED_SKILL_UNLOCK: Record<
   SkillUpgradeType,
   AdvancedSkillUnlockRequirements
 > = {
-  /** Mais fácil — base da progressão ×4 ouro/diamantes e ×6 mobs por tier. */
   ice: {
     goldCost: 5_000,
     diamondCost: 15,
@@ -36,35 +39,43 @@ export const ADVANCED_SKILL_UNLOCK: Record<
     requiredMobs: 9_000,
     requiredBosses: 6,
   },
-  /** Sinergia elemental — exige progressão intermediária. */
-  aura: {
+  stone: {
     goldCost: 160_000,
     diamondCost: 480,
     requiredMobs: 20_000,
     requiredBosses: 8,
   },
-  /** Clone de sombra — entre aura e ricochete. */
   shadow: {
     goldCost: 240_000,
     diamondCost: 720,
     requiredMobs: 35_000,
     requiredBosses: 9,
   },
-  /** Terremoto — entre shadow e ricochete. */
-  stone: {
-    goldCost: 280_000,
-    diamondCost: 840,
-    requiredMobs: 44_000,
-    requiredBosses: 9,
-  },
-  /** Mais difícil */
   ricochet: {
     goldCost: 320_000,
     diamondCost: 960,
     requiredMobs: 54_000,
     requiredBosses: 10,
   },
+  /** Mais difícil — sinergia de todas as skills liberadas. */
+  aura: {
+    goldCost: 480_000,
+    diamondCost: 1_440,
+    requiredMobs: 80_000,
+    requiredBosses: 12,
+  },
 };
+
+/** Ordem canônica de skills avançadas (UI / progressão). */
+export const ADVANCED_SKILL_ORDER: readonly SkillUpgradeType[] = [
+  "ice",
+  "lightning",
+  "fire",
+  "stone",
+  "shadow",
+  "ricochet",
+  "aura",
+] as const;
 
 export function getAdvancedSkillUnlockRequirements(
   skillType: SkillUpgradeType,

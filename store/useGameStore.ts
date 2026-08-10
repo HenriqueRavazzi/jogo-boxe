@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type {
+  AuraElementKey,
   MetaTreeUpgradeType,
   SaveData,
   SkillsData,
@@ -12,11 +13,16 @@ import {
   DEFAULT_META_TREE,
   DEFAULT_SKILLS_DATA,
   DEFAULT_UNLOCKED_SKILLS,
+  isAuraElementKey,
   MAX_PURPLE_SKILL_STAT_LEVEL,
   SKILL_STAT_KEYS,
   isSkillStatKey,
   isSkillUpgradeType,
 } from "@/db/schema";
+import {
+  listUnlockedAuraElements,
+  resolveAuraPrimaryElement,
+} from "@/src/game/systems/AuraSystem";
 import {
   calcAscensionShardsGained,
   getAscensionPassiveCostAt,
@@ -195,6 +201,8 @@ export type GameStoreState = {
   skills: SkillsData;
   /** Desbloqueio permanente na base (Diamantes Normais). */
   unlockedSkills: UnlockedSkillsData;
+  /** Atributo principal da Aura (skills liberadas → 100%; demais 50%). */
+  auraPrimaryElement: AuraElementKey | null;
   /** Árvore de atributos permanentes (Diamantes Normais). */
   metaDamageLevel: number;
   metaKnockbackLevel: number;
@@ -270,6 +278,8 @@ export type GameStoreState = {
   unlockSkill: (nodeId: SkillNodeId, cost: number) => boolean;
   /** Desbloqueia skill avançada na base (Diamantes Normais / gems). */
   unlockAdvancedSkill: (skillType: SkillUpgradeType) => boolean;
+  /** Define o atributo principal da Aura (deve estar liberado). */
+  setAuraPrimaryElement: (element: AuraElementKey) => boolean;
   getAdvancedSkillUnlockRequirements: (
     skillType: SkillUpgradeType,
   ) => AdvancedSkillUnlockRequirements;
@@ -1030,6 +1040,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   skillTree: { ...DEFAULT_SKILL_TREE },
   skills: normalizeSkills(DEFAULT_SKILLS_DATA),
   unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+  auraPrimaryElement: defaults.auraPrimaryElement ?? null,
   metaDamageLevel: defaults.metaDamageLevel,
   metaKnockbackLevel: defaults.metaKnockbackLevel,
   metaHpLevel: defaults.metaHpLevel,
@@ -1107,6 +1118,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...DEFAULT_SKILL_TREE, ...n.skillTree },
       skills,
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
+      auraPrimaryElement: resolveAuraPrimaryElement(
+        n.auraPrimaryElement,
+        { ...DEFAULT_UNLOCKED_SKILLS, ...n.unlockedSkills },
+      ),
       metaDamageLevel: Math.min(
         MAX_META_DAMAGE_HP_LEVEL,
         Math.max(0, Math.floor(n.metaDamageLevel ?? 0)),
@@ -1185,6 +1200,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...DEFAULT_SKILL_TREE },
       skills: normalizeSkills(DEFAULT_SKILLS_DATA),
       unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+      auraPrimaryElement: null,
       ...DEFAULT_META_TREE,
     }),
 
@@ -1218,6 +1234,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skillTree: { ...s.skillTree },
       skills,
       unlockedSkills: { ...s.unlockedSkills },
+      auraPrimaryElement: resolveAuraPrimaryElement(
+        s.auraPrimaryElement,
+        s.unlockedSkills,
+      ),
       metaDamageLevel: s.metaDamageLevel,
       metaKnockbackLevel: s.metaKnockbackLevel,
       metaHpLevel: s.metaHpLevel,
@@ -1753,12 +1773,43 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return false;
     }
 
-    set((state) => ({
-      gold: state.gold - req.goldCost,
-      gems: state.gems - req.diamondCost,
-      unlockedSkills: { ...state.unlockedSkills, [skillType]: true },
-    }));
+    set((state) => {
+      const unlockedSkills = {
+        ...state.unlockedSkills,
+        [skillType]: true,
+      };
+      let auraPrimaryElement = state.auraPrimaryElement;
+      // Ao liberar Aura (ou 1º elemento), garante um primário válido
+      if (skillType === "aura" || listUnlockedAuraElements(unlockedSkills).length === 1) {
+        auraPrimaryElement = resolveAuraPrimaryElement(
+          auraPrimaryElement,
+          unlockedSkills,
+        );
+      } else if (
+        auraPrimaryElement &&
+        !unlockedSkills[auraPrimaryElement]
+      ) {
+        auraPrimaryElement = resolveAuraPrimaryElement(null, unlockedSkills);
+      }
+      return {
+        gold: state.gold - req.goldCost,
+        gems: state.gems - req.diamondCost,
+        unlockedSkills,
+        auraPrimaryElement,
+      };
+    });
 
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return true;
+  },
+
+  setAuraPrimaryElement: (element) => {
+    if (!isAuraElementKey(element)) return false;
+    if (!get().unlockedSkills[element]) return false;
+    if (!get().unlockedSkills.aura) return false;
+    set({ auraPrimaryElement: element });
     void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
       void syncWithDB();
     });

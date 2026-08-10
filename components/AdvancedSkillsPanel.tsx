@@ -30,10 +30,16 @@ import {
   MAX_PURPLE_SKILL_STAT_LEVEL,
   SKILL_STAT_KEYS,
   getSkillMetaCap,
+  type AuraElementKey,
   type SkillUpgradeType,
 } from "@/db/schema";
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
 import { syncWithDB } from "@/lib/syncWithDB";
+import {
+  AURA_ELEMENT_LABELS,
+  listUnlockedAuraElements,
+  resolveAuraPrimaryElement,
+} from "@/src/game/systems/AuraSystem";
 import {
   getPurpleSkillSpentForLevel,
   getSkillStatLevel,
@@ -104,22 +110,22 @@ const CARDS: SkillCardDef[] = [
     },
   },
   {
-    type: "aura",
-    title: "Aura",
+    type: "stone",
+    title: "Pedra",
     description:
-      "Área no herói. Sinergia: Fogo/Raio/Gelo/Shadow/Pedra/Ricochete (skills liberadas).",
-    icon: <Circle className="h-5 w-5" aria-hidden />,
+      "Terremoto: dano em todos + −50% AS/dano por 10s. Na Aura: inimigos causam −50% dano.",
+    icon: <Mountain className="h-5 w-5" aria-hidden />,
     statActions: {
-      radius: {
-        label: "Aumentar Raio",
-        icon: <Circle className="h-4 w-4" aria-hidden />,
-      },
       damage: {
-        label: "Aumentar Poder",
-        icon: <Flame className="h-4 w-4" aria-hidden />,
+        label: "Aumentar Dano",
+        icon: <Mountain className="h-4 w-4" aria-hidden />,
       },
-      pulse: {
-        label: "Acelerar Pulso",
+      duration: {
+        label: "Aumentar Duração",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+      cooldown: {
+        label: "Reduzir Cooldown",
         icon: <Timer className="h-4 w-4" aria-hidden />,
       },
     },
@@ -134,27 +140,6 @@ const CARDS: SkillCardDef[] = [
       damage: {
         label: "Aumentar Poder",
         icon: <Ghost className="h-4 w-4" aria-hidden />,
-      },
-      duration: {
-        label: "Aumentar Duração",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
-      cooldown: {
-        label: "Reduzir Cooldown",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
-    },
-  },
-  {
-    type: "stone",
-    title: "Pedra",
-    description:
-      "Terremoto: dano em todos + −50% AS/dano por 10s. Na Aura: inimigos causam −50% dano.",
-    icon: <Mountain className="h-5 w-5" aria-hidden />,
-    statActions: {
-      damage: {
-        label: "Aumentar Dano",
-        icon: <Mountain className="h-4 w-4" aria-hidden />,
       },
       duration: {
         label: "Aumentar Duração",
@@ -184,6 +169,27 @@ const CARDS: SkillCardDef[] = [
       hits: {
         label: "Aumentar Ricochetes",
         icon: <Spline className="h-4 w-4" aria-hidden />,
+      },
+    },
+  },
+  {
+    type: "aura",
+    title: "Aura",
+    description:
+      "Área no herói. Escolha 1 atributo principal (100%); os demais liberados entram a 50%.",
+    icon: <Circle className="h-5 w-5" aria-hidden />,
+    statActions: {
+      radius: {
+        label: "Aumentar Raio",
+        icon: <Circle className="h-4 w-4" aria-hidden />,
+      },
+      damage: {
+        label: "Aumentar Poder",
+        icon: <Flame className="h-4 w-4" aria-hidden />,
+      },
+      pulse: {
+        label: "Acelerar Pulso",
+        icon: <Timer className="h-4 w-4" aria-hidden />,
       },
     },
   },
@@ -245,6 +251,9 @@ function SkillDetailModal({
   const titleId = useId();
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const skills = useGameStore((s) => s.skills);
+  const unlockedSkills = useGameStore((s) => s.unlockedSkills);
+  const auraPrimaryElement = useGameStore((s) => s.auraPrimaryElement);
+  const setAuraPrimaryElement = useGameStore((s) => s.setAuraPrimaryElement);
   const prestigeLevel = useGameStore((s) => s.prestigeLevel);
   const upgradeSkillStat = useGameStore((s) => s.upgradeSkillStat);
   const getSkillStatUpgradeCost = useGameStore(
@@ -256,6 +265,12 @@ function SkillDetailModal({
   );
   const statKeys = SKILL_STAT_KEYS[card.type];
   const invested = skillInvested(skills, card.type, prestigeLevel);
+  const auraElements =
+    card.type === "aura" ? listUnlockedAuraElements(unlockedSkills) : [];
+  const auraPrimary =
+    card.type === "aura"
+      ? resolveAuraPrimaryElement(auraPrimaryElement, unlockedSkills)
+      : null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -267,6 +282,11 @@ function SkillDetailModal({
 
   const upgradeStat = async (statKey: string) => {
     if (!upgradeSkillStat(card.type, statKey)) return;
+    await syncWithDB();
+  };
+
+  const pickAuraPrimary = async (element: AuraElementKey) => {
+    if (!setAuraPrimaryElement(element)) return;
     await syncWithDB();
   };
 
@@ -324,6 +344,43 @@ function SkillDetailModal({
             <span>Teto in-run {matchMax}</span>
           </div>
         </header>
+
+        {card.type === "aura" && (
+          <div className="shrink-0 border-b border-white/10 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-200/90">
+              Atributo principal
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-zinc-500">
+              Primário em 100%. Os outros atributos liberados entram a 50%.
+            </p>
+            {auraElements.length === 0 ? (
+              <p className="mt-2 text-[11px] text-zinc-500">
+                Liberte Gelo, Raio, Fogo, Pedra, Shadow ou Ricochete para escolher.
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {auraElements.map((element) => {
+                  const selected = auraPrimary === element;
+                  return (
+                    <button
+                      key={element}
+                      type="button"
+                      onClick={() => void pickAuraPrimary(element)}
+                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                        selected
+                          ? "border-violet-300/70 bg-violet-500/30 text-violet-50"
+                          : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-violet-400/40 hover:bg-violet-500/15"
+                      }`}
+                    >
+                      {AURA_ELEMENT_LABELS[element]}
+                      {selected ? " · 100%" : " · 50%"}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <ul className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3">
           {statKeys.map((statKey) => {
@@ -407,6 +464,7 @@ export function AdvancedSkillsPanel({
   const gold = useGameStore((s) => s.gold);
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const unlockedSkills = useGameStore((s) => s.unlockedSkills);
+  const auraPrimaryElement = useGameStore((s) => s.auraPrimaryElement);
   const skills = useGameStore((s) => s.skills);
   const totalMobsKilled = useGameStore((s) => s.totalMobsKilled);
   const totalBossesKilled = useGameStore((s) => s.totalBossesKilled);
@@ -587,6 +645,19 @@ export function AdvancedSkillsPanel({
                   <p className="mt-0.5 text-[11px] leading-snug text-zinc-400">
                     {card.description}
                   </p>
+                  {card.type === "aura" &&
+                    (() => {
+                      const primary = resolveAuraPrimaryElement(
+                        auraPrimaryElement,
+                        unlockedSkills,
+                      );
+                      if (!primary) return null;
+                      return (
+                        <p className="mt-1 text-[10px] font-semibold text-fuchsia-200/90">
+                          Principal: {AURA_ELEMENT_LABELS[primary]} (100%)
+                        </p>
+                      );
+                    })()}
                 </div>
                 <ChevronRight
                   className="h-4 w-4 shrink-0 text-violet-300/80"

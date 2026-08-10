@@ -19,11 +19,27 @@ export const QUEST_DIAMONDS_PER_PURPLE = 10;
 export const QUEST_CLAIM_SCALE_PER_CLAIM = 0.2;
 /** +30% na meta a cada quest coletada (runs longas ficam bem mais duras). */
 export const QUEST_TARGET_SCALE_PER_CLAIM = 0.3;
+/**
+ * Piso da recompensa = fração do que a partida já rendeu.
+ * Mantém missões relevantes quando ouro/diamantes já estão em milhões.
+ */
+export const QUEST_RUN_GOLD_SHARE = 0.03;
+export const QUEST_RUN_DIAMOND_SHARE = 0.05;
+export const QUEST_RUN_PURPLE_SHARE = 0.03;
 
 export type QuestRewards = {
   gold: number;
   diamonds: number;
   purpleDiamonds: number;
+};
+
+/** Escala econômica / progresso da run para recompensas de quest. */
+export type QuestEconomyContext = {
+  /** income × árvore × team (mesmo eixo do loot de ouro). */
+  goldEconomyMul?: number;
+  runGoldCollected?: number;
+  runDiamondsCollected?: number;
+  runPurpleDiamondsCollected?: number;
 };
 
 /** Skills especiais disponíveis nesta run (filtra quests de gelo/raio). */
@@ -95,25 +111,47 @@ export const QUEST_LABELS: Record<QuestType, string> = {
 export const ACTIVE_QUEST_COUNT = 4;
 
 /**
- * Converte diamantes-base + nº de claims da run → pacote ouro/diamante/roxo.
- * Quanto mais quests você completa, maiores as próximas recompensas.
+ * Converte diamantes-base + claims + economia da run → pacote ouro/diamante/roxo.
+ * Usa a renda do jogador e um piso % do loot já coletado na partida.
  */
 export function computeQuestRewards(
   baseDiamonds: number,
   questsClaimedThisRun = 0,
+  economy?: QuestEconomyContext | null,
 ): QuestRewards {
   const claimed = Math.max(0, Math.floor(questsClaimedThisRun));
   const mul = 1 + claimed * QUEST_CLAIM_SCALE_PER_CLAIM;
   const scaledBase = Math.max(1, baseDiamonds) * mul;
+  const goldEco = Math.max(1, economy?.goldEconomyMul ?? 1);
+  const runGold = Math.max(0, economy?.runGoldCollected ?? 0);
+  const runDiamonds = Math.max(0, economy?.runDiamondsCollected ?? 0);
+  const runPurple = Math.max(0, economy?.runPurpleDiamondsCollected ?? 0);
 
-  const diamonds = Math.max(1, Math.round(scaledBase));
-  const gold = Math.max(
-    10,
-    Math.round(scaledBase * QUEST_GOLD_PER_DIAMOND),
+  const templateGold = Math.round(
+    scaledBase * QUEST_GOLD_PER_DIAMOND * goldEco,
   );
-  const purpleDiamonds = Math.max(
+  const templateDiamonds = Math.max(
+    1,
+    Math.round(scaledBase * Math.max(1, goldEco ** 0.4)),
+  );
+  const templatePurple = Math.max(
     0,
     Math.floor(scaledBase / QUEST_DIAMONDS_PER_PURPLE),
+  );
+
+  const gold = Math.max(
+    10,
+    templateGold,
+    Math.round(runGold * QUEST_RUN_GOLD_SHARE),
+  );
+  const diamonds = Math.max(
+    1,
+    templateDiamonds,
+    Math.round(runDiamonds * QUEST_RUN_DIAMOND_SHARE),
+  );
+  const purpleDiamonds = Math.max(
+    templatePurple,
+    Math.round(runPurple * QUEST_RUN_PURPLE_SHARE),
   );
 
   return { gold, diamonds, purpleDiamonds };
@@ -149,10 +187,12 @@ function isTemplateAllowed(
 function fromTemplate(
   template: QuestTemplate,
   questsClaimedThisRun = 0,
+  economy?: QuestEconomyContext | null,
 ): ActiveQuest {
   const rewards = computeQuestRewards(
     template.baseDiamonds,
     questsClaimedThisRun,
+    economy,
   );
   return {
     id: crypto.randomUUID(),
@@ -205,6 +245,7 @@ export function createRandomQuests(
   count = ACTIVE_QUEST_COUNT,
   questsClaimedThisRun = 0,
   skillCtx?: QuestSkillContext | null,
+  economy?: QuestEconomyContext | null,
 ): ActiveQuest[] {
   const used = new Set<string>();
   const usedTypes = new Set<QuestType>();
@@ -213,7 +254,7 @@ export function createRandomQuests(
     const template = pickTemplate(used, usedTypes, skillCtx);
     used.add(templateKey(template));
     usedTypes.add(template.type);
-    quests.push(fromTemplate(template, questsClaimedThisRun));
+    quests.push(fromTemplate(template, questsClaimedThisRun, economy));
   }
   return quests;
 }
@@ -223,6 +264,7 @@ export function createReplacementQuest(
   active: ActiveQuest[],
   questsClaimedThisRun = 0,
   skillCtx?: QuestSkillContext | null,
+  economy?: QuestEconomyContext | null,
 ): ActiveQuest {
   const used = new Set(active.map((q) => `${q.type}:${q.targetAmount}`));
   // Chave por tipo base aproximada: evita 3× "Aplicar Gelo" ao mesmo tempo
@@ -235,6 +277,7 @@ export function createReplacementQuest(
   return fromTemplate(
     pickTemplate(excludeKeys, usedTypes, skillCtx),
     questsClaimedThisRun,
+    economy,
   );
 }
 
@@ -266,4 +309,53 @@ export function applyQuestProgress(
       completed: currentAmount >= quest.targetAmount,
     };
   });
+}
+
+/**
+ * Auto-coleta todas as quests `completed`, somando recompensas e
+ * gerando substitutas (escala com claims desta run).
+ */
+export function autoCollectCompletedQuests(
+  quests: ActiveQuest[],
+  claimedCount: number,
+  skillCtx: QuestSkillContext,
+  economy?: QuestEconomyContext | null,
+): {
+  quests: ActiveQuest[];
+  claimedCount: number;
+  rewards: QuestRewards;
+  collected: ActiveQuest[];
+} {
+  let nextQuests = quests;
+  let nextClaimed = claimedCount;
+  const rewards: QuestRewards = { gold: 0, diamonds: 0, purpleDiamonds: 0 };
+  const collected: ActiveQuest[] = [];
+
+  // Várias quests podem completar no mesmo tick.
+  for (let i = 0; i < quests.length + 2; i += 1) {
+    const done = nextQuests.find((q) => q.completed);
+    if (!done) break;
+
+    rewards.gold += done.rewardGold;
+    rewards.diamonds += done.rewardDiamonds;
+    rewards.purpleDiamonds += done.rewardPurpleDiamonds;
+    collected.push(done);
+
+    const remaining = nextQuests.filter((q) => q.id !== done.id);
+    nextClaimed += 1;
+    const replacement = createReplacementQuest(
+      remaining,
+      nextClaimed,
+      skillCtx,
+      economy,
+    );
+    nextQuests = [...remaining, replacement];
+  }
+
+  return {
+    quests: nextQuests,
+    claimedCount: nextClaimed,
+    rewards,
+    collected,
+  };
 }

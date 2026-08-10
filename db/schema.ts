@@ -187,6 +187,28 @@ export const DEFAULT_UNLOCKED_SKILLS: UnlockedSkillsData = {
   stone: false,
 };
 
+/** Elementos que a Aura pode usar como atributo principal/secundário. */
+export type AuraElementKey =
+  | "ice"
+  | "lightning"
+  | "fire"
+  | "stone"
+  | "shadow"
+  | "ricochet";
+
+export const AURA_ELEMENT_KEYS: readonly AuraElementKey[] = [
+  "ice",
+  "lightning",
+  "fire",
+  "stone",
+  "shadow",
+  "ricochet",
+] as const;
+
+export function isAuraElementKey(value: string): value is AuraElementKey {
+  return (AURA_ELEMENT_KEYS as readonly string[]).includes(value);
+}
+
 /** Árvore de atributos permanentes (Diamantes Normais). */
 export type MetaTreeData = {
   metaDamageLevel: number;
@@ -249,6 +271,11 @@ export type SaveData = {
   skillLevels?: SkillsData | LegacyFlatSkillsData;
   /** Skills liberadas na base (Diamantes Normais) para a roleta in-game. */
   unlockedSkills: UnlockedSkillsData;
+  /**
+   * Atributo principal da Aura (skill liberada).
+   * Os demais atributos liberados atuam com 50% do efeito.
+   */
+  auraPrimaryElement: AuraElementKey | null;
   /** Árvore de atributos permanentes (Diamantes Normais). */
   metaDamageLevel: number;
   metaKnockbackLevel: number;

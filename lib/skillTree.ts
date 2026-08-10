@@ -30,7 +30,8 @@ export type SkillNodeId =
   | "node_ring_master"
   | "node_adrenaline"
   | "node_berserker"
-  | "node_immortal_champion";
+  | "node_immortal_champion"
+  | "node_skill_slot";
 
 export type SkillTreeState = Record<SkillNodeId, boolean>;
 
@@ -46,6 +47,11 @@ export type SkillNodeDef = {
    * Array vazio = nó raiz. Vários ids = exige investimento em mais de uma linha.
    */
   requires: SkillNodeId[];
+  /**
+   * Se true, só libera após completar todos os outros nós do board
+   * (ignorando este próprio nó).
+   */
+  requiresFullBoard?: boolean;
   branch: SkillBranchId;
   /** Posição vertical na branch (0 = raiz / topo). */
   tier: number;
@@ -97,6 +103,7 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_adrenaline: false,
   node_berserker: false,
   node_immortal_champion: false,
+  node_skill_slot: false,
 };
 
 export const SKILL_NODES: SkillNodeDef[] = [
@@ -407,6 +414,17 @@ export const SKILL_NODES: SkillNodeDef[] = [
     tier: 4,
     accent: "silver",
   },
+  {
+    id: "node_skill_slot",
+    name: "Skill Arsenal",
+    description: "+1 slot de habilidade especial na partida",
+    cost: 1_000_000,
+    requires: [],
+    requiresFullBoard: true,
+    branch: "synergy",
+    tier: 5,
+    accent: "violet",
+  },
 ];
 
 export const SKILL_BRANCHES = [
@@ -425,12 +443,36 @@ export function getSkillNode(id: SkillNodeId): SkillNodeDef {
   return SKILL_NODES.find((n) => n.id === id)!;
 }
 
+/** Todos os nós do board, exceto o capstone de slot extra. */
+export function getSkillTreeCoreNodeIds(): SkillNodeId[] {
+  return (Object.keys(DEFAULT_SKILL_TREE) as SkillNodeId[]).filter(
+    (id) => id !== "node_skill_slot",
+  );
+}
+
+/** Board completo = todos os nós principais comprados (antes do slot extra). */
+export function isSkillTreeBoardComplete(
+  skillTree: SkillTreeState,
+): boolean {
+  return getSkillTreeCoreNodeIds().every((id) => skillTree[id]);
+}
+
+/** +1 slot in-run se o nó Skill Arsenal estiver desbloqueado. */
+export function getExtraActiveRunSkillSlots(
+  skillTree: SkillTreeState,
+): number {
+  return skillTree.node_skill_slot ? 1 : 0;
+}
+
 /** Pré-requisitos ainda não desbloqueados. */
 export function getMissingRequirements(
   skillTree: SkillTreeState,
   nodeId: SkillNodeId,
 ): SkillNodeId[] {
   const node = getSkillNode(nodeId);
+  if (node.requiresFullBoard) {
+    return getSkillTreeCoreNodeIds().filter((id) => !skillTree[id]);
+  }
   return node.requires.filter((id) => !skillTree[id]);
 }
 

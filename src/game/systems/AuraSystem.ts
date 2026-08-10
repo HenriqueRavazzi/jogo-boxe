@@ -2,10 +2,12 @@
 
 import type { Enemy } from "@/src/game/entities/Enemy";
 import type {
+  AuraElementKey,
   MatchSkillsData,
   SkillsData,
   UnlockedSkillsData,
 } from "@/db/schema";
+import { AURA_ELEMENT_KEYS } from "@/db/schema";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
   type MatchSkillBonusState,
@@ -37,10 +39,14 @@ export const AURA_SHADOW_BURST_INTERVAL_MS = 3_200;
 export const AURA_SHADOW_BURST_RATIO = 0.85;
 /** Duração do VFX da explosão sombra. */
 export const AURA_SHADOW_BURST_VFX_MS = 360;
-/** Com Pedra liberada: inimigos na aura causam esta fração de dano. */
+/** Com Pedra liberada: inimigos na aura causam esta fração de dano (primário). */
 export const AURA_STONE_OUTGOING_DAMAGE_MUL = 0.5;
 /** Com Ricochete liberado: splash nos outros inimigos da aura (fração do hit). */
 export const AURA_RICOCHET_SPLASH_RATIO = 0.25;
+/** Potência dos atributos secundários da aura. */
+export const AURA_SECONDARY_POWER = 0.5;
+
+export type AuraElementPowers = Record<AuraElementKey, number>;
 
 export type RunAuraInput = {
   enemies: Enemy[];
@@ -55,6 +61,8 @@ export type RunAuraInput = {
   matchSkillBonuses?: MatchSkillBonuses;
   pulseState: ActiveSkillPulseState;
   prestigeMul: number;
+  /** Atributo principal escolhido pelo jogador. */
+  auraPrimaryElement?: AuraElementKey | null;
 };
 
 export type RunAuraResult = {
@@ -74,7 +82,62 @@ export type RunAuraResult = {
     stone: boolean;
     ricochet: boolean;
   };
+  /** 0 / 0.5 / 1.0 por elemento (secundário / primário). */
+  elementPowers: AuraElementPowers;
+  /** Primário efetivo (fallback automático se inválido). */
+  primaryElement: AuraElementKey | null;
 };
+
+/** Labels curtos para UI. */
+export const AURA_ELEMENT_LABELS: Record<AuraElementKey, string> = {
+  ice: "Gelo",
+  lightning: "Raio",
+  fire: "Fogo",
+  stone: "Pedra",
+  shadow: "Shadow",
+  ricochet: "Ricochete",
+};
+
+export function listUnlockedAuraElements(
+  unlockedSkills: UnlockedSkillsData,
+): AuraElementKey[] {
+  return AURA_ELEMENT_KEYS.filter((key) => Boolean(unlockedSkills[key]));
+}
+
+/**
+ * Resolve o primário válido; se inválido/ausente, usa o primeiro elemento liberado.
+ */
+export function resolveAuraPrimaryElement(
+  primary: AuraElementKey | null | undefined,
+  unlockedSkills: UnlockedSkillsData,
+): AuraElementKey | null {
+  if (primary && unlockedSkills[primary]) return primary;
+  return listUnlockedAuraElements(unlockedSkills)[0] ?? null;
+}
+
+/** Potência 1 (primário), 0.5 (secundário) ou 0 (não liberado). */
+export function getAuraElementPower(
+  element: AuraElementKey,
+  unlockedSkills: UnlockedSkillsData,
+  primary: AuraElementKey | null | undefined,
+): number {
+  if (!unlockedSkills[element]) return 0;
+  const resolved = resolveAuraPrimaryElement(primary, unlockedSkills);
+  if (!resolved) return 1;
+  return element === resolved ? 1 : AURA_SECONDARY_POWER;
+}
+
+export function buildAuraElementPowers(
+  unlockedSkills: UnlockedSkillsData,
+  primary: AuraElementKey | null | undefined,
+): AuraElementPowers {
+  const resolved = resolveAuraPrimaryElement(primary, unlockedSkills);
+  const powers = {} as AuraElementPowers;
+  for (const key of AURA_ELEMENT_KEYS) {
+    powers[key] = getAuraElementPower(key, unlockedSkills, resolved);
+  }
+  return powers;
+}
 
 export function getAuraRadius(
   matchLevel: number,
@@ -95,6 +158,7 @@ export function getAuraFireDps(
   metaDamage: number,
   bonus: MatchSkillBonusState = DEFAULT_MATCH_SKILL_BONUS,
   prestigeMul = 1,
+  elementPower = 1,
 ): number {
   const levelMul = 1 + Math.max(0, matchLevel) * 0.12;
   const metaMul = 1 + Math.max(0, metaDamage) * 0.08 * prestigeMul;
@@ -103,7 +167,8 @@ export function getAuraFireDps(
     AURA_FIRE_DPS_RATIO *
     levelMul *
     metaMul *
-    bonus.damageMul
+    bonus.damageMul *
+    Math.max(0, elementPower)
   );
 }
 
@@ -135,6 +200,7 @@ export function getAuraShadowBurstDamage(
   metaDamage: number,
   bonus: MatchSkillBonusState = DEFAULT_MATCH_SKILL_BONUS,
   prestigeMul = 1,
+  elementPower = 1,
 ): number {
   const levelMul = 1 + Math.max(0, matchLevel) * 0.1;
   const metaMul = 1 + Math.max(0, metaDamage) * 0.07 * prestigeMul;
@@ -143,29 +209,31 @@ export function getAuraShadowBurstDamage(
     AURA_SHADOW_BURST_RATIO *
     levelMul *
     metaMul *
-    bonus.damageMul
+    bonus.damageMul *
+    Math.max(0, elementPower)
   );
 }
 
 /**
- * Pedra liberada + inimigo dentro da aura → causa menos dano no herói.
+ * Pedra na aura: primário → 50% dano inimigo; secundário → 75% (metade da redução).
  */
 export function getAuraStoneOutgoingDamageMul(
   enemy: Enemy,
   playerX: number,
   playerY: number,
   auraRadius: number,
-  stoneUnlocked: boolean,
+  stonePower: number,
 ): number {
-  if (!stoneUnlocked || auraRadius <= 0 || enemy.isDead) return 1;
+  if (stonePower <= 0 || auraRadius <= 0 || enemy.isDead) return 1;
   const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
   if (dist > auraRadius + enemy.radius) return 1;
-  return AURA_STONE_OUTGOING_DAMAGE_MUL;
+  const reduction = (1 - AURA_STONE_OUTGOING_DAMAGE_MUL) * stonePower;
+  return Math.max(0.05, 1 - reduction);
 }
 
 /**
- * Tick da aura: DPS (fogo), slow (raio), stun (gelo), explosão (shadow),
- * redução de dano recebido (pedra) — skills liberadas.
+ * Tick da aura: efeitos das skills liberadas.
+ * Primário = 100%; demais liberados = 50%.
  */
 export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   const {
@@ -181,6 +249,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     matchSkillBonuses,
     pulseState,
     prestigeMul,
+    auraPrimaryElement,
   } = input;
 
   const next: ActiveSkillPulseState = { ...pulseState };
@@ -189,15 +258,24 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   let skillHitsLanded = 0;
   let questFreeze = 0;
 
-  const auraLevel = matchSkills.aura ?? 0;
+  const primaryElement = resolveAuraPrimaryElement(
+    auraPrimaryElement,
+    unlockedSkills,
+  );
+  const elementPowers = buildAuraElementPowers(
+    unlockedSkills,
+    primaryElement,
+  );
   const activeElements = {
-    fire: Boolean(unlockedSkills.fire),
-    lightning: Boolean(unlockedSkills.lightning),
-    ice: Boolean(unlockedSkills.ice),
-    shadow: Boolean(unlockedSkills.shadow),
-    stone: Boolean(unlockedSkills.stone),
-    ricochet: Boolean(unlockedSkills.ricochet),
+    fire: elementPowers.fire > 0,
+    lightning: elementPowers.lightning > 0,
+    ice: elementPowers.ice > 0,
+    shadow: elementPowers.shadow > 0,
+    stone: elementPowers.stone > 0,
+    ricochet: elementPowers.ricochet > 0,
   };
+
+  const auraLevel = matchSkills.aura ?? 0;
 
   if (auraLevel <= 0) {
     next.auraStunNextAt = 0;
@@ -210,6 +288,8 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
       newSkillVfx: [],
       auraRadius: 0,
       activeElements,
+      elementPowers,
+      primaryElement,
     };
   }
 
@@ -230,7 +310,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     }
   }
 
-  // Fogo liberado → DPS contínuo
+  // Fogo → DPS contínuo
   if (activeElements.fire && inAura.length > 0 && dt > 0) {
     const dps = getAuraFireDps(
       baseDamage,
@@ -238,6 +318,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
       skills.aura.damage,
       bonus,
       prestigeMul,
+      elementPowers.fire,
     );
     const tickDamage = dps * dt;
     if (tickDamage > 0) {
@@ -250,14 +331,15 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     }
   }
 
-  // Raio liberado → lentidão enquanto dentro da aura
+  // Raio → lentidão
   if (activeElements.lightning && inAura.length > 0) {
+    const slow = AURA_LIGHTNING_SLOW * elementPowers.lightning;
     for (const enemy of inAura) {
-      enemy.applyShockSlow(AURA_LIGHTNING_SLOW, now, 220);
+      enemy.applyShockSlow(slow, now, 220);
     }
   }
 
-  // Gelo liberado → stun periódico
+  // Gelo → stun periódico (duração escala com potência)
   if (activeElements.ice) {
     if (next.auraStunNextAt <= 0) {
       next.auraStunNextAt = now + getAuraIceStunIntervalMs(
@@ -274,10 +356,11 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
       if (inAura.length > 0) {
         const stunMs = Math.round(
           AURA_ICE_STUN_DURATION_MS *
-            (1 + skills.aura.pulse * 0.04 * prestigeMul),
+            (1 + skills.aura.pulse * 0.04 * prestigeMul) *
+            elementPowers.ice,
         );
         for (const enemy of inAura) {
-          enemy.applyStun(now, Math.max(LIGHTNING_STUN_MS, stunMs));
+          enemy.applyStun(now, Math.max(LIGHTNING_STUN_MS * elementPowers.ice, stunMs));
           questFreeze += 1;
         }
         newSkillVfx.push({
@@ -294,7 +377,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     next.auraStunNextAt = 0;
   }
 
-  // Shadow liberado → explosão periódica em área
+  // Shadow → explosão periódica
   if (activeElements.shadow) {
     if (next.auraShadowNextAt <= 0) {
       next.auraShadowNextAt = now + getAuraShadowBurstIntervalMs(
@@ -315,6 +398,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
           skills.aura.damage,
           bonus,
           prestigeMul,
+          elementPowers.shadow,
         );
         for (const enemy of inAura) {
           enemy.takeDamage(burst, now);
@@ -343,5 +427,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     newSkillVfx,
     auraRadius: radius,
     activeElements,
+    elementPowers,
+    primaryElement,
   };
 }

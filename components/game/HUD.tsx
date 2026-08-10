@@ -4,17 +4,25 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Circle, Flame, Ghost, Mountain, Snowflake, Spline, X, Zap } from "lucide-react";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
+  getMaxActiveRunSkills,
   MAX_ACTIVE_RUN_SKILLS,
   SPECIAL_SKILL_KEYS,
   type MatchSkillBonusState,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
+import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
 import {
+  AURA_ELEMENT_LABELS,
+  AURA_LIGHTNING_SLOW,
+  AURA_RICOCHET_SPLASH_RATIO,
+  AURA_STONE_OUTGOING_DAMAGE_MUL,
+  buildAuraElementPowers,
   getAuraFireDps,
   getAuraIceStunIntervalMs,
   getAuraRadius,
   getAuraShadowBurstDamage,
   getAuraShadowBurstIntervalMs,
+  resolveAuraPrimaryElement,
 } from "@/src/game/systems/AuraSystem";
 import {
   getLightningBurstDamage,
@@ -38,26 +46,12 @@ const SKILL_UI: Record<
   SpecialSkillKey,
   { name: string; icon: ReactNode; ring: string; fill: string; blurb: string }
 > = {
-  ricochet: {
-    name: "Ricochete",
-    icon: <Spline className="h-5 w-5" aria-hidden />,
-    ring: "stroke-violet-400",
-    fill: "text-violet-200",
-    blurb: "Socos saltam entre inimigos na janela ativa.",
-  },
   ice: {
     name: "Gelo",
     icon: <Snowflake className="h-5 w-5" aria-hidden />,
     ring: "stroke-sky-400",
     fill: "text-sky-200",
     blurb: "Onda periódica: congela e deixa vulnerável (+30% dano).",
-  },
-  fire: {
-    name: "Fogo",
-    icon: <Flame className="h-5 w-5" aria-hidden />,
-    ring: "stroke-orange-400",
-    fill: "text-orange-200",
-    blurb: "Queimadura passiva on-hit com stacks cumulativos.",
   },
   lightning: {
     name: "Raio",
@@ -67,21 +61,12 @@ const SKILL_UI: Record<
     blurb:
       "Só dispara com alvo. Homing + explosão em área (dano e eletrificação).",
   },
-  aura: {
-    name: "Aura",
-    icon: <Circle className="h-5 w-5" aria-hidden />,
-    ring: "stroke-fuchsia-400",
-    fill: "text-fuchsia-200",
-    blurb:
-      "Área no herói. Fogo=DPS, Raio=lentidão, Gelo=stun, Shadow=burst, Pedra=defesa, Ricochete=splash 25%.",
-  },
-  shadow: {
-    name: "Shadow Clone",
-    icon: <Ghost className="h-5 w-5" aria-hidden />,
-    ring: "stroke-violet-400",
-    fill: "text-violet-200",
-    blurb:
-      "Clone com 15% dos stats, sem heal/skills. Alvos diferentes (exceto boss).",
+  fire: {
+    name: "Fogo",
+    icon: <Flame className="h-5 w-5" aria-hidden />,
+    ring: "stroke-orange-400",
+    fill: "text-orange-200",
+    blurb: "Queimadura passiva on-hit com stacks cumulativos.",
   },
   stone: {
     name: "Pedra",
@@ -91,16 +76,40 @@ const SKILL_UI: Record<
     blurb:
       "Terremoto: dano em todos os inimigos e −50% AS/dano deles por 10s.",
   },
+  shadow: {
+    name: "Shadow Clone",
+    icon: <Ghost className="h-5 w-5" aria-hidden />,
+    ring: "stroke-violet-400",
+    fill: "text-violet-200",
+    blurb:
+      "Clone com 15% dos stats, sem heal/skills. Alvos diferentes (exceto boss).",
+  },
+  ricochet: {
+    name: "Ricochete",
+    icon: <Spline className="h-5 w-5" aria-hidden />,
+    ring: "stroke-violet-400",
+    fill: "text-violet-200",
+    blurb: "Socos saltam entre inimigos na janela ativa.",
+  },
+  aura: {
+    name: "Aura",
+    icon: <Circle className="h-5 w-5" aria-hidden />,
+    ring: "stroke-fuchsia-400",
+    fill: "text-fuchsia-200",
+    blurb:
+      "Área no herói. Escolha 1 atributo principal (100%); os demais liberados entram a 50%.",
+  },
 };
 
 function resolveActiveSkills(
   activeRunSkills: SpecialSkillKey[],
   matchSkills: Record<SpecialSkillKey, number>,
+  maxSlots: number = MAX_ACTIVE_RUN_SKILLS,
 ): SpecialSkillKey[] {
   const fromLevels = SPECIAL_SKILL_KEYS.filter((k) => (matchSkills[k] ?? 0) > 0);
   return Array.from(new Set([...activeRunSkills, ...fromLevels])).slice(
     0,
-    MAX_ACTIVE_RUN_SKILLS,
+    maxSlots,
   );
 }
 
@@ -346,76 +355,105 @@ function buildSkillStatRows(
 
   if (key === "aura") {
     const unlocked = useGameStore.getState().unlockedSkills;
+    const primary = resolveAuraPrimaryElement(
+      useGameStore.getState().auraPrimaryElement,
+      unlocked,
+    );
+    const powers = buildAuraElementPowers(unlocked, primary);
+    const powerTag = (element: keyof typeof powers) => {
+      const p = powers[element];
+      if (p <= 0) return "";
+      if (p >= 1) return " · principal";
+      return " · 50%";
+    };
     const radius = getAuraRadius(
       level,
       skills.aura.radius,
       bonus,
       prestigeMul,
     );
-    const dps = unlocked.fire
+    const dps = powers.fire
       ? getAuraFireDps(
           punchBase * skillDmgMul,
           level,
           skills.aura.damage,
           bonus,
           prestigeMul,
+          powers.fire,
         )
       : 0;
-    const stunInterval = unlocked.ice
+    const stunInterval = powers.ice
       ? getAuraIceStunIntervalMs(skills.aura.pulse, bonus, prestigeMul)
       : 0;
-    const shadowBurst = unlocked.shadow
+    const shadowBurst = powers.shadow
       ? getAuraShadowBurstDamage(
           punchBase * skillDmgMul,
           level,
           skills.aura.damage,
           bonus,
           prestigeMul,
+          powers.shadow,
         )
       : 0;
-    const shadowInterval = unlocked.shadow
+    const shadowInterval = powers.shadow
       ? getAuraShadowBurstIntervalMs(skills.aura.pulse, bonus, prestigeMul)
       : 0;
+    const lightningSlowPct = Math.round(
+      AURA_LIGHTNING_SLOW * powers.lightning * 100,
+    );
+    const stoneOutgoingPct = Math.round(
+      (1 - (1 - AURA_STONE_OUTGOING_DAMAGE_MUL) * powers.stone) * 100,
+    );
+    const ricochetSplashPct = Math.round(
+      AURA_RICOCHET_SPLASH_RATIO * powers.ricochet * 100,
+    );
     return {
       rows: [
         { label: "Tipo", value: "Aura passiva" },
+        {
+          label: "Atributo principal",
+          value: primary ? AURA_ELEMENT_LABELS[primary] : "— (nenhum)",
+          accent: true,
+        },
         { label: "Nível in-run", value: String(level) },
-        { label: "Raio", value: `${Math.round(radius)} px`, accent: true },
+        { label: "Raio", value: `${Math.round(radius)} px` },
         {
-          label: "Fogo (DPS)",
-          value: unlocked.fire ? `${dps.toFixed(1)}/s` : "— (não liberado)",
+          label: `Fogo (DPS)${powerTag("fire")}`,
+          value: powers.fire ? `${dps.toFixed(1)}/s` : "— (não liberado)",
         },
         {
-          label: "Raio (slow)",
-          value: unlocked.lightning ? "45% lentidão" : "— (não liberado)",
+          label: `Raio (slow)${powerTag("lightning")}`,
+          value: powers.lightning
+            ? `${lightningSlowPct}% lentidão`
+            : "— (não liberado)",
         },
         {
-          label: "Gelo (stun)",
-          value: unlocked.ice
+          label: `Gelo (stun)${powerTag("ice")}`,
+          value: powers.ice
             ? `a cada ${formatMs(stunInterval)}`
             : "— (não liberado)",
         },
         {
-          label: "Shadow (burst)",
-          value: unlocked.shadow
+          label: `Shadow (burst)${powerTag("shadow")}`,
+          value: powers.shadow
             ? `${shadowBurst.toFixed(0)} a cada ${formatMs(shadowInterval)}`
             : "— (não liberado)",
         },
         {
-          label: "Pedra (defesa)",
-          value: unlocked.stone
-            ? "inimigos na aura −50% dano"
+          label: `Pedra (defesa)${powerTag("stone")}`,
+          value: powers.stone
+            ? `inimigos na aura causam ${stoneOutgoingPct}% dano`
             : "— (não liberado)",
         },
         {
-          label: "Ricochete (splash)",
-          value: unlocked.ricochet
-            ? "hits → 25% em todos na aura"
+          label: `Ricochete (splash)${powerTag("ricochet")}`,
+          value: powers.ricochet
+            ? `hits → ${ricochetSplashPct}% em todos na aura`
             : "— (não liberado)",
         },
       ],
       levelBonusNote: [
-        `Nível ${level}: aura contínua. Efeitos dependem das skills liberadas na base.`,
+        `Nível ${level}: aura contínua. Primário 100%; demais liberados 50%. Escolha no painel de Skills Avançadas.`,
         runBonusNote,
       ]
         .filter(Boolean)
@@ -668,7 +706,7 @@ function SkillDetailPanel({
 }
 
 /**
- * HUD de combate: 2 slots de skills especiais + anel de cooldown.
+ * HUD de combate: slots de skills especiais + anel de cooldown.
  */
 export function HUD() {
   const activeRunSkills = useArenaStore((s) => s.activeRunSkills);
@@ -677,6 +715,7 @@ export function HUD() {
   const pulse = useArenaStore((s) => s.activeSkillPulse);
   const gameClockMs = useArenaStore((s) => s.gameClockMs);
   const skills = useGameStore((s) => s.skills);
+  const skillTree = useGameStore((s) => s.skillTree);
   const [, setTick] = useState(0);
   const [selectedSkill, setSelectedSkill] = useState<SpecialSkillKey | null>(
     null,
@@ -708,12 +747,15 @@ export function HUD() {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [selectedSkill]);
 
-  const equipped = resolveActiveSkills(activeRunSkills, matchSkills);
-  const remaining = Math.max(0, MAX_ACTIVE_RUN_SKILLS - equipped.length);
+  const maxSlots = getMaxActiveRunSkills(
+    getExtraActiveRunSkillSlots(skillTree),
+  );
+  const equipped = resolveActiveSkills(activeRunSkills, matchSkills, maxSlots);
+  const remaining = Math.max(0, maxSlots - equipped.length);
   const gameNow = gameClockMs;
 
   const slots: (SpecialSkillKey | null)[] = Array.from(
-    { length: MAX_ACTIVE_RUN_SKILLS },
+    { length: maxSlots },
     (_, i) => equipped[i] ?? null,
   );
 
@@ -729,7 +771,7 @@ export function HUD() {
               Skills
             </p>
             <p className="text-[10px] tabular-nums text-zinc-400">
-              {equipped.length}/{MAX_ACTIVE_RUN_SKILLS}
+              {equipped.length}/{maxSlots}
               {remaining > 0 ? (
                 <span className="text-zinc-500">
                   {" "}

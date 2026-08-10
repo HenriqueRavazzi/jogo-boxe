@@ -1,57 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Coins, Gem, ScrollText } from "lucide-react";
 import {
   QUEST_CLAIM_SCALE_PER_CLAIM,
   QUEST_LABELS,
-  type ActiveQuest,
 } from "@/lib/quests";
-import { syncWithDB } from "@/lib/syncWithDB";
 import { useArenaStore } from "@/store/useArenaStore";
-import { useGameStore } from "@/store/useGameStore";
 
-/** Painel flutuante de quests ativas (direita) — até 4 slots. */
+/** Painel flutuante de quests ativas (direita) — auto-collect ao completar. */
 export function QuestsPanel() {
   const activeQuests = useArenaStore((s) => s.activeQuests);
   const questsClaimedThisRun = useArenaStore((s) => s.questsClaimedThisRun);
   const claimQuest = useArenaStore((s) => s.claimQuest);
-  const recordLootCollected = useArenaStore((s) => s.recordLootCollected);
-  const addGold = useGameStore((s) => s.addGold);
-  const addGems = useGameStore((s) => s.addGems);
-  const addPurpleDiamonds = useGameStore((s) => s.addPurpleDiamonds);
   const [collapsed, setCollapsed] = useState(false);
-  const [claimingId, setClaimingId] = useState<string | null>(null);
 
   const bonusPct = Math.round(
     questsClaimedThisRun * QUEST_CLAIM_SCALE_PER_CLAIM * 100,
   );
 
-  const handleClaim = async (quest: ActiveQuest) => {
-    if (!quest.completed || claimingId) return;
-    setClaimingId(quest.id);
-    try {
-      const reward = claimQuest(quest.id);
-      if (!reward) return;
-      if (reward.gold > 0) {
-        addGold(reward.gold, { applyIncome: false });
-      }
-      if (reward.diamonds > 0) {
-        addGems(reward.diamonds);
-      }
-      if (reward.purpleDiamonds > 0) {
-        addPurpleDiamonds(reward.purpleDiamonds);
-      }
-      recordLootCollected(
-        reward.gold,
-        reward.diamonds,
-        reward.purpleDiamonds,
-      );
-      await syncWithDB();
-    } finally {
-      setClaimingId(null);
+  // Segurança: se alguma quest já estiver completed (ex.: tick anterior), coleta.
+  useEffect(() => {
+    const pending = activeQuests.filter((q) => q.completed);
+    for (const quest of pending) {
+      claimQuest(quest.id);
     }
-  };
+  }, [activeQuests, claimQuest]);
 
   if (activeQuests.length === 0) return null;
 
@@ -89,7 +63,6 @@ export function QuestsPanel() {
                   (quest.currentAmount / quest.targetAmount) * 100,
                 ),
               );
-              const busy = claimingId === quest.id;
 
               return (
                 <li
@@ -120,9 +93,7 @@ export function QuestsPanel() {
 
                   <div className="mb-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-800">
                     <div
-                      className={`h-full rounded-full transition-[width] duration-200 ${
-                        quest.completed ? "bg-emerald-400" : "bg-cyan-400"
-                      }`}
+                      className="h-full rounded-full bg-cyan-400 transition-[width] duration-200"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -131,18 +102,9 @@ export function QuestsPanel() {
                     <span className="text-[10px] tabular-nums text-zinc-400">
                       {quest.currentAmount}/{quest.targetAmount}
                     </span>
-                    {quest.completed ? (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void handleClaim(quest)}
-                        className="rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-emerald-500 disabled:cursor-wait disabled:opacity-70"
-                      >
-                        {busy ? "..." : "Coletar (Claim)"}
-                      </button>
-                    ) : (
-                      <span className="text-[10px] text-zinc-500">Ativa</span>
-                    )}
+                    <span className="text-[10px] text-zinc-500">
+                      Auto-collect
+                    </span>
                   </div>
                 </li>
               );

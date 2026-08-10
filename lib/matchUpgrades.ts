@@ -15,13 +15,13 @@ export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 export type SpecialSkillKey =
-  | "ricochet"
   | "ice"
-  | "fire"
   | "lightning"
-  | "aura"
+  | "fire"
+  | "stone"
   | "shadow"
-  | "stone";
+  | "ricochet"
+  | "aura";
 
 /** Categoria da carta — usada para evitar duplicatas no pack de level-up. */
 export type UpgradeCategory =
@@ -425,22 +425,10 @@ const SPECIAL_SKILL_POOL: {
   short: string;
 }[] = [
   {
-    type: "ricochet",
-    category: "ricochet",
-    name: "Ricochete",
-    short: "Soco ricocheteia entre inimigos",
-  },
-  {
     type: "ice",
     category: "ice",
     name: "Gelo",
     short: "Congela a área e deixa vulnerável (+30% dano)",
-  },
-  {
-    type: "fire",
-    category: "fire",
-    name: "Fogo",
-    short: "Aplica queimadura nos socos",
   },
   {
     type: "lightning",
@@ -449,10 +437,16 @@ const SPECIAL_SKILL_POOL: {
     short: "Homing elétrico; explode em área com shock",
   },
   {
-    type: "aura",
-    category: "aura",
-    name: "Aura",
-    short: "Área no herói: sinergia das skills liberadas (fogo/raio/gelo/shadow/pedra)",
+    type: "fire",
+    category: "fire",
+    name: "Fogo",
+    short: "Aplica queimadura nos socos",
+  },
+  {
+    type: "stone",
+    category: "stone",
+    name: "Pedra",
+    short: "Terremoto: dano em todos + −50% AS/dano inimigo por 10s",
   },
   {
     type: "shadow",
@@ -461,21 +455,27 @@ const SPECIAL_SKILL_POOL: {
     short: "Clone com 15% dos stats; bate em alvos diferentes (exceto boss)",
   },
   {
-    type: "stone",
-    category: "stone",
-    name: "Pedra",
-    short: "Terremoto: dano em todos + −50% AS/dano inimigo por 10s",
+    type: "ricochet",
+    category: "ricochet",
+    name: "Ricochete",
+    short: "Soco ricocheteia entre inimigos",
+  },
+  {
+    type: "aura",
+    category: "aura",
+    name: "Aura",
+    short: "Área no herói: sinergia das skills liberadas",
   },
 ];
 
 export const SPECIAL_SKILL_KEYS: SpecialSkillKey[] = [
-  "ricochet",
   "ice",
-  "fire",
   "lightning",
-  "aura",
-  "shadow",
+  "fire",
   "stone",
+  "shadow",
+  "ricochet",
+  "aura",
 ];
 
 export function isSpecialSkillType(type: UpgradeType): type is SpecialSkillKey {
@@ -506,10 +506,12 @@ export type GenerateUpgradeOptionsContext = {
   matchSkills: MatchSkillsData;
   skills: SkillsData;
   /**
-   * Skills especiais já escolhidas nesta run (máx. MAX_ACTIVE_RUN_SKILLS).
+   * Skills especiais já escolhidas nesta run (máx. getMaxActiveRunSkills).
    * Com a lista cheia, só upgrades dessas skills entram na roleta.
    */
   activeRunSkills?: SpecialSkillKey[];
+  /** Cap de skills distintas na run (default: BASE_ACTIVE_RUN_SKILLS). */
+  maxActiveRunSkills?: number;
   /** Alcance efetivo atual (base × buffs). */
   effectiveRange?: number;
   /** Cooldown efetivo atual em ms (base / buff de velocidade). */
@@ -520,8 +522,14 @@ export type GenerateUpgradeOptionsContext = {
   matchLevel?: number;
 };
 
-/** Máximo de habilidades especiais distintas por partida. */
-export const MAX_ACTIVE_RUN_SKILLS = 2;
+/** Base de habilidades especiais distintas por partida (sem talentos). */
+export const BASE_ACTIVE_RUN_SKILLS = 2;
+/** @deprecated Use BASE_ACTIVE_RUN_SKILLS / getMaxActiveRunSkills. */
+export const MAX_ACTIVE_RUN_SKILLS = BASE_ACTIVE_RUN_SKILLS;
+
+export function getMaxActiveRunSkills(extraSlots = 0): number {
+  return BASE_ACTIVE_RUN_SKILLS + Math.max(0, Math.floor(extraSlots));
+}
 
 /**
  * Bônus de sorte (0–0.15) a partir do tempo e do nível.
@@ -735,7 +743,7 @@ export function getEligibleStatCategories(ctx?: {
 /**
  * Gera N cartas com raridade ponderada (pity por tempo/nível) e categorias distintas.
  * Por slot: 15% tenta skill especial elegível; senão, upgrade de status.
- * No máx. MAX_ACTIVE_RUN_SKILLS skills novas por run — depois só upgrades delas.
+ * No máx. getMaxActiveRunSkills skills novas por run — depois só upgrades delas.
  * Nunca repete a mesma categoria/`type` na mesma tela.
  */
 export function generateUpgradeOptions(
@@ -754,7 +762,9 @@ export function generateUpgradeOptions(
   const activeRunSkills = Array.from(
     new Set<SpecialSkillKey>([...activeFromCtx, ...activeFromLevels]),
   );
-  const atSkillCap = activeRunSkills.length >= MAX_ACTIVE_RUN_SKILLS;
+  const maxSlots =
+    ctx?.maxActiveRunSkills ?? getMaxActiveRunSkills(0);
+  const atSkillCap = activeRunSkills.length >= maxSlots;
 
   const eligibleSpecials: SpecialSkillKey[] = [];
   if (unlocked && matchSkills && skills) {

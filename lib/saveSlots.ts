@@ -24,6 +24,7 @@ import {
   DEFAULT_META_TREE,
   DEFAULT_SKILLS_DATA,
   DEFAULT_UNLOCKED_SKILLS,
+  isAuraElementKey,
   SKILL_STAT_KEYS,
   type LegacyFlatSkillsData,
   type MatchSkillsData,
@@ -33,6 +34,7 @@ import {
   type SkillUpgradeType,
   type UnlockedSkillsData,
 } from "@/db/schema";
+import { resolveAuraPrimaryElement } from "@/src/game/systems/AuraSystem";
 
 function isFlatLegacySkills(
   value: unknown,
@@ -210,6 +212,7 @@ export function createDefaultSaveData(): SaveData {
     skillTree: { ...DEFAULT_SKILL_TREE },
     skills: cloneSkills(DEFAULT_SKILLS_DATA),
     unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
+    auraPrimaryElement: null,
     ...DEFAULT_META_TREE,
     prestigeLevel: 0,
     ascensionShards: 0,
@@ -308,6 +311,13 @@ export function normalizeSaveData(
     skillTree,
     skills,
     unlockedSkills,
+    auraPrimaryElement: (() => {
+      const raw = (data as SaveData).auraPrimaryElement;
+      if (typeof raw === "string" && isAuraElementKey(raw) && unlockedSkills[raw]) {
+        return raw;
+      }
+      return resolveAuraPrimaryElement(null, unlockedSkills);
+    })(),
     ...meta,
     teamPity,
     teamMembersOwned,

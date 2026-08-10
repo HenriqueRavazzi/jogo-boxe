@@ -34,6 +34,8 @@ const ACCENT_UNLOCKED: Record<string, string> = {
   silver: "border-slate-300 bg-slate-800 text-slate-50 shadow-slate-400/30",
   fuchsia:
     "border-fuchsia-400 bg-fuchsia-950 text-fuchsia-100 shadow-fuchsia-500/30",
+  violet:
+    "border-violet-400 bg-violet-950 text-violet-100 shadow-violet-500/30",
 };
 
 const ACCENT_AVAILABLE: Record<string, string> = {
@@ -49,6 +51,8 @@ const ACCENT_AVAILABLE: Record<string, string> = {
     "border-slate-400/60 bg-zinc-900 text-slate-200 hover:border-slate-300",
   fuchsia:
     "border-fuchsia-500/60 bg-zinc-900 text-fuchsia-200 hover:border-fuchsia-400",
+  violet:
+    "border-violet-500/60 bg-zinc-900 text-violet-200 hover:border-violet-400",
 };
 
 const LINE_UNLOCKED: Record<string, string> = {
@@ -60,6 +64,7 @@ const LINE_UNLOCKED: Record<string, string> = {
   emerald: "bg-emerald-400",
   silver: "bg-slate-300",
   fuchsia: "bg-fuchsia-400",
+  violet: "bg-violet-400",
 };
 
 /** Overlay da árvore de talents (custa diamantes). */
@@ -310,8 +315,15 @@ function SkillNodeButton({
     className += `${ACCENT_AVAILABLE[node.accent] ?? ACCENT_AVAILABLE.fuchsia} cursor-pointer`;
   }
 
-  const multiReq = node.requires.length > 1;
-  const reqLabel = formatRequirementLabels(node.requires);
+  const multiReq = node.requires.length > 1 || Boolean(node.requiresFullBoard);
+  const reqLabel = node.requiresFullBoard
+    ? "board completo (todos os nós)"
+    : formatRequirementLabels(node.requires);
+  const missingLabel = node.requiresFullBoard
+    ? missing.length === 1
+      ? `1 nó (${getSkillNode(missing[0]!).name})`
+      : `${missing.length} nós do board`
+    : formatRequirementLabels(missing);
 
   return (
     <button
@@ -336,12 +348,12 @@ function SkillNodeButton({
       )}
       {locked && missing.length > 0 && !multiReq && (
         <p className="mt-1.5 text-[10px] leading-snug text-zinc-500">
-          Precisa: {formatRequirementLabels(missing)}
+          Precisa: {missingLabel}
         </p>
       )}
       {locked && multiReq && missing.length > 0 && (
         <p className="mt-1 text-[10px] leading-snug text-zinc-500">
-          Falta: {formatRequirementLabels(missing)}
+          Falta: {missingLabel}
         </p>
       )}
       <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold tabular-nums opacity-90">

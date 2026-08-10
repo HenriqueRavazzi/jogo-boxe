@@ -3,10 +3,12 @@
 import { create } from "zustand";
 import {
   applyQuestProgress,
+  autoCollectCompletedQuests,
   createRandomQuests,
   createReplacementQuest,
   ACTIVE_QUEST_COUNT,
   type ActiveQuest,
+  type QuestEconomyContext,
   type QuestProgressEvent,
   type QuestRewards,
   type QuestSkillContext,
@@ -15,6 +17,7 @@ import {
   applySkillBonusDelta,
   createEmptyMatchSkillBonuses,
   generateUpgradeOptions,
+  getMaxActiveRunSkills,
   isSpecialSkillType,
   type MatchSkillBonusDelta,
   type MatchSkillBonuses,
@@ -22,6 +25,10 @@ import {
   type SpecialSkillKey,
   type UpgradeType,
 } from "@/lib/matchUpgrades";
+import {
+  getExtraActiveRunSkillSlots,
+  getSkillGoldIncomeMultiplier,
+} from "@/lib/skillTree";
 import {
   DEFAULT_MATCH_SKILLS,
   type MatchSkillsData,
@@ -287,10 +294,11 @@ export type ArenaStoreState = {
   ) => void;
   /** Dispara alerta visual de boss surpresa na horda (2s). */
   triggerBossHordeAlert: (durationMs?: number) => void;
-  /** Incrementa progresso das quests a partir de eventos de combate. */
+  /** Incrementa progresso das quests; quests concluídas são auto-coletadas. */
   progressQuests: (events: QuestProgressEvent[]) => void;
   /**
    * Coleta recompensa de uma quest concluída e gera outra no lugar.
+   * Preferir auto-collect via progressQuests; mantido para compat.
    * Retorna o pacote de moedas, ou null se inválida.
    */
   claimQuest: (questId: string) => QuestRewards | null;
@@ -373,6 +381,32 @@ function getQuestSkillContext(
   };
 }
 
+/** Economia atual da run — ancora recompensas de quest à escala do loot. */
+function getQuestEconomyContext(
+  runStats?: {
+    goldCollected: number;
+    diamondsCollected: number;
+    purpleDiamondsCollected: number;
+  },
+): QuestEconomyContext {
+  const game = useGameStore.getState();
+  const goldEconomyMul =
+    game.incomeMultiplier *
+    getSkillGoldIncomeMultiplier(game.skillTree) *
+    game.getEquippedTeamBuffs().goldIncomeMultiplier;
+  const stats = runStats ?? {
+    goldCollected: 0,
+    diamondsCollected: 0,
+    purpleDiamondsCollected: 0,
+  };
+  return {
+    goldEconomyMul,
+    runGoldCollected: stats.goldCollected,
+    runDiamondsCollected: stats.diamondsCollected,
+    runPurpleDiamondsCollected: stats.purpleDiamondsCollected,
+  };
+}
+
 function rollLevelUpOptions(
   matchSkills: MatchSkillsData,
   matchBuffs: MatchBuffs,
@@ -382,11 +416,15 @@ function rollLevelUpOptions(
 ): MatchUpgrade[] {
   const game = useGameStore.getState();
   const stats = game.getEffectiveStats();
+  const maxActiveRunSkills = getMaxActiveRunSkills(
+    getExtraActiveRunSkillSlots(game.skillTree),
+  );
   return generateUpgradeOptions(3, {
     unlockedSkills: game.unlockedSkills,
     matchSkills,
     skills: game.skills,
     activeRunSkills,
+    maxActiveRunSkills,
     effectiveRange: stats.attackRange * matchBuffs.attackRange,
     effectiveCooldownMs: stats.attackCooldownMs / matchBuffs.attackSpeed,
     timeAlive,
@@ -531,10 +569,15 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
       bossHordeAlertUntil: 0,
-      activeQuests: createRandomQuests(ACTIVE_QUEST_COUNT, 0, {
-        hasIce: false,
-        hasLightning: false,
-      }),
+      activeQuests: createRandomQuests(
+        ACTIVE_QUEST_COUNT,
+        0,
+        {
+          hasIce: false,
+          hasLightning: false,
+        },
+        getQuestEconomyContext(),
+      ),
       questsClaimedThisRun: 0,
       isPaused: false,
       playerRotation: -Math.PI / 2,
@@ -708,13 +751,77 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
 
   progressQuests: (events) => {
     if (!events.length) return;
-    set((s) => ({
-      activeQuests: applyQuestProgress(s.activeQuests, events),
-    }));
+    const state = get();
+    const progressed = applyQuestProgress(state.activeQuests, events);
+    if (progressed === state.activeQuests) return;
+
+    const skillCtx = getQuestSkillContext(
+      state.matchSkills,
+      state.activeRunSkills,
+    );
+    const economy = getQuestEconomyContext(state.runStats);
+    const collected = autoCollectCompletedQuests(
+      progressed,
+      state.questsClaimedThisRun,
+      skillCtx,
+      economy,
+    );
+
+    set({
+      activeQuests: collected.quests,
+      questsClaimedThisRun: collected.claimedCount,
+    });
+
+    const { rewards } = collected;
+    if (
+      rewards.gold <= 0 &&
+      rewards.diamonds <= 0 &&
+      rewards.purpleDiamonds <= 0
+    ) {
+      return;
+    }
+
+    const game = useGameStore.getState();
+    if (rewards.gold > 0) {
+      game.addGold(rewards.gold, { applyIncome: false });
+    }
+    if (rewards.diamonds > 0) {
+      game.addGems(rewards.diamonds);
+    }
+    if (rewards.purpleDiamonds > 0) {
+      game.addPurpleDiamonds(rewards.purpleDiamonds);
+    }
+    get().recordLootCollected(
+      rewards.gold,
+      rewards.diamonds,
+      rewards.purpleDiamonds,
+    );
+
+    const parts: string[] = [];
+    if (rewards.gold > 0) parts.push(`+${rewards.gold} ouro`);
+    if (rewards.diamonds > 0) parts.push(`+${rewards.diamonds} diam.`);
+    if (rewards.purpleDiamonds > 0) {
+      parts.push(`+${rewards.purpleDiamonds} roxo`);
+    }
+    get().addFloatingTexts([
+      {
+        id: `quest-auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        x: state.playerX,
+        y: state.playerY - 40,
+        text: `Quest! ${parts.join(" · ")}`,
+        color: "#34d399",
+        age: 0,
+      },
+    ]);
+
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
   },
 
   claimQuest: (questId) => {
-    const quest = get().activeQuests.find((q) => q.id === questId);
+    const state = get();
+    const quest = state.activeQuests.find((q) => q.id === questId);
     if (!quest || !quest.completed) return null;
 
     const reward: QuestRewards = {
@@ -722,18 +829,37 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       diamonds: quest.rewardDiamonds,
       purpleDiamonds: quest.rewardPurpleDiamonds,
     };
-    const remaining = get().activeQuests.filter((q) => q.id !== questId);
-    const nextClaimed = get().questsClaimedThisRun + 1;
-    const state = get();
+    const remaining = state.activeQuests.filter((q) => q.id !== questId);
+    const nextClaimed = state.questsClaimedThisRun + 1;
     const replacement = createReplacementQuest(
       remaining,
       nextClaimed,
       getQuestSkillContext(state.matchSkills, state.activeRunSkills),
+      getQuestEconomyContext(state.runStats),
     );
 
     set({
       activeQuests: [...remaining, replacement],
       questsClaimedThisRun: nextClaimed,
+    });
+
+    const game = useGameStore.getState();
+    if (reward.gold > 0) {
+      game.addGold(reward.gold, { applyIncome: false });
+    }
+    if (reward.diamonds > 0) {
+      game.addGems(reward.diamonds);
+    }
+    if (reward.purpleDiamonds > 0) {
+      game.addPurpleDiamonds(reward.purpleDiamonds);
+    }
+    get().recordLootCollected(
+      reward.gold,
+      reward.diamonds,
+      reward.purpleDiamonds,
+    );
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
     });
     return reward;
   },
@@ -785,15 +911,27 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     if (isSpecialSkillType(upgradeType)) {
       set((s) => {
         const prevLevel = s.matchSkills[upgradeType] ?? 0;
+        const alreadyTracked = s.activeRunSkills.includes(upgradeType);
+        const maxSlots = getMaxActiveRunSkills(
+          getExtraActiveRunSkillSlots(useGameStore.getState().skillTree),
+        );
+        const isNewSkill = prevLevel === 0 && !alreadyTracked;
+        if (isNewSkill && s.activeRunSkills.length >= maxSlots) {
+          return {
+            gameState: "playing" as const,
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+          };
+        }
         const nextSkills = {
           ...s.matchSkills,
           [upgradeType]: prevLevel + 1,
         };
-        const alreadyTracked = s.activeRunSkills.includes(upgradeType);
-        const activeRunSkills =
-          prevLevel === 0 && !alreadyTracked
-            ? [...s.activeRunSkills, upgradeType]
-            : s.activeRunSkills;
+        const activeRunSkills = isNewSkill
+          ? [...s.activeRunSkills, upgradeType]
+          : s.activeRunSkills;
         return {
           matchSkills: nextSkills,
           matchSkillBonuses: {

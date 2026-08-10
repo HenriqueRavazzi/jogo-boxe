@@ -415,6 +415,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     matchSkillBonuses,
     pulseState: activeSkills.pulseState,
     prestigeMul,
+    auraPrimaryElement: gameState.auraPrimaryElement,
   });
   skillVfx.push(...aura.newSkillVfx);
   if (aura.questFreeze > 0) {
@@ -430,7 +431,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       player.x,
       player.y,
       aura.auraRadius,
-      aura.activeElements.stone,
+      aura.elementPowers.stone,
     );
 
   // Projéteis de raio: homing garantido + explosão em área (dano + shock)
@@ -1045,11 +1046,14 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
         // Aura + Ricochete liberado: splash 25% em todos os outros na aura
         if (
-          aura.activeElements.ricochet &&
+          aura.elementPowers.ricochet > 0 &&
           aura.auraRadius > 0 &&
           damage > 0
         ) {
-          const splash = damage * AURA_RICOCHET_SPLASH_RATIO;
+          const splash =
+            damage *
+            AURA_RICOCHET_SPLASH_RATIO *
+            aura.elementPowers.ricochet;
           for (const other of living) {
             if (other.isDead || other.id === enemy.id) continue;
             const dist = Math.hypot(other.x - player.x, other.y - player.y);
