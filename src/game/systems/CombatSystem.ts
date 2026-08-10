@@ -216,6 +216,21 @@ export const CHAIN_LIGHTNING_TARGETS = 3;
 /** @deprecated Raio não usa mais cadeia. */
 export const CHAIN_DAMAGE_MULT = 0.5;
 
+/**
+ * Distribui `armCount` socos pelos candidatos (já ordenados por prioridade).
+ * Com menos inimigos do que braços, reutiliza alvos em round-robin —
+ * vários braços podem bater no mesmo inimigo.
+ */
+export function assignArmTargets<T>(candidates: T[], armCount: number): T[] {
+  if (candidates.length === 0 || armCount <= 0) return [];
+  const count = Math.max(1, Math.floor(armCount));
+  const out: T[] = [];
+  for (let i = 0; i < count; i++) {
+    out.push(candidates[i % candidates.length]!);
+  }
+  return out;
+}
+
 /** Cadeia: saltos a partir de um origem; `used` evita alvos já atingidos. */
 function chainRicochet(
   living: Enemy[],
@@ -256,8 +271,9 @@ function chainRicochet(
 }
 
 /**
- * Sistema de combate: colisão de contato + auto-ataque multi-alvo + knockback
- * + procs elementais (gelo / raio / fogo) da skill tree e Purple Diamonds.
+ * Sistema de combate: colisão de contato + auto-ataque multi-braço + knockback
+ * (vários braços podem acertar o mesmo inimigo) + procs elementais
+ * (gelo / raio / fogo) da skill tree e Purple Diamonds.
  */
 export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const {
@@ -980,14 +996,14 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   if (canAttack && living.length > 0 && !player.isDead) {
     const effectiveRange = baseRange * matchBuffs.attackRange;
-    const inRange = living
+    const candidates = living
       .map((enemy) => ({
         enemy,
         dist: Math.hypot(enemy.x - player.x, enemy.y - player.y),
       }))
       .filter(({ dist }) => dist <= effectiveRange)
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, arms);
+      .sort((a, b) => a.dist - b.dist);
+    const inRange = assignArmTargets(candidates, arms);
 
     if (inRange.length > 0) {
       nextAttackTime = now;

@@ -202,9 +202,16 @@ export function pickShadowCloneTargets(
     .filter((s) => !s.preferred)
     .sort((a, b) => a.dist - b.dist);
 
-  return [...preferred, ...fallback]
-    .slice(0, Math.max(1, maxTargets))
-    .map((s) => s.enemy);
+  const ranked = [...preferred, ...fallback].map((s) => s.enemy);
+  if (ranked.length === 0) return [];
+
+  // Mesma regra do herói: com poucos inimigos, vários braços no mesmo alvo
+  const count = Math.max(1, Math.floor(maxTargets));
+  const out: Enemy[] = [];
+  for (let i = 0; i < count; i++) {
+    out.push(ranked[i % ranked.length]!);
+  }
+  return out;
 }
 
 function findMoveTarget(
