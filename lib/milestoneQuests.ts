@@ -1,13 +1,26 @@
 /** Missões de marco eternas — fases infinitas com meta e recompensa crescentes. */
 
 export type MilestoneQuestId =
-  | "flame_master"
+  | "grunt_slayer"
+  | "dasher_hunter"
+  | "ranged_exterminator"
   | "boss_hunter"
-  | "implacable_survivor"
-  | "ascended"
+  | "flame_master"
+  | "frost_executor"
+  | "storm_executioner"
   | "ricochet_rampage"
+  | "quake_bringer"
+  | "vacuum_master"
+  | "shadow_summoner"
+  | "ice_wave_adept"
   | "gold_rush"
-  | "diamond_digger";
+  | "diamond_digger"
+  | "purple_hoarder"
+  | "gold_spender"
+  | "purple_scholar"
+  | "gem_craftsman"
+  | "implacable_survivor"
+  | "ascended";
 
 export type MilestoneQuestCategory = "milestone" | "daily";
 
@@ -50,13 +63,26 @@ export type MilestoneQuestsState = Record<
 >;
 
 export type MilestoneProgressEvent =
-  | { type: "kill_with_fire"; amount: number }
+  | { type: "kill_normals"; amount: number }
+  | { type: "kill_dashers"; amount: number }
+  | { type: "kill_ranged"; amount: number }
   | { type: "bosses_in_run"; amount: number }
-  | { type: "survive_hard_seconds"; amount: number }
-  | { type: "prestige_level"; amount: number }
+  | { type: "kill_with_fire"; amount: number }
+  | { type: "kill_with_ice"; amount: number }
+  | { type: "kill_with_shock"; amount: number }
   | { type: "kill_with_ricochet"; amount: number }
+  | { type: "skill_stone_cast"; amount: number }
+  | { type: "skill_vendaval_cast"; amount: number }
+  | { type: "skill_shadow_spawn"; amount: number }
+  | { type: "skill_ice_cast"; amount: number }
   | { type: "gold_collected"; amount: number }
-  | { type: "diamonds_collected"; amount: number };
+  | { type: "diamonds_collected"; amount: number }
+  | { type: "purple_diamonds_collected"; amount: number }
+  | { type: "gold_upgrades_bought"; amount: number }
+  | { type: "purple_upgrades_bought"; amount: number }
+  | { type: "meta_upgrades_bought"; amount: number }
+  | { type: "survive_hard_seconds"; amount: number }
+  | { type: "prestige_level"; amount: number };
 
 /** Meta ×1.5 por fase (multiply). */
 export const MILESTONE_TARGET_GROWTH = 1.5;
@@ -65,16 +91,46 @@ export const MILESTONE_REWARD_GROWTH = 1.4;
 
 export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
   {
-    id: "flame_master",
-    title: "Mestre das Chamas",
-    description: "Derrote inimigos sob efeito de Fogo (queimadura).",
+    id: "grunt_slayer",
+    title: "Matador de Tropa",
+    description: "Derrote inimigos básicos (normais).",
     category: "milestone",
-    target: 500,
+    target: 1_000,
     rewards: {
-      gold: 1500,
-      gems: 25,
-      purpleDiamonds: 8,
-      ascensionShards: 5,
+      gold: 1_200,
+      gems: 18,
+      purpleDiamonds: 5,
+      ascensionShards: 3,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "dasher_hunter",
+    title: "Caçador de Corredores",
+    description: "Derrote inimigos do tipo Dasher.",
+    category: "milestone",
+    target: 250,
+    rewards: {
+      gold: 1_400,
+      gems: 22,
+      purpleDiamonds: 7,
+      ascensionShards: 4,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "ranged_exterminator",
+    title: "Exterminador à Distância",
+    description: "Derrote inimigos à distância (Ranged).",
+    category: "milestone",
+    target: 250,
+    rewards: {
+      gold: 1_400,
+      gems: 22,
+      purpleDiamonds: 7,
+      ascensionShards: 4,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -95,34 +151,49 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     targetScale: "multiply",
   },
   {
-    id: "implacable_survivor",
-    title: "Sobrevivente Implacável",
-    description: "Sobreviva em Difícil ou Infernal.",
+    id: "flame_master",
+    title: "Mestre das Chamas",
+    description: "Derrote inimigos sob efeito de Fogo (queimadura).",
     category: "milestone",
-    target: 600,
+    target: 500,
     rewards: {
-      gold: 1800,
-      gems: 30,
-      purpleDiamonds: 10,
-      ascensionShards: 6,
+      gold: 1500,
+      gems: 25,
+      purpleDiamonds: 8,
+      ascensionShards: 5,
     },
-    progressMode: "max",
+    progressMode: "add",
     targetScale: "multiply",
   },
   {
-    id: "ascended",
-    title: "Ascendido",
-    description: "Alcance um novo nível de Prestígio.",
+    id: "frost_executor",
+    title: "Executor Gelado",
+    description: "Derrote inimigos congelados.",
     category: "milestone",
-    target: 1,
+    target: 400,
     rewards: {
-      gold: 1000,
-      gems: 50,
-      purpleDiamonds: 20,
-      ascensionShards: 12,
+      gold: 1_450,
+      gems: 24,
+      purpleDiamonds: 8,
+      ascensionShards: 5,
     },
-    progressMode: "max",
-    targetScale: "linear",
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "storm_executioner",
+    title: "Executor Elétrico",
+    description: "Derrote inimigos sob efeito de Raio (shock).",
+    category: "milestone",
+    target: 400,
+    rewards: {
+      gold: 1_450,
+      gems: 24,
+      purpleDiamonds: 8,
+      ascensionShards: 5,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
   },
   {
     id: "ricochet_rampage",
@@ -132,6 +203,66 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     target: 200,
     rewards: {
       gold: 1200,
+      gems: 20,
+      purpleDiamonds: 6,
+      ascensionShards: 4,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "quake_bringer",
+    title: "Tremor da Pedra",
+    description: "Dispare o terremoto da skill Pedra.",
+    category: "milestone",
+    target: 40,
+    rewards: {
+      gold: 1_300,
+      gems: 22,
+      purpleDiamonds: 7,
+      ascensionShards: 4,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "vacuum_master",
+    title: "Senhor do Vendaval",
+    description: "Dispare o vácuo da skill Vendaval.",
+    category: "milestone",
+    target: 40,
+    rewards: {
+      gold: 1_350,
+      gems: 23,
+      purpleDiamonds: 8,
+      ascensionShards: 5,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "shadow_summoner",
+    title: "Invocador Sombrio",
+    description: "Invoque clones da skill Shadow Clone.",
+    category: "milestone",
+    target: 30,
+    rewards: {
+      gold: 1_500,
+      gems: 28,
+      purpleDiamonds: 10,
+      ascensionShards: 6,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "ice_wave_adept",
+    title: "Adepto do Gelo",
+    description: "Dispare ondas da skill Gelo.",
+    category: "milestone",
+    target: 50,
+    rewards: {
+      gold: 1_250,
       gems: 20,
       purpleDiamonds: 6,
       ascensionShards: 4,
@@ -168,6 +299,96 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     },
     progressMode: "add",
     targetScale: "multiply",
+  },
+  {
+    id: "purple_hoarder",
+    title: "Colecionador Roxo",
+    description: "Colete diamantes roxos no total.",
+    category: "milestone",
+    target: 50,
+    rewards: {
+      gold: 1_000,
+      gems: 20,
+      purpleDiamonds: 18,
+      ascensionShards: 6,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "gold_spender",
+    title: "Investidor de Ouro",
+    description: "Compre níveis de upgrades permanentes com ouro.",
+    category: "milestone",
+    target: 100,
+    rewards: {
+      gold: 2_000,
+      gems: 18,
+      purpleDiamonds: 6,
+      ascensionShards: 4,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "purple_scholar",
+    title: "Erudito Roxo",
+    description: "Melhore atributos de skills com diamantes roxos.",
+    category: "milestone",
+    target: 25,
+    rewards: {
+      gold: 1_100,
+      gems: 25,
+      purpleDiamonds: 20,
+      ascensionShards: 7,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "gem_craftsman",
+    title: "Artesão de Diamantes",
+    description: "Compre níveis da árvore de atributos (diamantes).",
+    category: "milestone",
+    target: 40,
+    rewards: {
+      gold: 1_300,
+      gems: 40,
+      purpleDiamonds: 10,
+      ascensionShards: 6,
+    },
+    progressMode: "add",
+    targetScale: "multiply",
+  },
+  {
+    id: "implacable_survivor",
+    title: "Sobrevivente Implacável",
+    description: "Sobreviva em Difícil ou Infernal.",
+    category: "milestone",
+    target: 600,
+    rewards: {
+      gold: 1800,
+      gems: 30,
+      purpleDiamonds: 10,
+      ascensionShards: 6,
+    },
+    progressMode: "max",
+    targetScale: "multiply",
+  },
+  {
+    id: "ascended",
+    title: "Ascendido",
+    description: "Alcance um novo nível de Prestígio.",
+    category: "milestone",
+    target: 1,
+    rewards: {
+      gold: 1000,
+      gems: 50,
+      purpleDiamonds: 20,
+      ascensionShards: 12,
+    },
+    progressMode: "max",
+    targetScale: "linear",
   },
 ];
 
@@ -296,26 +517,65 @@ export function applyMilestoneProgress(
   for (const ev of events) {
     if (ev.amount <= 0) continue;
     switch (ev.type) {
-      case "kill_with_fire":
-        bump("flame_master", ev.amount);
+      case "kill_normals":
+        bump("grunt_slayer", ev.amount);
+        break;
+      case "kill_dashers":
+        bump("dasher_hunter", ev.amount);
+        break;
+      case "kill_ranged":
+        bump("ranged_exterminator", ev.amount);
         break;
       case "bosses_in_run":
         bump("boss_hunter", ev.amount);
         break;
-      case "survive_hard_seconds":
-        bump("implacable_survivor", ev.amount);
+      case "kill_with_fire":
+        bump("flame_master", ev.amount);
         break;
-      case "prestige_level":
-        bump("ascended", ev.amount);
+      case "kill_with_ice":
+        bump("frost_executor", ev.amount);
+        break;
+      case "kill_with_shock":
+        bump("storm_executioner", ev.amount);
         break;
       case "kill_with_ricochet":
         bump("ricochet_rampage", ev.amount);
+        break;
+      case "skill_stone_cast":
+        bump("quake_bringer", ev.amount);
+        break;
+      case "skill_vendaval_cast":
+        bump("vacuum_master", ev.amount);
+        break;
+      case "skill_shadow_spawn":
+        bump("shadow_summoner", ev.amount);
+        break;
+      case "skill_ice_cast":
+        bump("ice_wave_adept", ev.amount);
         break;
       case "gold_collected":
         bump("gold_rush", ev.amount);
         break;
       case "diamonds_collected":
         bump("diamond_digger", ev.amount);
+        break;
+      case "purple_diamonds_collected":
+        bump("purple_hoarder", ev.amount);
+        break;
+      case "gold_upgrades_bought":
+        bump("gold_spender", ev.amount);
+        break;
+      case "purple_upgrades_bought":
+        bump("purple_scholar", ev.amount);
+        break;
+      case "meta_upgrades_bought":
+        bump("gem_craftsman", ev.amount);
+        break;
+      case "survive_hard_seconds":
+        bump("implacable_survivor", ev.amount);
+        break;
+      case "prestige_level":
+        bump("ascended", ev.amount);
         break;
     }
   }

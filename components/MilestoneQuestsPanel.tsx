@@ -27,29 +27,53 @@ function phaseDescription(
   baseDescription: string,
   target: number,
 ): string {
-  if (id === "implacable_survivor") {
-    const min = Math.max(1, Math.floor(target / 60));
-    return `Sobreviva ${min} min em Difícil ou Infernal.`;
+  const n = target.toLocaleString("pt-BR");
+  switch (id) {
+    case "implacable_survivor": {
+      const min = Math.max(1, Math.floor(target / 60));
+      return `Sobreviva ${min} min em Difícil ou Infernal.`;
+    }
+    case "ascended":
+      return `Alcance o Nível ${target} de Prestígio.`;
+    case "boss_hunter":
+      return `Derrote ${n} bosses em uma única run.`;
+    case "grunt_slayer":
+      return `Derrote ${n} inimigos básicos.`;
+    case "dasher_hunter":
+      return `Derrote ${n} inimigos Dasher.`;
+    case "ranged_exterminator":
+      return `Derrote ${n} inimigos Ranged.`;
+    case "flame_master":
+      return `Derrote ${n} inimigos sob efeito de Fogo.`;
+    case "frost_executor":
+      return `Derrote ${n} inimigos congelados.`;
+    case "storm_executioner":
+      return `Derrote ${n} inimigos sob efeito de Raio.`;
+    case "ricochet_rampage":
+      return `Elimine ${n} inimigos na janela de Ricochete.`;
+    case "quake_bringer":
+      return `Dispare o terremoto da Pedra ${n} vezes.`;
+    case "vacuum_master":
+      return `Dispare o Vendaval ${n} vezes.`;
+    case "shadow_summoner":
+      return `Invoque ${n} Shadow Clones.`;
+    case "ice_wave_adept":
+      return `Dispare ${n} ondas de Gelo.`;
+    case "gold_rush":
+      return `Colete ${n} de ouro no total.`;
+    case "diamond_digger":
+      return `Colete ${n} diamantes normais no total.`;
+    case "purple_hoarder":
+      return `Colete ${n} diamantes roxos no total.`;
+    case "gold_spender":
+      return `Compre ${n} níveis de upgrades com ouro.`;
+    case "purple_scholar":
+      return `Melhore ${n} atributos de skills com diamantes roxos.`;
+    case "gem_craftsman":
+      return `Compre ${n} níveis da árvore de diamantes.`;
+    default:
+      return baseDescription;
   }
-  if (id === "ascended") {
-    return `Alcance o Nível ${target} de Prestígio.`;
-  }
-  if (id === "boss_hunter") {
-    return `Derrote ${target.toLocaleString("pt-BR")} bosses em uma única run.`;
-  }
-  if (id === "flame_master") {
-    return `Derrote ${target.toLocaleString("pt-BR")} inimigos sob efeito de Fogo.`;
-  }
-  if (id === "ricochet_rampage") {
-    return `Elimine ${target.toLocaleString("pt-BR")} inimigos na janela de Ricochete.`;
-  }
-  if (id === "gold_rush") {
-    return `Colete ${target.toLocaleString("pt-BR")} de ouro no total.`;
-  }
-  if (id === "diamond_digger") {
-    return `Colete ${target.toLocaleString("pt-BR")} diamantes normais no total.`;
-  }
-  return baseDescription;
 }
 
 /** Painel de Missões / Conquistas no menu principal. */

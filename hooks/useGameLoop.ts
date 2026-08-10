@@ -305,6 +305,8 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         goldDropMultiplier: difficulty.goldDropMultiplier,
         bossesKilled: arena.bossesKilled,
         diamondLuckBonus: game.getDiamondLuckBonus(),
+        purpleDiamondLuckBonus:
+          game.getEquippedTeamBuffs().purpleDiamondLuckBonus,
         compactLoot,
       });
       const newDrops = dropResult.drops;
@@ -376,6 +378,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         milestoneBatch.push({
           type: "diamonds_collected",
           amount: loot.collectedDiamonds,
+        });
+      }
+      if (loot.collectedPurpleDiamonds > 0) {
+        milestoneBatch.push({
+          type: "purple_diamonds_collected",
+          amount: loot.collectedPurpleDiamonds,
         });
       }
       const bossesKilledPreview =

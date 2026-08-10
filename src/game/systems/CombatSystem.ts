@@ -324,15 +324,17 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     (0.6 + skills.ricochet.damage * 0.15) *
     Math.min(1.5, prestigeMul) *
     ricochetBonus.damageMul;
+  const teamBuffs = gameState.getEquippedTeamBuffs();
   const knockbackPower =
-    (knockbackImpulse ??
+    ((knockbackImpulse ??
       gameState.getKnockbackPower() ??
-      DEFAULT_KNOCKBACK) *
+      DEFAULT_KNOCKBACK) +
+      teamBuffs.knockbackBonus) *
     (matchBuffs.knockbackMultiplier ?? 1);
   const difficulty = gameState.getDifficultyMultipliers();
   const damageTakenMul =
     getSkillDamageTakenMultiplier(gameState.skillTree) *
-    gameState.getEquippedTeamBuffs().damageTakenMultiplier;
+    teamBuffs.damageTakenMultiplier;
   const parryChance = Math.min(
     0.2,
     getMetaParryChance(gameState.metaParryChance) *
@@ -375,8 +377,21 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       rewards: { ...enemy.rewards },
     });
     pushKillQuests(enemy.type);
+    if (enemy.type === "normal") {
+      milestoneEvents.push({ type: "kill_normals", amount: 1 });
+    } else if (enemy.type === "dasher") {
+      milestoneEvents.push({ type: "kill_dashers", amount: 1 });
+    } else if (enemy.type === "ranged") {
+      milestoneEvents.push({ type: "kill_ranged", amount: 1 });
+    }
     if (enemy.hasStatus("burn", now) || enemy.isBurning) {
       milestoneEvents.push({ type: "kill_with_fire", amount: 1 });
+    }
+    if (enemy.hasStatus("freeze", now)) {
+      milestoneEvents.push({ type: "kill_with_ice", amount: 1 });
+    }
+    if (enemy.hasStatus("shock", now)) {
+      milestoneEvents.push({ type: "kill_with_shock", amount: 1 });
     }
     if (ricochetWindowActive) {
       milestoneEvents.push({ type: "kill_with_ricochet", amount: 1 });
@@ -384,7 +399,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   };
 
   const effectiveRange = baseRange * matchBuffs.attackRange;
-  const skillDamageMult = matchBuffs.skillDamageMultiplier ?? 1;
+  const skillDamageMult =
+    (matchBuffs.skillDamageMultiplier ?? 1) *
+    teamBuffs.skillDamageMultiplier;
   const activeSkills = runActiveSkills({
     enemies,
     playerX: player.x,
@@ -405,6 +422,15 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       type: "inflict_freeze",
       amount: activeSkills.questFreeze,
     });
+  }
+  if (activeSkills.pulseState.icePulseAt === now) {
+    milestoneEvents.push({ type: "skill_ice_cast", amount: 1 });
+  }
+  if (activeSkills.pulseState.stonePulseAt === now) {
+    milestoneEvents.push({ type: "skill_stone_cast", amount: 1 });
+  }
+  if (activeSkills.pulseState.vendavalPulseAt === now) {
+    milestoneEvents.push({ type: "skill_vendaval_cast", amount: 1 });
   }
 
   // Aura: área contínua com sinergia das skills ativas na run
@@ -625,6 +651,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   let shadowClones = shadow.clones;
   const pendingShadowAttacks = shadow.newAttacks;
   const pendingShadowSplats = shadow.hitSplats;
+  if (shadow.pulseState.shadowPulseAt === now) {
+    milestoneEvents.push({ type: "skill_shadow_spawn", amount: 1 });
+  }
 
   for (const [enemyId, dmg] of shadow.damagedEnemyIds) {
     const enemy = enemies.find((e) => e.id === enemyId && !e.isDead);

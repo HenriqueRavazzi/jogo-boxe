@@ -19,26 +19,36 @@ export type TeamMemberId =
   | "bandage_boy"
   | "gym_rat"
   | "water_boy"
+  | "towel_toss"
+  | "roadwork_runner"
   // Uncommon
   | "stitch_sam"
   | "pad_holder"
   | "meal_prep"
+  | "ice_bucket"
+  | "focus_mitt"
   // Rare
   | "ringside_doc"
   | "sparring_ace"
   | "strength_coach"
   | "corner_tactician"
+  | "push_specialist"
+  | "skill_scout"
   // Epic
   | "prime_cutman"
   | "elite_spar"
   | "head_coach"
   | "money_manager"
+  | "range_finder"
+  | "purple_agent"
   // Legendary
   | "iron_doc"
   | "shadow_spar"
   | "titan_prep"
   | "master_coach"
-  | "golden_manager";
+  | "golden_manager"
+  | "echo_striker"
+  | "vault_broker";
 
 /** Nível por membro (0 = não possui). */
 export type TeamMembersOwned = Record<TeamMemberId, number>;
@@ -47,28 +57,38 @@ export const TEAM_MEMBER_IDS: TeamMemberId[] = [
   "bandage_boy",
   "gym_rat",
   "water_boy",
+  "towel_toss",
+  "roadwork_runner",
   "stitch_sam",
   "pad_holder",
   "meal_prep",
+  "ice_bucket",
+  "focus_mitt",
   "ringside_doc",
   "sparring_ace",
   "strength_coach",
   "corner_tactician",
+  "push_specialist",
+  "skill_scout",
   "prime_cutman",
   "elite_spar",
   "head_coach",
   "money_manager",
+  "range_finder",
+  "purple_agent",
   "iron_doc",
   "shadow_spar",
   "titan_prep",
   "master_coach",
   "golden_manager",
+  "echo_striker",
+  "vault_broker",
 ];
 
 export const DEFAULT_TEAM_MEMBERS_OWNED: TeamMembersOwned =
   Object.fromEntries(TEAM_MEMBER_IDS.map((id) => [id, 0])) as TeamMembersOwned;
 
-export const MAX_TEAM_MEMBER_LEVEL = 20;
+export const MAX_TEAM_MEMBER_LEVEL = 40;
 /** Slots ativos na esquina do ringue. */
 export const MAX_EQUIPPED_TEAM_MEMBERS = 3;
 
@@ -121,10 +141,10 @@ export const TEAM_HARD_PITY_EPIC = 40;
 export const TEAM_SOFT_PITY_LEGENDARY = 55;
 export const TEAM_HARD_PITY_LEGENDARY = 90;
 
-export const TEAM_RECRUIT_GOLD_BASE = 380;
-export const TEAM_RECRUIT_GEMS_BASE = 14;
-export const TEAM_RECRUIT_GOLD_GROWTH = 1.045;
-export const TEAM_RECRUIT_GEMS_GROWTH = 1.035;
+export const TEAM_RECRUIT_GOLD_BASE = 220;
+export const TEAM_RECRUIT_GEMS_BASE = 8;
+export const TEAM_RECRUIT_GOLD_GROWTH = 1.022;
+export const TEAM_RECRUIT_GEMS_GROWTH = 1.016;
 
 export type TeamMemberDef = {
   id: TeamMemberId;
@@ -170,6 +190,28 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
       `+${Math.round(18 * power("common", level))} HP máx.`,
   },
   {
+    id: "towel_toss",
+    name: "Towel Toss",
+    tier: "common",
+    role: "cutman",
+    tagline: "Toalha gelada no canto.",
+    bonusLabel: (level) =>
+      `+${(0.22 * power("common", level)).toFixed(1)} HP/s · +${(
+        0.8 * power("common", level)
+      ).toFixed(1)}% AS`,
+  },
+  {
+    id: "roadwork_runner",
+    name: "Roadwork Runner",
+    tier: "common",
+    role: "sparring",
+    tagline: "Quilômetros antes do sol.",
+    bonusLabel: (level) =>
+      `+${(1.5 * power("common", level)).toFixed(0)}% alcance · +${(
+        1.2 * power("common", level)
+      ).toFixed(0)}% XP`,
+  },
+  {
     id: "stitch_sam",
     name: "Stitch Sam",
     tier: "uncommon",
@@ -199,6 +241,28 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
       `+${Math.round(28 * power("uncommon", level))} HP · −${(
         1.2 * power("uncommon", level)
       ).toFixed(1)}% dano recebido`,
+  },
+  {
+    id: "ice_bucket",
+    name: "Ice Bucket",
+    tier: "uncommon",
+    role: "cutman",
+    tagline: "Recuperação pós-round.",
+    bonusLabel: (level) =>
+      `+${(0.4 * power("uncommon", level)).toFixed(1)} HP/s · +${Math.round(
+        12 * power("uncommon", level),
+      )} HP máx.`,
+  },
+  {
+    id: "focus_mitt",
+    name: "Focus Mitt",
+    tier: "uncommon",
+    role: "coach",
+    tagline: "Timing de jab e entrada.",
+    bonusLabel: (level) =>
+      `+${(1.1 * power("uncommon", level)).toFixed(1)}% crit · +${(
+        2 * power("uncommon", level)
+      ).toFixed(0)}% AS`,
   },
   {
     id: "ringside_doc",
@@ -243,6 +307,28 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
       ).toFixed(0)}% dano crít.`,
   },
   {
+    id: "push_specialist",
+    name: "Push Specialist",
+    tier: "rare",
+    role: "sparring",
+    tagline: "Clinches e empurrões de escola.",
+    bonusLabel: (level) =>
+      `+${Math.round(4 * power("rare", level))} empurrão · +${Math.round(
+        3 * power("rare", level),
+      )} dano`,
+  },
+  {
+    id: "skill_scout",
+    name: "Skill Scout",
+    tier: "rare",
+    role: "coach",
+    tagline: "Olheiro de especiais.",
+    bonusLabel: (level) =>
+      `+${(4 * power("rare", level)).toFixed(0)}% dano de skills · +${(
+        1.2 * power("rare", level)
+      ).toFixed(1)}% crit`,
+  },
+  {
     id: "prime_cutman",
     name: "Prime Cutman",
     tier: "epic",
@@ -283,6 +369,28 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
       `+${(5 * power("epic", level)).toFixed(0)}% ouro · +${(
         0.35 * power("epic", level)
       ).toFixed(1)}% diamantes`,
+  },
+  {
+    id: "range_finder",
+    name: "Range Finder",
+    tier: "epic",
+    role: "coach",
+    tagline: "Distância perfeita de jab.",
+    bonusLabel: (level) =>
+      `+${(3.5 * power("epic", level)).toFixed(0)}% alcance · +${(
+        2.5 * power("epic", level)
+      ).toFixed(0)}% AS`,
+  },
+  {
+    id: "purple_agent",
+    name: "Purple Agent",
+    tier: "epic",
+    role: "manager",
+    tagline: "Contratos com o mercado roxo.",
+    bonusLabel: (level) =>
+      `+${(0.45 * power("epic", level)).toFixed(1)}% diam. roxos · +${(
+        3 * power("epic", level)
+      ).toFixed(0)}% ouro`,
   },
   {
     id: "iron_doc",
@@ -338,6 +446,30 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
       `+${(8 * power("legendary", level)).toFixed(0)}% ouro · +${(
         0.55 * power("legendary", level)
       ).toFixed(1)}% diamantes`,
+  },
+  {
+    id: "echo_striker",
+    name: "Echo Striker",
+    tier: "legendary",
+    role: "sparring",
+    tagline: "Cada golpe ecoa nas skills.",
+    bonusLabel: (level) =>
+      `+${(6 * power("legendary", level)).toFixed(0)}% dano de skills · +${Math.round(
+        8 * power("legendary", level),
+      )} empurrão`,
+  },
+  {
+    id: "vault_broker",
+    name: "Vault Broker",
+    tier: "legendary",
+    role: "manager",
+    tagline: "Ouro, diamantes e o cofre roxo.",
+    bonusLabel: (level) =>
+      `+${(6 * power("legendary", level)).toFixed(0)}% ouro · +${(
+        0.4 * power("legendary", level)
+      ).toFixed(1)}% diam. · +${(
+        0.5 * power("legendary", level)
+      ).toFixed(1)}% roxos`,
   },
 ];
 
@@ -545,6 +677,14 @@ export type EquippedTeamBuffs = {
   goldIncomeMultiplier: number;
   diamondLuckBonus: number;
   xpMultiplierBonus: number;
+  /** Multiplicador de dano de skills (1 = neutro). */
+  skillDamageMultiplier: number;
+  /** Bônus flat de knockback dos socos. */
+  knockbackBonus: number;
+  /** Multiplicador de alcance de ataque (1 = neutro). */
+  attackRangeMultiplier: number;
+  /** Chance extra de diamante roxo (aditivo 0–1). */
+  purpleDiamondLuckBonus: number;
 };
 
 export const EMPTY_TEAM_BUFFS: EquippedTeamBuffs = {
@@ -558,6 +698,10 @@ export const EMPTY_TEAM_BUFFS: EquippedTeamBuffs = {
   goldIncomeMultiplier: 1,
   diamondLuckBonus: 0,
   xpMultiplierBonus: 0,
+  skillDamageMultiplier: 1,
+  knockbackBonus: 0,
+  attackRangeMultiplier: 1,
+  purpleDiamondLuckBonus: 0,
 };
 
 function applyMemberBuffs(
@@ -579,6 +723,14 @@ function applyMemberBuffs(
     case "water_boy":
       acc.maxHpBonus += 18 * p;
       break;
+    case "towel_toss":
+      acc.hpRegenPerSecond += 0.22 * p;
+      acc.attackSpeedMultiplier *= 1 + 0.008 * p;
+      break;
+    case "roadwork_runner":
+      acc.attackRangeMultiplier *= 1 + 0.015 * p;
+      acc.xpMultiplierBonus += 0.012 * p;
+      break;
     case "stitch_sam":
       acc.hpRegenPerSecond += 0.55 * p;
       break;
@@ -589,6 +741,14 @@ function applyMemberBuffs(
     case "meal_prep":
       acc.maxHpBonus += 28 * p;
       acc.damageTakenMultiplier *= 1 - Math.min(0.25, 0.012 * p);
+      break;
+    case "ice_bucket":
+      acc.hpRegenPerSecond += 0.4 * p;
+      acc.maxHpBonus += 12 * p;
+      break;
+    case "focus_mitt":
+      acc.critChanceBonus += 0.011 * p;
+      acc.attackSpeedMultiplier *= 1 + 0.02 * p;
       break;
     case "ringside_doc":
       acc.hpRegenPerSecond += 0.85 * p;
@@ -605,6 +765,14 @@ function applyMemberBuffs(
       acc.critChanceBonus += 0.015 * p;
       acc.critDamageBonus += 0.08 * p;
       break;
+    case "push_specialist":
+      acc.knockbackBonus += 4 * p;
+      acc.flatDamage += 3 * p;
+      break;
+    case "skill_scout":
+      acc.skillDamageMultiplier *= 1 + 0.04 * p;
+      acc.critChanceBonus += 0.012 * p;
+      break;
     case "prime_cutman":
       acc.hpRegenPerSecond += 1.35 * p;
       break;
@@ -619,6 +787,14 @@ function applyMemberBuffs(
     case "money_manager":
       acc.goldIncomeMultiplier *= 1 + 0.05 * p;
       acc.diamondLuckBonus += 0.0035 * p;
+      break;
+    case "range_finder":
+      acc.attackRangeMultiplier *= 1 + 0.035 * p;
+      acc.attackSpeedMultiplier *= 1 + 0.025 * p;
+      break;
+    case "purple_agent":
+      acc.purpleDiamondLuckBonus += 0.0045 * p;
+      acc.goldIncomeMultiplier *= 1 + 0.03 * p;
       break;
     case "iron_doc":
       acc.hpRegenPerSecond += 2.1 * p;
@@ -640,6 +816,15 @@ function applyMemberBuffs(
       acc.goldIncomeMultiplier *= 1 + 0.08 * p;
       acc.diamondLuckBonus += 0.0055 * p;
       break;
+    case "echo_striker":
+      acc.skillDamageMultiplier *= 1 + 0.06 * p;
+      acc.knockbackBonus += 8 * p;
+      break;
+    case "vault_broker":
+      acc.goldIncomeMultiplier *= 1 + 0.06 * p;
+      acc.diamondLuckBonus += 0.004 * p;
+      acc.purpleDiamondLuckBonus += 0.005 * p;
+      break;
     default:
       break;
   }
@@ -655,8 +840,20 @@ export function getEquippedTeamBuffs(
   }
   acc.flatDamage = Math.round(acc.flatDamage);
   acc.maxHpBonus = Math.round(acc.maxHpBonus);
+  acc.knockbackBonus = Math.round(acc.knockbackBonus);
   acc.damageTakenMultiplier = Math.max(0.5, acc.damageTakenMultiplier);
   return acc;
+}
+
+/** Prestígio: membros obtidos voltam ao Nv.1; não-possuídos ficam 0. */
+export function resetOwnedTeamMembersToBase(
+  owned: TeamMembersOwned,
+): TeamMembersOwned {
+  const next = { ...DEFAULT_TEAM_MEMBERS_OWNED };
+  for (const id of TEAM_MEMBER_IDS) {
+    next[id] = (owned[id] ?? 0) > 0 ? 1 : 0;
+  }
+  return next;
 }
 
 export type RecruitTeamResult =

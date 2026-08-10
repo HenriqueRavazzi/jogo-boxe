@@ -107,6 +107,7 @@ import {
   normalizeEquippedTeamIds,
   normalizeTeamMembersOwned,
   normalizeTeamPity,
+  resetOwnedTeamMembersToBase,
   rollTeamMemberId,
   TEAM_MULTI_PULL_COUNT,
   type EquippedTeamBuffs,
@@ -307,7 +308,7 @@ export type GameStoreState = {
   /**
    * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades de ouro/níveis roxos,
    * skills liberadas (in-game) e abates de unlock. Mantém upgrades de diamante
-   * (meta, XP, skill tree), passivas de Ascensão, shards e equipe.
+   * (meta, XP, skill tree) e passivas de Ascensão. Equipe: Nv.1 + pity zerado.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -1604,8 +1605,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
    * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
    * roxos), upgrades de base (ouro), árvore roxa granular, skills liberadas
    * (precisam ser desbloqueadas de novo para a roleta in-game) e abates usados
-   * nos unlocks. Mantém upgrades de diamante (meta tree, XP, skill tree),
-   * passivas de Ascensão, shards e equipe.
+   * nos unlocks. Mantém upgrades de diamante (meta tree, XP, skill tree) e
+   * passivas de Ascensão. Equipe: membros obtidos voltam ao Nv.1 e o custo de
+   * recrutamento (pity) zera.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -1625,7 +1627,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       prestigeLevel: current.prestigeLevel,
     });
 
-    set((s) => ({
+    set((s) => {
+      const resetTeam = resetOwnedTeamMembersToBase(s.teamMembersOwned);
+      return {
       prestigeLevel: s.prestigeLevel + 1,
       ascensionShards: s.ascensionShards + shardsGained,
       // Passivas de Ascensão são permanentes — reafirma no snapshot do prestige
@@ -1663,10 +1667,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       },
       totalMobsKilled: 0,
       totalBossesKilled: 0,
+      teamMembersOwned: resetTeam,
+      teamPity: normalizeTeamPity(null),
+      equippedTeamMemberIds: normalizeEquippedTeamIds(
+        s.equippedTeamMemberIds,
+        resetTeam,
+      ),
       milestoneQuests: applyMilestoneProgress(s.milestoneQuests, [
         { type: "prestige_level", amount: s.prestigeLevel + 1 },
       ]),
-    }));
+    };
+    });
 
     void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
       void syncWithDB();
@@ -1876,6 +1887,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       };
     });
 
+    get().progressMilestoneQuests([
+      { type: "purple_upgrades_bought", amount: 1 },
+    ]);
+
     void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
       void syncWithDB();
     });
@@ -2062,6 +2077,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gems: s.gems - plan.totalCost,
       [type]: current + plan.count,
     }));
+    get().progressMilestoneQuests([
+      { type: "meta_upgrades_bought", amount: plan.count },
+    ]);
     return plan.count;
   },
 
@@ -2075,6 +2093,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gems: s.gems - cost,
       [type]: current + 1,
     }));
+    get().progressMilestoneQuests([
+      { type: "meta_upgrades_bought", amount: 1 },
+    ]);
     return true;
   },
 
@@ -2139,7 +2160,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       damage: Math.round(damageCore + damageMetaExtra),
       attackRange: Math.min(
         MAX_ATTACK_RANGE,
-        Math.round(goldRange + skillRange * prestigeMul),
+        Math.round(
+          (goldRange + skillRange * prestigeMul) * team.attackRangeMultiplier,
+        ),
       ),
       attackCooldownMs: Math.max(
         MIN_ATTACK_COOLDOWN_MS,
@@ -2183,7 +2206,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         Math.max(0, s.metaKnockbackLevel) *
           META_KNOCKBACK_PER_LEVEL *
           prestigeMul +
-        getSkillKnockbackBonus(tree) * prestigeMul,
+        getSkillKnockbackBonus(tree) * prestigeMul +
+        team.knockbackBonus,
       skillBonus: {
         hp: skillHp,
         damage: skillDmg,
@@ -2332,36 +2356,24 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         gold: s.gold - cost,
         maxHpLevel: s.maxHpLevel + n,
       }));
-      return n;
-    }
-
-    if (kind === "damage") {
+    } else if (kind === "damage") {
       set((s) => ({
         gold: s.gold - cost,
         baseDamageLevel: s.baseDamageLevel + n,
       }));
-      return n;
-    }
-
-    if (kind === "range") {
+    } else if (kind === "range") {
       set((s) => ({
         gold: s.gold - cost,
         rangeLevel: Math.min(MAX_UPGRADE_LEVELS.range, s.rangeLevel + n),
       }));
-      return n;
-    }
-
-    if (kind === "income") {
+    } else if (kind === "income") {
       set((s) => ({
         gold: s.gold - cost,
         incomeMultiplier: Number(
           (s.incomeMultiplier + INCOME_STEP * n).toFixed(1),
         ),
       }));
-      return n;
-    }
-
-    if (kind === "critChance") {
+    } else if (kind === "critChance") {
       set((s) => ({
         gold: s.gold - cost,
         critChanceLevel: Math.min(
@@ -2369,33 +2381,36 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           s.critChanceLevel + n,
         ),
       }));
-      return n;
+    } else {
+      // arms — simula ciclo braço / prestige de braços
+      set((s) => {
+        let arms = s.arms;
+        let armTier = s.armTier;
+        let baseDamage = s.baseDamage;
+        let armsNextCost = s.armsNextCost;
+        for (let i = 0; i < n; i++) {
+          if (arms < ARMS_MAX) {
+            arms += 1;
+          } else {
+            arms = ARMS_MIN;
+            armTier += 1;
+            baseDamage = Math.round(baseDamage * ARMS_PRESTIGE_DAMAGE);
+          }
+          armsNextCost = Math.floor(armsNextCost * ARMS_COST_GROWTH);
+        }
+        return {
+          gold: s.gold - cost,
+          arms,
+          armTier,
+          baseDamage,
+          armsNextCost,
+        };
+      });
     }
 
-    // arms — simula ciclo braço / prestige de braços
-    set((s) => {
-      let arms = s.arms;
-      let armTier = s.armTier;
-      let baseDamage = s.baseDamage;
-      let armsNextCost = s.armsNextCost;
-      for (let i = 0; i < n; i++) {
-        if (arms < ARMS_MAX) {
-          arms += 1;
-        } else {
-          arms = ARMS_MIN;
-          armTier += 1;
-          baseDamage = Math.round(baseDamage * ARMS_PRESTIGE_DAMAGE);
-        }
-        armsNextCost = Math.floor(armsNextCost * ARMS_COST_GROWTH);
-      }
-      return {
-        gold: s.gold - cost,
-        arms,
-        armTier,
-        baseDamage,
-        armsNextCost,
-      };
-    });
+    get().progressMilestoneQuests([
+      { type: "gold_upgrades_bought", amount: n },
+    ]);
     return n;
   },
 

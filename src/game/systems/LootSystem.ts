@@ -65,6 +65,8 @@ export type CreateDropsOptions = {
   bossesKilled?: number;
   /** Bônus absoluto na chance de diamante (Sorte do Campeão). */
   diamondLuckBonus?: number;
+  /** Bônus absoluto na chance de diamante roxo (equipe). */
+  purpleDiamondLuckBonus?: number;
   /**
    * Endless tardio: 1 drop `bundle` por kill com valores somados
    * (evita dezenas de sprites de moeda/diamante).
@@ -107,6 +109,7 @@ function rollLootForSite(
   goldDropMultiplier: number,
   diamondLuckBonus: number,
   bossOrdinalIn: number,
+  purpleDiamondLuckBonus = 0,
 ): {
   coinCount: number;
   diamonds: number;
@@ -139,8 +142,13 @@ function rollLootForSite(
     bossesKilled = 1;
     bossOrdinal += 1;
     purpleDiamonds = purpleDiamondsForBoss(bossOrdinal);
-  } else if (Math.random() < PURPLE_DIAMOND_CHANCE) {
-    purpleDiamonds = 1;
+  } else {
+    const purpleChance = Math.min(
+      0.12,
+      Math.max(rewards.purpleDiamondChance, PURPLE_DIAMOND_CHANCE) +
+        Math.max(0, purpleDiamondLuckBonus),
+    );
+    if (Math.random() < purpleChance) purpleDiamonds = 1;
   }
 
   return {
@@ -233,6 +241,10 @@ export function createDropsFromKills(
   const incomeMultiplier = options.incomeMultiplier ?? 1;
   const goldDropMultiplier = options.goldDropMultiplier ?? 1;
   const diamondLuckBonus = Math.max(0, options.diamondLuckBonus ?? 0);
+  const purpleDiamondLuckBonus = Math.max(
+    0,
+    options.purpleDiamondLuckBonus ?? 0,
+  );
   const compactLoot = options.compactLoot === true;
   let bossOrdinal = options.bossesKilled ?? 0;
   const drops: Drop[] = [];
@@ -246,6 +258,7 @@ export function createDropsFromKills(
       goldDropMultiplier,
       diamondLuckBonus,
       bossOrdinal,
+      purpleDiamondLuckBonus,
     );
     bossOrdinal = rolled.bossOrdinal;
     bossesKilledThisBatch += rolled.bossesKilled;
