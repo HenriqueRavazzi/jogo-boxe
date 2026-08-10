@@ -34,7 +34,7 @@ const QUANTITY_OPTIONS: { value: GoldUpgradeQuantity; label: string }[] = [
   { value: "max", label: "Máx" },
 ];
 
-/** Painel de upgrades com ouro (AS, crítico dano e knockback só in-run). */
+/** Painel de upgrades com ouro (AS, crítico dano e knockback só via meta legado / base). */
 export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const [quantity, setQuantity] = useState<GoldUpgradeQuantity>(1);
 

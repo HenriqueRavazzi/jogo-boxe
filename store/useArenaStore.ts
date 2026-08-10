@@ -19,6 +19,7 @@ import {
   generateUpgradeOptions,
   getMaxActiveRunSkills,
   isSpecialSkillType,
+  MATCH_CRIT_CHANCE_CAP,
   type MatchSkillBonusDelta,
   type MatchSkillBonuses,
   type MatchUpgrade,
@@ -154,6 +155,8 @@ export type MatchBuffs = {
   attackRange: number;
   damageMultiplier: number;
   critDamageMultiplier: number;
+  /** Bônus aditivo de chance crítica in-run (0–1); soma com o meta até 100%. */
+  critChanceBonus: number;
   skillDamageMultiplier: number;
   knockbackMultiplier: number;
 };
@@ -170,6 +173,7 @@ const DEFAULT_BUFFS: MatchBuffs = {
   attackRange: 1,
   damageMultiplier: 1,
   critDamageMultiplier: 1,
+  critChanceBonus: 0,
   skillDamageMultiplier: 1,
   knockbackMultiplier: 1,
 };
@@ -433,6 +437,10 @@ function rollLevelUpOptions(
     maxActiveRunSkills,
     effectiveRange: stats.attackRange * matchBuffs.attackRange,
     effectiveCooldownMs: stats.attackCooldownMs / matchBuffs.attackSpeed,
+    effectiveCritChance: Math.min(
+      MATCH_CRIT_CHANCE_CAP,
+      game.getCritChance() + (matchBuffs.critChanceBonus ?? 0),
+    ),
     timeAlive,
     matchLevel,
   });
@@ -965,18 +973,39 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         };
       });
     } else {
-      set((s) => ({
-        matchBuffs: {
-          ...s.matchBuffs,
-          [upgradeType]:
-            s.matchBuffs[upgradeType as keyof MatchBuffs] * (1 + value),
-        },
-        gameState: "playing",
-        levelUpOptions: [],
-        isPausedForLevelUp: false,
-        levelUpTimeRemaining: 0,
-        levelUpDeadlineAt: null,
-      }));
+      set((s) => {
+        if (upgradeType === "critChanceBonus") {
+          const baseCrit = useGameStore.getState().getCritChance();
+          const room = Math.max(
+            0,
+            MATCH_CRIT_CHANCE_CAP - baseCrit - (s.matchBuffs.critChanceBonus ?? 0),
+          );
+          const added = Math.min(Math.max(0, value), room);
+          return {
+            matchBuffs: {
+              ...s.matchBuffs,
+              critChanceBonus: (s.matchBuffs.critChanceBonus ?? 0) + added,
+            },
+            gameState: "playing" as const,
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+          };
+        }
+        return {
+          matchBuffs: {
+            ...s.matchBuffs,
+            [upgradeType]:
+              s.matchBuffs[upgradeType as keyof MatchBuffs] * (1 + value),
+          },
+          gameState: "playing" as const,
+          levelUpOptions: [],
+          isPausedForLevelUp: false,
+          levelUpTimeRemaining: 0,
+          levelUpDeadlineAt: null,
+        };
+      });
     }
 
     // Se ainda houver XP sobrando para outro nível, abre o próximo card pack

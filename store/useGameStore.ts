@@ -2490,7 +2490,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   upgradeKnockback: () => {
-    // Knockback só via cartas in-run (`matchBuffs.knockbackMultiplier`).
+    // Knockback não sobe mais via cartas in-run.
     return false;
   },
 

@@ -45,6 +45,7 @@ import type { MatchSkillsData } from "@/db/schema";
 import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
+  MATCH_CRIT_CHANCE_CAP,
   type MatchSkillBonuses,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
@@ -55,6 +56,8 @@ export type MatchBuffsInput = {
   attackRange: number;
   damageMultiplier: number;
   critDamageMultiplier?: number;
+  /** Bônus aditivo in-run de chance crítica (0–1). */
+  critChanceBonus?: number;
   skillDamageMultiplier?: number;
   knockbackMultiplier?: number;
 };
@@ -961,7 +964,11 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       nextAttackTime = now;
       const punchBase = baseDamage * matchBuffs.damageMultiplier;
       const skillPunchBase = punchBase * skillDamageMult;
-      const critChance = useGameStore.getState().getCritChance();
+      const critChance = Math.min(
+        MATCH_CRIT_CHANCE_CAP,
+        useGameStore.getState().getCritChance() +
+          (matchBuffs.critChanceBonus ?? 0),
+      );
       const critMult =
         useGameStore.getState().getCritDamageMultiplier() *
         (matchBuffs.critDamageMultiplier ?? 1);

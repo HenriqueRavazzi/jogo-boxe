@@ -69,11 +69,14 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const xpPct = Math.round((stats.xpMultiplier - 1) * 100);
   const critDamage =
     stats.critDamageMultiplier * (matchBuffs.critDamageMultiplier ?? 1);
+  const critChancePct = Math.round(
+    Math.min(
+      1,
+      stats.critChance + (matchBuffs.critChanceBonus ?? 0),
+    ) * 100,
+  );
   const skillDamagePct = Math.round(
     ((matchBuffs.skillDamageMultiplier ?? 1) - 1) * 100,
-  );
-  const knockbackPct = Math.round(
-    ((matchBuffs.knockbackMultiplier ?? 1) - 1) * 100,
   );
   const incomeDisplay = (
     incomeMultiplier * teamBuffs.goldIncomeMultiplier
@@ -126,11 +129,8 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
     { label: "Braços", value: String(stats.arms) },
     { label: "Velocidade", value: `${cooldown}ms` },
     { label: "Alcance", value: String(range) },
+    { label: "Chance Crít.", value: `${critChancePct}%` },
     { label: "Dano Crít.", value: `${critDamage.toFixed(2)}x` },
-    {
-      label: "Knockback",
-      value: knockbackPct > 0 ? `+${knockbackPct}%` : "0%",
-    },
     {
       label: "Dano Skill",
       value: skillDamagePct > 0 ? `+${skillDamagePct}%` : "0%",

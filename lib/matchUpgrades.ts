@@ -11,6 +11,8 @@ import { getSkillMetaCap } from "@/db/schema";
 export const MATCH_RANGE_UPGRADE_CAP = 650;
 /** Para de oferecer cartas de velocidade abaixo deste cooldown efetivo (ms). */
 export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
+/** Teto de chance crítica efetiva in-run (meta + cartas). */
+export const MATCH_CRIT_CHANCE_CAP = 1;
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
@@ -30,8 +32,8 @@ export type UpgradeCategory =
   | "speed"
   | "range"
   | "critDamage"
+  | "critChance"
   | "skillDamage"
-  | "knockback"
   | SpecialSkillKey;
 
 export type UpgradeType =
@@ -39,8 +41,8 @@ export type UpgradeType =
   | "attackRange"
   | "damageMultiplier"
   | "critDamageMultiplier"
+  | "critChanceBonus"
   | "skillDamageMultiplier"
-  | "knockbackMultiplier"
   | SpecialSkillKey;
 
 export type MatchUpgrade = {
@@ -400,8 +402,8 @@ type StatCategory =
   | "speed"
   | "range"
   | "critDamage"
-  | "skillDamage"
-  | "knockback";
+  | "critChance"
+  | "skillDamage";
 
 const STAT_UPGRADE_POOL: {
   type: UpgradeType;
@@ -434,16 +436,16 @@ const STAT_UPGRADE_POOL: {
     short: "Dano Crítico",
   },
   {
+    type: "critChanceBonus",
+    category: "critChance",
+    name: "Crit Chance",
+    short: "Chance Crítica",
+  },
+  {
     type: "skillDamageMultiplier",
     category: "skillDamage",
     name: "Skill Damage",
     short: "Dano das Skills",
-  },
-  {
-    type: "knockbackMultiplier",
-    category: "knockback",
-    name: "Knockback",
-    short: "Empurrão dos Socos",
   },
 ];
 
@@ -564,6 +566,8 @@ export type GenerateUpgradeOptionsContext = {
   effectiveRange?: number;
   /** Cooldown efetivo atual em ms (base / buff de velocidade). */
   effectiveCooldownMs?: number;
+  /** Chance crítica efetiva atual (meta + cartas in-run), 0–1. */
+  effectiveCritChance?: number;
   /** Segundos vivos na run — escala pity de raridade. */
   timeAlive?: number;
   /** Nível atual da arena — escala pity de raridade. */
@@ -755,14 +759,15 @@ const ALL_STAT_CATEGORIES: StatCategory[] = [
   "speed",
   "range",
   "critDamage",
+  "critChance",
   "skillDamage",
-  "knockback",
 ];
 
 /** Quais categorias de status ainda podem aparecer na roleta. */
 export function getEligibleStatCategories(ctx?: {
   effectiveRange?: number;
   effectiveCooldownMs?: number;
+  effectiveCritChance?: number;
   /** True se o jogador já tem ≥1 skill especial ativa na run. */
   hasActiveSkill?: boolean;
 }): StatCategory[] {
@@ -781,6 +786,13 @@ export function getEligibleStatCategories(ctx?: {
       category === "speed" &&
       ctx?.effectiveCooldownMs != null &&
       ctx.effectiveCooldownMs <= MATCH_COOLDOWN_UPGRADE_FLOOR
+    ) {
+      return false;
+    }
+    if (
+      category === "critChance" &&
+      ctx?.effectiveCritChance != null &&
+      ctx.effectiveCritChance >= MATCH_CRIT_CHANCE_CAP
     ) {
       return false;
     }
