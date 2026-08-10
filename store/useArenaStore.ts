@@ -214,6 +214,15 @@ export type ArenaStoreState = {
   /** VFX temporários (gelo / raio). */
   skillVfxEffects: SkillVfxEffect[];
   levelUpOptions: MatchUpgrade[];
+  /**
+   * Pausa de combate durante a escolha de carta de level-up.
+   * Independente do pause manual (ESC).
+   */
+  isPausedForLevelUp: boolean;
+  /** Segundos restantes para auto-seleção (45 → 0). */
+  levelUpTimeRemaining: number;
+  /** Deadline absoluta (Date.now) da auto-seleção; null se inativo. */
+  levelUpDeadlineAt: number | null;
   /** Estatísticas da run atual. */
   runStats: RunStats;
   /** Quantos bosses já foram invocados nesta run (ciclos de 240s / 4 min). */
@@ -274,6 +283,13 @@ export type ArenaStoreState = {
   claimQuest: (questId: string) => number | null;
   addXp: (amount: number) => void;
   selectUpgrade: (upgradeType: UpgradeType, value: number) => void;
+  /**
+   * Sincroniza o countdown de level-up com o relógio real.
+   * Em 0, escolhe uma carta aleatória automaticamente.
+   */
+  tickLevelUpCountdown: () => void;
+  /** Escolhe uma carta aleatória entre as opções atuais (timeout). */
+  autoSelectRandomUpgrade: () => void;
   setPlayerPosition: (x: number, y: number) => void;
   /** Sempre centraliza o jogador no canvas (CSS px). */
   centerPlayer: (canvasWidth: number, canvasHeight: number) => void;
@@ -310,6 +326,8 @@ const GOLD_PER_KILL = 10;
 const XP_PER_KILL = 25;
 const CONTACT_DAMAGE = 20;
 const BASE_XP_TO_LEVEL = 100;
+/** Tempo (s) para o jogador escolher uma carta antes da auto-seleção. */
+const LEVEL_UP_TIMEOUT_SEC = 45;
 
 function randomEdgePosition(canvasWidth: number, canvasHeight: number) {
   const edge = Math.floor(Math.random() * 4);
@@ -366,6 +384,9 @@ function enterLevelUp(
     xpToNextLevel,
     matchLevel,
     gameState: "level_up",
+    isPausedForLevelUp: true,
+    levelUpTimeRemaining: LEVEL_UP_TIMEOUT_SEC,
+    levelUpDeadlineAt: Date.now() + LEVEL_UP_TIMEOUT_SEC * 1000,
     levelUpOptions: rollLevelUpOptions(
       state.matchSkills,
       state.matchBuffs,
@@ -404,6 +425,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   lightningProjectiles: [],
   skillVfxEffects: [],
   levelUpOptions: [],
+  isPausedForLevelUp: false,
+  levelUpTimeRemaining: 0,
+  levelUpDeadlineAt: null,
   runStats: { ...EMPTY_RUN_STATS },
   bossesSpawned: 0,
   bossesKilled: 0,
@@ -465,6 +489,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       lightningProjectiles: [],
       skillVfxEffects: [],
       levelUpOptions: [],
+      isPausedForLevelUp: false,
+      levelUpTimeRemaining: 0,
+      levelUpDeadlineAt: null,
       runStats: { ...EMPTY_RUN_STATS },
       bossesSpawned: 0,
       bossesKilled: 0,
@@ -499,6 +526,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       ricochetPathEffects: [],
       shakeFrames: 0,
       levelUpOptions: [],
+      isPausedForLevelUp: false,
+      levelUpTimeRemaining: 0,
+      levelUpDeadlineAt: null,
       bossHordeAlertUntil: 0,
       activeQuests: [],
       isPaused: false,
@@ -539,6 +569,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       ricochetPathEffects: [],
       shakeFrames: 0,
       levelUpOptions: [],
+      isPausedForLevelUp: false,
+      levelUpTimeRemaining: 0,
+      levelUpDeadlineAt: null,
       bossHordeAlertUntil: 0,
       activeQuests: [],
       isPaused: false,
@@ -582,6 +615,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       lightningProjectiles: [],
       skillVfxEffects: [],
       levelUpOptions: [],
+      isPausedForLevelUp: false,
+      levelUpTimeRemaining: 0,
+      levelUpDeadlineAt: null,
       runStats: { ...EMPTY_RUN_STATS },
       currentHp: useGameStore.getState().getEffectiveStats().maxHp,
       stageClearReward: null,
@@ -705,6 +741,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
           activeRunSkills,
           gameState: "playing" as const,
           levelUpOptions: [],
+          isPausedForLevelUp: false,
+          levelUpTimeRemaining: 0,
+          levelUpDeadlineAt: null,
         };
       });
     } else {
@@ -716,6 +755,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         },
         gameState: "playing",
         levelUpOptions: [],
+        isPausedForLevelUp: false,
+        levelUpTimeRemaining: 0,
+        levelUpDeadlineAt: null,
       }));
     }
 
@@ -731,6 +773,39 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         matchLevel + 1,
       );
     }
+  },
+
+  tickLevelUpCountdown: () => {
+    const state = get();
+    if (
+      state.gameState !== "level_up" ||
+      !state.isPausedForLevelUp ||
+      state.levelUpDeadlineAt == null
+    ) {
+      return;
+    }
+
+    const remainingMs = state.levelUpDeadlineAt - Date.now();
+    const remainingSec = Math.max(0, remainingMs / 1000);
+
+    if (remainingSec <= 0) {
+      set({ levelUpTimeRemaining: 0 });
+      get().autoSelectRandomUpgrade();
+      return;
+    }
+
+    if (Math.ceil(remainingSec) !== Math.ceil(state.levelUpTimeRemaining)) {
+      set({ levelUpTimeRemaining: remainingSec });
+    }
+  },
+
+  autoSelectRandomUpgrade: () => {
+    const { gameState, levelUpOptions } = get();
+    if (gameState !== "level_up" || levelUpOptions.length === 0) return;
+    const card =
+      levelUpOptions[Math.floor(Math.random() * levelUpOptions.length)];
+    if (!card) return;
+    get().selectUpgrade(card.type, card.value);
   },
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),
@@ -992,6 +1067,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       lightningProjectiles: [],
       skillVfxEffects: [],
       levelUpOptions: [],
+      isPausedForLevelUp: false,
+      levelUpTimeRemaining: 0,
+      levelUpDeadlineAt: null,
       runStats: { ...EMPTY_RUN_STATS },
       bossesSpawned: 0,
       bossesKilled: 0,

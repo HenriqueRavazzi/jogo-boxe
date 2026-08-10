@@ -9,6 +9,7 @@ export type SkillNodeId =
   | "node_life_steal_2"
   | "node_fortitude"
   | "node_life_steal_3"
+  | "node_second_heart"
   | "node_dmg_1"
   | "node_dmg_2"
   | "node_range_focus"
@@ -16,25 +17,37 @@ export type SkillNodeId =
   | "node_crit_power"
   | "node_knockout"
   | "node_dmg_3"
+  | "node_relentless"
   | "node_spark_ignition"
   | "node_spark_burst"
   | "node_spark_fury"
   | "node_gold_gloves"
   | "node_extra_arm"
   | "node_loot_magnet"
-  | "node_spark_overdrive";
+  | "node_spark_overdrive"
+  | "node_haste"
+  | "node_extra_arm_2"
+  | "node_ring_master"
+  | "node_adrenaline"
+  | "node_berserker"
+  | "node_immortal_champion";
 
 export type SkillTreeState = Record<SkillNodeId, boolean>;
+
+export type SkillBranchId = "vitality" | "power" | "spark" | "synergy";
 
 export type SkillNodeDef = {
   id: SkillNodeId;
   name: string;
   description: string;
   cost: number;
-  /** null = nó raiz (sem pré-requisito). */
-  requires: SkillNodeId | null;
-  branch: "vitality" | "power" | "spark";
-  /** Posição vertical na branch (0 = raiz). */
+  /**
+   * Pré-requisitos — todos devem estar desbloqueados.
+   * Array vazio = nó raiz. Vários ids = exige investimento em mais de uma linha.
+   */
+  requires: SkillNodeId[];
+  branch: SkillBranchId;
+  /** Posição vertical na branch (0 = raiz / topo). */
   tier: number;
   accent: string;
 };
@@ -62,6 +75,7 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_life_steal_2: false,
   node_fortitude: false,
   node_life_steal_3: false,
+  node_second_heart: false,
   node_dmg_1: false,
   node_dmg_2: false,
   node_range_focus: false,
@@ -69,6 +83,7 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_crit_power: false,
   node_knockout: false,
   node_dmg_3: false,
+  node_relentless: false,
   node_spark_ignition: false,
   node_spark_burst: false,
   node_spark_fury: false,
@@ -76,16 +91,22 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_extra_arm: false,
   node_loot_magnet: false,
   node_spark_overdrive: false,
+  node_haste: false,
+  node_extra_arm_2: false,
+  node_ring_master: false,
+  node_adrenaline: false,
+  node_berserker: false,
+  node_immortal_champion: false,
 };
 
 export const SKILL_NODES: SkillNodeDef[] = [
-  // Vitality — custos em diamantes (gems)
+  // ── Vitality ──────────────────────────────────────────────
   {
     id: "node_hp_1",
     name: "Tough Hide",
     description: "+30 Max HP",
     cost: 50,
-    requires: null,
+    requires: [],
     branch: "vitality",
     tier: 0,
     accent: "rose",
@@ -95,7 +116,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Iron Lungs",
     description: "+60 Max HP",
     cost: 200,
-    requires: "node_hp_1",
+    requires: ["node_hp_1"],
     branch: "vitality",
     tier: 1,
     accent: "rose",
@@ -105,7 +126,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Iron Guard",
     description: "+50 Max HP",
     cost: 700,
-    requires: "node_hp_2",
+    requires: ["node_hp_2"],
     branch: "vitality",
     tier: 2,
     accent: "rose",
@@ -115,7 +136,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Blood Siphon",
     description: "+1% Life Steal",
     cost: 2_500,
-    requires: "node_iron_guard",
+    requires: ["node_iron_guard"],
     branch: "vitality",
     tier: 3,
     accent: "emerald",
@@ -125,7 +146,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Thick Skin",
     description: "−8% dano recebido",
     cost: 8_000,
-    requires: "node_life_steal_1",
+    requires: ["node_life_steal_1"],
     branch: "vitality",
     tier: 4,
     accent: "silver",
@@ -135,7 +156,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Crimson Drain",
     description: "+1% Life Steal",
     cost: 25_000,
-    requires: "node_thick_skin",
+    requires: ["node_thick_skin"],
     branch: "vitality",
     tier: 5,
     accent: "emerald",
@@ -145,7 +166,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Fortitude",
     description: "+120 Max HP",
     cost: 80_000,
-    requires: "node_life_steal_2",
+    requires: ["node_life_steal_2"],
     branch: "vitality",
     tier: 6,
     accent: "rose",
@@ -155,18 +176,29 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Vampire Fist",
     description: "+1.5% Life Steal",
     cost: 250_000,
-    requires: "node_fortitude",
+    requires: ["node_fortitude"],
     branch: "vitality",
     tier: 7,
     accent: "emerald",
   },
-  // Power
+  {
+    id: "node_second_heart",
+    name: "Second Heart",
+    description: "+150 Max HP",
+    cost: 400_000,
+    requires: ["node_life_steal_3"],
+    branch: "vitality",
+    tier: 8,
+    accent: "rose",
+  },
+
+  // ── Power ─────────────────────────────────────────────────
   {
     id: "node_dmg_1",
     name: "Heavy Hands",
     description: "+6 Base Damage",
     cost: 50,
-    requires: null,
+    requires: [],
     branch: "power",
     tier: 0,
     accent: "amber",
@@ -176,7 +208,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Bone Crusher",
     description: "+12 Base Damage",
     cost: 200,
-    requires: "node_dmg_1",
+    requires: ["node_dmg_1"],
     branch: "power",
     tier: 1,
     accent: "amber",
@@ -186,7 +218,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Long Reach",
     description: "+30 Range",
     cost: 700,
-    requires: "node_dmg_2",
+    requires: ["node_dmg_2"],
     branch: "power",
     tier: 2,
     accent: "amber",
@@ -196,7 +228,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Precision",
     description: "+5% chance de crítico",
     cost: 2_500,
-    requires: "node_range_focus",
+    requires: ["node_range_focus"],
     branch: "power",
     tier: 3,
     accent: "yellow",
@@ -206,7 +238,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Haymaker",
     description: "+25% dano crítico",
     cost: 8_000,
-    requires: "node_crit_chance",
+    requires: ["node_crit_chance"],
     branch: "power",
     tier: 4,
     accent: "yellow",
@@ -216,7 +248,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Ring Control",
     description: "+3 empurrão",
     cost: 25_000,
-    requires: "node_crit_power",
+    requires: ["node_crit_power"],
     branch: "power",
     tier: 5,
     accent: "silver",
@@ -226,18 +258,29 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Glass Cannon",
     description: "+22 Base Damage",
     cost: 80_000,
-    requires: "node_knockout",
+    requires: ["node_knockout"],
     branch: "power",
     tier: 6,
     accent: "amber",
   },
-  // Spark
+  {
+    id: "node_relentless",
+    name: "Relentless",
+    description: "+18 Base Damage",
+    cost: 220_000,
+    requires: ["node_dmg_3"],
+    branch: "power",
+    tier: 7,
+    accent: "amber",
+  },
+
+  // ── Spark ─────────────────────────────────────────────────
   {
     id: "node_spark_ignition",
     name: "Spark Ignition",
     description: "-50ms Attack Cooldown",
     cost: 60,
-    requires: null,
+    requires: [],
     branch: "spark",
     tier: 0,
     accent: "sky",
@@ -247,7 +290,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Spark Burst",
     description: "-75ms Attack Cooldown",
     cost: 250,
-    requires: "node_spark_ignition",
+    requires: ["node_spark_ignition"],
     branch: "spark",
     tier: 1,
     accent: "sky",
@@ -257,7 +300,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Spark Fury",
     description: "-100ms Attack Cooldown",
     cost: 800,
-    requires: "node_spark_burst",
+    requires: ["node_spark_burst"],
     branch: "spark",
     tier: 2,
     accent: "sky",
@@ -267,7 +310,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Golden Gloves",
     description: "+20% ouro dropado",
     cost: 3_000,
-    requires: "node_spark_fury",
+    requires: ["node_spark_fury"],
     branch: "spark",
     tier: 3,
     accent: "yellow",
@@ -277,7 +320,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Extra Arm",
     description: "+1 braço de ataque",
     cost: 10_000,
-    requires: "node_gold_gloves",
+    requires: ["node_gold_gloves"],
     branch: "spark",
     tier: 4,
     accent: "cyan",
@@ -287,7 +330,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Loot Magnet",
     description: "+30% raio do ímã",
     cost: 35_000,
-    requires: "node_extra_arm",
+    requires: ["node_extra_arm"],
     branch: "spark",
     tier: 5,
     accent: "cyan",
@@ -297,10 +340,72 @@ export const SKILL_NODES: SkillNodeDef[] = [
     name: "Overdrive",
     description: "-90ms Attack Cooldown",
     cost: 100_000,
-    requires: "node_loot_magnet",
+    requires: ["node_loot_magnet"],
     branch: "spark",
     tier: 6,
     accent: "sky",
+  },
+  {
+    id: "node_haste",
+    name: "Haste",
+    description: "-55ms Attack Cooldown",
+    cost: 280_000,
+    requires: ["node_spark_overdrive"],
+    branch: "spark",
+    tier: 7,
+    accent: "sky",
+  },
+
+  // ── Synergy (multi-ramo) ──────────────────────────────────
+  {
+    id: "node_ring_master",
+    name: "Ring Master",
+    description: "+35 Range · +15% ouro",
+    cost: 45_000,
+    requires: ["node_range_focus", "node_gold_gloves"],
+    branch: "synergy",
+    tier: 0,
+    accent: "yellow",
+  },
+  {
+    id: "node_adrenaline",
+    name: "Adrenaline",
+    description: "−70ms CD · +1% Life Steal",
+    cost: 60_000,
+    requires: ["node_spark_fury", "node_life_steal_1"],
+    branch: "synergy",
+    tier: 1,
+    accent: "emerald",
+  },
+  {
+    id: "node_extra_arm_2",
+    name: "Twin Arms",
+    description: "+1 braço de ataque",
+    cost: 180_000,
+    requires: ["node_extra_arm", "node_crit_power"],
+    branch: "synergy",
+    tier: 2,
+    accent: "cyan",
+  },
+  {
+    id: "node_berserker",
+    name: "Berserker",
+    description: "+20 Damage · +80 Max HP",
+    cost: 320_000,
+    requires: ["node_dmg_3", "node_fortitude"],
+    branch: "synergy",
+    tier: 3,
+    accent: "amber",
+  },
+  {
+    id: "node_immortal_champion",
+    name: "Immortal Champion",
+    description: "−5% dano recebido · +10 Damage · +1% Life Steal",
+    cost: 750_000,
+    requires: ["node_life_steal_3", "node_dmg_3", "node_spark_overdrive"],
+    branch: "synergy",
+    tier: 4,
+    accent: "silver",
   },
 ];
 
@@ -308,10 +413,38 @@ export const SKILL_BRANCHES = [
   { id: "vitality" as const, title: "Vitality", color: "text-rose-300" },
   { id: "power" as const, title: "Power", color: "text-amber-300" },
   { id: "spark" as const, title: "Spark", color: "text-sky-300" },
+  {
+    id: "synergy" as const,
+    title: "Synergy",
+    color: "text-fuchsia-300",
+    hint: "Exige nós de mais de uma linha",
+  },
 ];
 
 export function getSkillNode(id: SkillNodeId): SkillNodeDef {
   return SKILL_NODES.find((n) => n.id === id)!;
+}
+
+/** Pré-requisitos ainda não desbloqueados. */
+export function getMissingRequirements(
+  skillTree: SkillTreeState,
+  nodeId: SkillNodeId,
+): SkillNodeId[] {
+  const node = getSkillNode(nodeId);
+  return node.requires.filter((id) => !skillTree[id]);
+}
+
+export function areRequirementsMet(
+  skillTree: SkillTreeState,
+  nodeId: SkillNodeId,
+): boolean {
+  return getMissingRequirements(skillTree, nodeId).length === 0;
+}
+
+/** Rótulos curtos dos pré-requisitos para a UI. */
+export function formatRequirementLabels(requires: SkillNodeId[]): string {
+  if (requires.length === 0) return "";
+  return requires.map((id) => getSkillNode(id).name).join(" + ");
 }
 
 export function canUnlockSkill(
@@ -321,17 +454,19 @@ export function canUnlockSkill(
 ): boolean {
   const node = getSkillNode(nodeId);
   if (skillTree[nodeId]) return false;
-  if (node.requires && !skillTree[node.requires]) return false;
+  if (!areRequirementsMet(skillTree, nodeId)) return false;
   if (gems < node.cost) return false;
   return true;
 }
 
-/** Nível de life steal (0–3) a partir dos nós desbloqueados. */
+/** Nível de life steal (0–3 base + sinergias) a partir dos nós desbloqueados. */
 export function getLifeStealLevel(skillTree: SkillTreeState): number {
   let level = 0;
   if (skillTree.node_life_steal_1) level += 1;
   if (skillTree.node_life_steal_2) level += 1;
   if (skillTree.node_life_steal_3) level += 1;
+  if (skillTree.node_adrenaline) level += 1;
+  if (skillTree.node_immortal_champion) level += 1;
   return level;
 }
 
@@ -341,6 +476,8 @@ export function getLifeStealRatio(skillTree: SkillTreeState): number {
   if (skillTree.node_life_steal_1) percent += LIFE_STEAL_PERCENT_PER_LEVEL;
   if (skillTree.node_life_steal_2) percent += LIFE_STEAL_PERCENT_PER_LEVEL;
   if (skillTree.node_life_steal_3) percent += 1.5;
+  if (skillTree.node_adrenaline) percent += 1;
+  if (skillTree.node_immortal_champion) percent += 1;
   return percent / 100;
 }
 
@@ -348,7 +485,10 @@ export function getLifeStealRatio(skillTree: SkillTreeState): number {
 export function getSkillDamageTakenMultiplier(
   skillTree: SkillTreeState,
 ): number {
-  return skillTree.node_thick_skin ? 0.92 : 1;
+  let mul = 1;
+  if (skillTree.node_thick_skin) mul *= 0.92;
+  if (skillTree.node_immortal_champion) mul *= 0.95;
+  return mul;
 }
 
 export function getSkillCritChanceBonus(skillTree: SkillTreeState): number {
@@ -366,17 +506,69 @@ export function getSkillKnockbackBonus(skillTree: SkillTreeState): number {
 export function getSkillGoldIncomeMultiplier(
   skillTree: SkillTreeState,
 ): number {
-  return skillTree.node_gold_gloves ? 1.2 : 1;
+  let mul = 1;
+  if (skillTree.node_gold_gloves) mul *= 1.2;
+  if (skillTree.node_ring_master) mul *= 1.15;
+  return mul;
 }
 
 export function getSkillExtraArms(skillTree: SkillTreeState): number {
-  return skillTree.node_extra_arm ? 1 : 0;
+  let arms = 0;
+  if (skillTree.node_extra_arm) arms += 1;
+  if (skillTree.node_extra_arm_2) arms += 1;
+  return arms;
 }
 
 export function getSkillMagnetRadiusMultiplier(
   skillTree: SkillTreeState,
 ): number {
   return skillTree.node_loot_magnet ? 1.3 : 1;
+}
+
+/** Bônus flat de HP vindos da árvore (inclui sinergias). */
+export function getSkillTreeHpBonus(skillTree: SkillTreeState): number {
+  let bonus = 0;
+  if (skillTree.node_hp_1) bonus += 30;
+  if (skillTree.node_hp_2) bonus += 60;
+  if (skillTree.node_iron_guard) bonus += 50;
+  if (skillTree.node_fortitude) bonus += 120;
+  if (skillTree.node_second_heart) bonus += 150;
+  if (skillTree.node_berserker) bonus += 80;
+  return bonus;
+}
+
+/** Bônus flat de dano vindos da árvore (inclui sinergias). */
+export function getSkillTreeDamageBonus(skillTree: SkillTreeState): number {
+  let bonus = 0;
+  if (skillTree.node_dmg_1) bonus += 6;
+  if (skillTree.node_dmg_2) bonus += 12;
+  if (skillTree.node_dmg_3) bonus += 22;
+  if (skillTree.node_relentless) bonus += 18;
+  if (skillTree.node_berserker) bonus += 20;
+  if (skillTree.node_immortal_champion) bonus += 10;
+  return bonus;
+}
+
+/** Bônus flat de alcance vindos da árvore. */
+export function getSkillTreeRangeBonus(skillTree: SkillTreeState): number {
+  let bonus = 0;
+  if (skillTree.node_range_focus) bonus += 30;
+  if (skillTree.node_ring_master) bonus += 35;
+  return bonus;
+}
+
+/** Redução de cooldown (ms) vindos da árvore. */
+export function getSkillTreeCooldownReduction(
+  skillTree: SkillTreeState,
+): number {
+  let reduction = 0;
+  if (skillTree.node_spark_ignition) reduction += 50;
+  if (skillTree.node_spark_burst) reduction += 75;
+  if (skillTree.node_spark_fury) reduction += 100;
+  if (skillTree.node_spark_overdrive) reduction += 90;
+  if (skillTree.node_haste) reduction += 55;
+  if (skillTree.node_adrenaline) reduction += 70;
+  return reduction;
 }
 
 /** @deprecated Ricochete só via Skills Roxas (`unlockedSkills.ricochet`). */

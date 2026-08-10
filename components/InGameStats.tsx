@@ -38,6 +38,8 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const stageBossDefeated = useArenaStore((s) => s.stageBossDefeated);
   const stageEnemiesDefeated = useArenaStore((s) => s.stageEnemiesDefeated);
   const stageCommonsSpawned = useArenaStore((s) => s.stageCommonsSpawned);
+  const enemiesDefeated = useArenaStore((s) => s.runStats.enemiesDefeated);
+  const bossesKilled = useArenaStore((s) => s.runStats.bossesKilled);
 
   const skillTree = useGameStore((s) => s.skillTree);
   const maxHpLevel = useGameStore((s) => s.maxHpLevel);
@@ -84,7 +86,17 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
 
   const rows: { label: string; value: string }[] = [
     ...(runMode === "endless"
-      ? [{ label: "Modo", value: "Endless" }]
+      ? [
+          { label: "Modo", value: "Endless" },
+          {
+            label: "Abates",
+            value: enemiesDefeated.toLocaleString("pt-BR"),
+          },
+          {
+            label: "Chefes",
+            value: bossesKilled.toLocaleString("pt-BR"),
+          },
+        ]
       : runStage
         ? [
             {

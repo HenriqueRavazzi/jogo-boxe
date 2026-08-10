@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import {
   RARITY_LABEL,
   RARITY_STYLES,
@@ -7,11 +8,24 @@ import {
 } from "@/lib/matchUpgrades";
 import { useArenaStore } from "@/store/useArenaStore";
 
-/** Modal de level up com 3 cartas de raridade. */
+/** Modal de level up com 3 cartas de raridade + countdown de auto-seleção. */
 export function LevelUpModal() {
   const matchLevel = useArenaStore((s) => s.matchLevel);
   const options = useArenaStore((s) => s.levelUpOptions);
+  const levelUpTimeRemaining = useArenaStore((s) => s.levelUpTimeRemaining);
   const selectUpgrade = useArenaStore((s) => s.selectUpgrade);
+  const tickLevelUpCountdown = useArenaStore((s) => s.tickLevelUpCountdown);
+
+  // Countdown baseado em deadline real (Date.now) — funciona com aba em background
+  useEffect(() => {
+    tickLevelUpCountdown();
+    const id = window.setInterval(() => {
+      tickLevelUpCountdown();
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [tickLevelUpCountdown]);
+
+  const secondsLeft = Math.max(0, Math.ceil(levelUpTimeRemaining));
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 backdrop-blur-sm">
@@ -25,6 +39,17 @@ export function LevelUpModal() {
           </h2>
           <p className="mt-2 text-sm text-zinc-400">
             Escolha um upgrade para continuar
+          </p>
+          <p
+            className={`mt-3 font-mono text-2xl font-bold tabular-nums ${
+              secondsLeft <= 10 ? "text-rose-400" : "text-amber-300"
+            }`}
+            aria-live="polite"
+          >
+            {secondsLeft}s
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Seleção automática ao zerar o tempo
           </p>
         </div>
 

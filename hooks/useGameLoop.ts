@@ -931,26 +931,28 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
     let last = performance.now();
     let wasPlaying = false;
+    let backgroundIntervalId = 0;
 
-    /** Evita spike de física/spawn ao voltar de aba pausada (tab-out). */
-    const safeDeltaSeconds = (now: number, previous: number): number => {
-      let deltaMs = now - previous;
-      if (deltaMs > 100 || deltaMs < 0) {
-        deltaMs = 16; // ~1 frame a 60fps
+    /**
+     * Substeps de física com base em tempo real (performance.now).
+     * Em abas ocultas o rAF é throttled/pausado — o setInterval cobre o gap
+     * e deltas grandes são fatiados para não explodir colisões/spawn.
+     */
+    const MAX_SUBSTEP_SEC = 1 / 20;
+    const MAX_CATCHUP_SEC = 1;
+    /** Intervalo de fallback quando a aba está em segundo plano. */
+    const BACKGROUND_TICK_MS = 100;
+
+    const processElapsed = (elapsedSec: number) => {
+      let remaining = Math.min(Math.max(0, elapsedSec), MAX_CATCHUP_SEC);
+      while (remaining > 0) {
+        const step = Math.min(remaining, MAX_SUBSTEP_SEC);
+        update(step);
+        remaining -= step;
       }
-      return deltaMs / 1000;
     };
 
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        last = performance.now();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    const loop = (now: number) => {
-      rafId.current = window.requestAnimationFrame(loop);
-
+    const runFrame = (now: number) => {
       const arenaState = useArenaStore.getState();
       const state = arenaState.gameState;
       const playing = state === "playing";
@@ -961,31 +963,71 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
       wasPlaying = playing;
 
-      if (!playing) {
+      if (!playing || arenaState.isPausedForLevelUp) {
+        if (state === "level_up" || arenaState.isPausedForLevelUp) {
+          useArenaStore.getState().tickLevelUpCountdown();
+        }
         last = now;
         useArenaStore
           .getState()
           .centerPlayer(canvas.clientWidth, canvas.clientHeight);
-        draw();
+        if (!document.hidden) draw();
         return;
       }
 
-      // Pause seguro: não avança física, tempo, spawn nem colisões
+      // Pause manual (ESC): não avança física, tempo, spawn nem colisões
       if (arenaState.isPaused) {
         last = now;
         return;
       }
 
-      const realDt = safeDeltaSeconds(now, last);
+      const realDt = (now - last) / 1000;
       last = now;
-      update(realDt);
-      draw();
+      processElapsed(realDt);
+      if (!document.hidden) draw();
+    };
+
+    const stopBackgroundTicker = () => {
+      if (backgroundIntervalId !== 0) {
+        window.clearInterval(backgroundIntervalId);
+        backgroundIntervalId = 0;
+      }
+    };
+
+    const startBackgroundTicker = () => {
+      if (backgroundIntervalId !== 0) return;
+      last = performance.now();
+      backgroundIntervalId = window.setInterval(() => {
+        runFrame(performance.now());
+      }, BACKGROUND_TICK_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        // rAF para em abas ocultas — mantém simulação via tempo real
+        startBackgroundTicker();
+      } else {
+        stopBackgroundTicker();
+        last = performance.now();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    if (document.hidden) {
+      startBackgroundTicker();
+    }
+
+    const loop = (now: number) => {
+      rafId.current = window.requestAnimationFrame(loop);
+      // Em background o interval é a fonte de verdade do tick
+      if (document.hidden) return;
+      runFrame(now);
     };
 
     rafId.current = window.requestAnimationFrame(loop);
 
     return () => {
       window.cancelAnimationFrame(rafId.current);
+      stopBackgroundTicker();
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };

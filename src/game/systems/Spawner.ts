@@ -50,12 +50,19 @@ const EARLY_SPAWN_INTERVAL_MS = 3000;
 const EARLY_INTERVAL_RAMP_SECONDS = 60;
 /** Lote fixo em 1 durante este período (segundos). */
 const EARLY_BATCH_LOCK_SECONDS = 45;
-/** Após isto, a curva de horda acelera de verdade. */
-const HORDE_RAMP_UNLOCK_SECONDS = 90;
-const MIN_INTERVAL = 180; // frenesi máximo
-const BASE_AMOUNT = 2; // lote padrão por tick (após o início)
-/** Crescimento do lote por ciclo de 30s (só após HORDE_RAMP_UNLOCK). */
-const AMOUNT_PER_CYCLE = 2;
+/** Após o ramp inicial: +1 no lote a cada N segundos. */
+const BATCH_GROWTH_SECONDS = 90;
+/** Teto do lote por tick (densidade sobe mais pelo intervalo). */
+const MAX_SPAWN_BATCH = 6;
+/** Intervalo mínimo — evita frenesi injogável. */
+const MIN_INTERVAL = 220;
+/**
+ * Máximo de “ticks” de spawn processados por chamada do spawner.
+ * Evita inundar a tela após catch-up de aba em background.
+ */
+const MAX_SPAWN_EVENTS_PER_TICK = 4;
+/** Acima desta fração de MAX_ENEMIES, reduz lote / alonga ritmo. */
+const CROWD_SOFT_CAP_RATIO = 0.4;
 export const MAX_ENEMIES = 140;
 
 /** Nomes dos inimigos fracos liberados no início da partida. */
@@ -101,31 +108,38 @@ export function getSpawnIntervalMs(timeAlive: number): number {
     );
   }
 
-  const scalingCycle = getScalingCycle(t);
-  // Até 90s: pressão sobe devagar; depois ×0.45 por ciclo (ritmo padrão)
+  // Após 60s: pressão contínua (sem cliff). Cresce ~linear + leve aceleração.
+  const minutesPastRamp = (t - EARLY_INTERVAL_RAMP_SECONDS) / 60;
   const cyclePressure =
-    t < HORDE_RAMP_UNLOCK_SECONDS
-      ? scalingCycle * 0.18
-      : scalingCycle * 0.45;
+    minutesPastRamp * 0.32 + minutesPastRamp * minutesPastRamp * 0.04;
 
   return Math.max(MIN_INTERVAL, BASE_INTERVAL / (1 + cyclePressure));
 }
 
 /**
  * Quantidade de inimigos comuns por tick.
- * 0–45s: sempre 1 · 45–90s: suave · depois: +2 por ciclo de 30s.
+ * 0–45s: sempre 1 · depois: +1 a cada ~90s (curva contínua, sem salto).
  */
 export function getSpawnAmount(timeAlive: number): number {
   const t = Math.max(0, timeAlive);
   if (t < EARLY_BATCH_LOCK_SECONDS) return 1;
 
-  const scalingCycle = getScalingCycle(t);
-  if (t < HORDE_RAMP_UNLOCK_SECONDS) {
-    // Ramp suave: no máx. 2 antes do minuto e meio
-    return Math.min(2, 1 + Math.floor(scalingCycle * 0.5));
-  }
+  const extra = Math.floor((t - EARLY_BATCH_LOCK_SECONDS) / BATCH_GROWTH_SECONDS);
+  return Math.min(MAX_SPAWN_BATCH, 1 + extra);
+}
 
-  return BASE_AMOUNT + scalingCycle * AMOUNT_PER_CYCLE;
+/** Reduz lote quando o campo já está lotado (alívio para o jogador). */
+export function getCrowdedBatchAmount(
+  baseAmount: number,
+  currentEnemyCount: number,
+): number {
+  const density = currentEnemyCount / MAX_ENEMIES;
+  if (density <= CROWD_SOFT_CAP_RATIO) {
+    return Math.max(1, baseAmount);
+  }
+  const over = (density - CROWD_SOFT_CAP_RATIO) / (1 - CROWD_SOFT_CAP_RATIO);
+  const mul = Math.max(0.25, 1 - over * 0.85);
+  return Math.max(1, Math.round(baseAmount * mul));
 }
 
 export type DifficultySpawnMultipliers = {
@@ -447,16 +461,24 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
   );
   let spawnAccumulatorMs = input.spawnAccumulatorMs + dt * 1000;
   const paceMul = Math.max(1, stage?.spawnPaceMul ?? 1);
-  const spawnIntervalMs = Math.max(
-    280,
-    Math.floor(getSpawnIntervalMs(timeAliveInSeconds) / paceMul),
-  );
   const spawned: EnemyData[] = [];
   let count = currentEnemyCount;
   let bossesAlive = aliveBossCount;
   let hordeBossInvaded = false;
   let commonsSpawnedDelta = 0;
   let commonsSpawned = stage?.commonsSpawned ?? 0;
+
+  const crowdDensity = count / MAX_ENEMIES;
+  const crowdIntervalMul =
+    crowdDensity > CROWD_SOFT_CAP_RATIO
+      ? 1 + (crowdDensity - CROWD_SOFT_CAP_RATIO) * 1.5
+      : 1;
+  const spawnIntervalMs = Math.max(
+    280,
+    Math.floor(
+      (getSpawnIntervalMs(timeAliveInSeconds) * crowdIntervalMul) / paceMul,
+    ),
+  );
 
   const stageDiffMul = stage?.difficultyMul ?? 1;
   const mergedDifficulty: DifficultySpawnMultipliers | undefined = difficulty
@@ -526,15 +548,26 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
 
     // Comuns até a cota; ritmo sobe com a fase
     const remainingQuota = Math.max(0, quota - commonsSpawned);
+    let spawnEvents = 0;
     while (
       remainingQuota - commonsSpawnedDelta > 0 &&
       spawnAccumulatorMs >= spawnIntervalMs &&
-      count < MAX_ENEMIES
+      count < MAX_ENEMIES &&
+      spawnEvents < MAX_SPAWN_EVENTS_PER_TICK
     ) {
+      spawnEvents += 1;
       spawnAccumulatorMs -= spawnIntervalMs;
       const batchCap = Math.min(
         remainingQuota - commonsSpawnedDelta,
-        Math.max(1, Math.ceil(getSpawnAmount(timeAliveInSeconds) * paceMul)),
+        Math.max(
+          1,
+          Math.ceil(
+            getCrowdedBatchAmount(
+              getSpawnAmount(timeAliveInSeconds),
+              count,
+            ) * paceMul,
+          ),
+        ),
       );
       for (let i = 0; i < batchCap && count < MAX_ENEMIES; i++) {
         const config = rollCommonConfig(availableTypes);
@@ -581,9 +614,18 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
     }
 
-    while (spawnAccumulatorMs >= spawnIntervalMs && count < MAX_ENEMIES) {
+    let spawnEvents = 0;
+    while (
+      spawnAccumulatorMs >= spawnIntervalMs &&
+      count < MAX_ENEMIES &&
+      spawnEvents < MAX_SPAWN_EVENTS_PER_TICK
+    ) {
+      spawnEvents += 1;
       spawnAccumulatorMs -= spawnIntervalMs;
-      const batchAmount = getSpawnAmount(timeAliveInSeconds);
+      const batchAmount = getCrowdedBatchAmount(
+        getSpawnAmount(timeAliveInSeconds),
+        count,
+      );
 
       const canInvade =
         invasionBossCooldownMs <= 0 &&

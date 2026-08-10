@@ -8,7 +8,7 @@ export type AscensionPassiveId =
 export type AscensionPassivesData = {
   /** Ímã Primordial: +10% raio de coleta / magnetismo por nível. */
   magnetRadius: number;
-  /** Herança de Ouro: ouro fixo no início de cada run. */
+  /** Herança de Ouro: ouro fixo ao ascender e no início de cada run. */
   startingGold: number;
   /** Sorte do Campeão: +% na chance base de diamante. */
   diamondLuck: number;
@@ -49,7 +49,8 @@ export const ASCENSION_PASSIVES: AscensionPassiveDef[] = [
   {
     id: "startingGold",
     title: "Herança de Ouro",
-    description: "Toda nova run começa com um bônus fixo de ouro.",
+    description:
+      "Após ascender (e a cada nova run), você recebe um bônus fixo de ouro.",
     bonusLabel: (level) =>
       `+${(level * STARTING_GOLD_PER_LEVEL).toLocaleString("pt-BR")} ouro ao iniciar`,
   },

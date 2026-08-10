@@ -63,6 +63,7 @@ import {
 } from "@/lib/saveSlots";
 import {
   DEFAULT_SKILL_TREE,
+  areRequirementsMet,
   getLifeStealLevel,
   getLifeStealRatio,
   getSkillCritChanceBonus,
@@ -73,6 +74,10 @@ import {
   getSkillKnockbackBonus,
   getSkillMagnetRadiusMultiplier,
   getSkillNode,
+  getSkillTreeCooldownReduction,
+  getSkillTreeDamageBonus,
+  getSkillTreeHpBonus,
+  getSkillTreeRangeBonus,
   type SkillNodeId,
   type SkillTreeState,
 } from "@/lib/skillTree";
@@ -289,8 +294,9 @@ export type GameStoreState = {
    */
   enforcePurpleSkillCap: () => number;
   /**
-   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades/árvores/skills
-   * liberadas e abates de unlock. Mantém passivas de Ascensão, shards e equipe.
+   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades de ouro/níveis roxos
+   * e abates de unlock. Mantém upgrades de diamante (meta, XP, skill tree,
+   * skills liberadas), passivas de Ascensão, shards e equipe.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -892,33 +898,19 @@ const xpMultiplierAt = getXpMultiplier;
 const xpBonusCostAt = getXpBonusCostAt;
 
 function skillHpBonus(tree: SkillTreeState): number {
-  let bonus = 0;
-  if (tree.node_hp_1) bonus += 30;
-  if (tree.node_hp_2) bonus += 60;
-  if (tree.node_iron_guard) bonus += 50;
-  if (tree.node_fortitude) bonus += 120;
-  return bonus;
+  return getSkillTreeHpBonus(tree);
 }
 
 function skillDamageBonus(tree: SkillTreeState): number {
-  let bonus = 0;
-  if (tree.node_dmg_1) bonus += 6;
-  if (tree.node_dmg_2) bonus += 12;
-  if (tree.node_dmg_3) bonus += 22;
-  return bonus;
+  return getSkillTreeDamageBonus(tree);
 }
 
 function skillRangeBonus(tree: SkillTreeState): number {
-  return tree.node_range_focus ? 30 : 0;
+  return getSkillTreeRangeBonus(tree);
 }
 
 function skillCooldownReduction(tree: SkillTreeState): number {
-  let reduction = 0;
-  if (tree.node_spark_ignition) reduction += 50;
-  if (tree.node_spark_burst) reduction += 75;
-  if (tree.node_spark_fury) reduction += 100;
-  if (tree.node_spark_overdrive) reduction += 90;
-  return reduction;
+  return getSkillTreeCooldownReduction(tree);
 }
 
 /** Floor duro de cooldown de ataque (ms) — hard cap absoluto / cartas in-run. */
@@ -1554,20 +1546,24 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
-   * roxos), upgrades de base, árvore de skills, árvore de diamantes, desbloqueios
-   * de skills, skills granulares e abates usados nos unlocks. Mantém passivas de
-   * Ascensão, shards e equipe.
+   * roxos), upgrades de base (ouro), árvore roxa granular e abates usados nos
+   * unlocks. Mantém upgrades de diamante (meta tree, XP, skill tree, skills
+   * liberadas), passivas de Ascensão, shards e equipe.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
 
     const fresh = createDefaultSaveData();
     const current = get();
+    const startingGoldBonus = startingGoldBonusAt(
+      current.ascensionPassives.startingGold,
+    );
     const shardsGained = calcAscensionShardsGained({
       maxHpLevel: current.maxHpLevel,
       baseDamageLevel: current.baseDamageLevel,
       armTier: current.armTier,
-      xpBonusLevel: current.xpBonusLevel,
+      // XP de diamante não reseta — não conta como progresso sacrificado
+      xpBonusLevel: 0,
       gold: current.gold,
       prestigeLevel: current.prestigeLevel,
     });
@@ -1575,7 +1571,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((s) => ({
       prestigeLevel: s.prestigeLevel + 1,
       ascensionShards: s.ascensionShards + shardsGained,
-      gold: fresh.gold,
+      // Passivas de Ascensão são permanentes — reafirma no snapshot do prestige
+      ascensionPassives: normalizeAscensionPassives(s.ascensionPassives),
+      // Herança de Ouro: ouro base do save + bônus permanente ao resetar
+      gold: fresh.gold + startingGoldBonus,
       gems: fresh.gems,
       purpleDiamonds: fresh.purpleDiamonds,
       maxHpLevel: fresh.maxHpLevel,
@@ -1587,15 +1586,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       armTier: fresh.armTier,
       armsNextCost: fresh.armsNextCost,
       incomeMultiplier: fresh.incomeMultiplier,
-      /** Aumento de XP (Talents) volta ao nível 0 a cada Ascensão. */
-      xpBonusLevel: 0,
       knockbackLevel: fresh.knockbackLevel,
       baseKnockbackPower: fresh.baseKnockbackPower,
       critChanceLevel: fresh.critChanceLevel,
       critDamageLevel: fresh.critDamageLevel,
-      skillTree: { ...DEFAULT_SKILL_TREE },
-      unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
-      ...DEFAULT_META_TREE,
+      // Upgrades de diamante (normais) permanentes — não resetam
+      // xpBonusLevel, skillTree, unlockedSkills e meta tree são preservados
       skills: {
         ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
         ice: { ...DEFAULT_SKILLS_DATA.ice },
@@ -1671,7 +1667,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ),
     );
     if (current.skillTree[nodeId]) return false;
-    if (node.requires && !current.skillTree[node.requires]) return false;
+    if (!areRequirementsMet(current.skillTree, nodeId)) return false;
     if (current.gems < cost) return false;
 
     set((state) => ({

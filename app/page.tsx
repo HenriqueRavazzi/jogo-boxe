@@ -119,10 +119,12 @@ export default function Home() {
     <div className="relative h-dvh w-full select-none overflow-hidden bg-zinc-950">
       <GameCanvas />
 
-      {/* HUD global (sempre): recursos */}
-      <div className="pointer-events-none absolute inset-0 z-10">
-        <TopBar />
-      </div>
+      {/* HUD de partida (só durante match / summary — menu tem barra própria) */}
+      {(inMatch || showRunSummary) && (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          <TopBar />
+        </div>
+      )}
 
       {/* Stats + sair da partida */}
       {inMatch && (

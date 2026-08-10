@@ -4,7 +4,12 @@ import { Check, Gem, Lock, Sparkles, Unlock } from "lucide-react";
 import {
   SKILL_BRANCHES,
   SKILL_NODES,
+  areRequirementsMet,
+  formatRequirementLabels,
+  getMissingRequirements,
+  getSkillNode,
   type SkillNodeDef,
+  type SkillNodeId,
 } from "@/lib/skillTree";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
@@ -26,8 +31,9 @@ const ACCENT_UNLOCKED: Record<string, string> = {
   yellow: "border-yellow-400 bg-yellow-950 text-yellow-100 shadow-yellow-500/30",
   emerald:
     "border-emerald-400 bg-emerald-950 text-emerald-100 shadow-emerald-500/30",
-  silver:
-    "border-slate-300 bg-slate-800 text-slate-50 shadow-slate-400/30",
+  silver: "border-slate-300 bg-slate-800 text-slate-50 shadow-slate-400/30",
+  fuchsia:
+    "border-fuchsia-400 bg-fuchsia-950 text-fuchsia-100 shadow-fuchsia-500/30",
 };
 
 const ACCENT_AVAILABLE: Record<string, string> = {
@@ -41,6 +47,8 @@ const ACCENT_AVAILABLE: Record<string, string> = {
     "border-emerald-500/60 bg-zinc-900 text-emerald-200 hover:border-emerald-400",
   silver:
     "border-slate-400/60 bg-zinc-900 text-slate-200 hover:border-slate-300",
+  fuchsia:
+    "border-fuchsia-500/60 bg-zinc-900 text-fuchsia-200 hover:border-fuchsia-400",
 };
 
 const LINE_UNLOCKED: Record<string, string> = {
@@ -51,6 +59,7 @@ const LINE_UNLOCKED: Record<string, string> = {
   yellow: "bg-yellow-400",
   emerald: "bg-emerald-400",
   silver: "bg-slate-300",
+  fuchsia: "bg-fuchsia-400",
 };
 
 /** Overlay da árvore de talents (custa diamantes). */
@@ -87,7 +96,7 @@ export function SkillTree({ onClose }: SkillTreeProps) {
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-      <div className="flex max-h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl">
+      <div className="flex max-h-[90dvh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl">
         <header className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
@@ -186,68 +195,81 @@ export function SkillTree({ onClose }: SkillTreeProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-4">
             {SKILL_BRANCHES.map((branch) => {
               const nodes = SKILL_NODES.filter(
                 (n) => n.branch === branch.id,
               ).sort((a, b) => a.tier - b.tier);
+              const isSynergy = branch.id === "synergy";
 
               return (
                 <div key={branch.id} className="flex flex-col items-center">
                   <h3
-                    className={`mb-4 text-sm font-bold uppercase tracking-[0.18em] ${branch.color}`}
+                    className={`mb-1 text-sm font-bold uppercase tracking-[0.18em] ${branch.color}`}
                   >
                     {branch.title}
                   </h3>
+                  {"hint" in branch && branch.hint ? (
+                    <p className="mb-4 max-w-[14rem] text-center text-[10px] leading-snug text-zinc-500">
+                      {branch.hint}
+                    </p>
+                  ) : (
+                    <div className="mb-4" />
+                  )}
 
                   <div className="flex w-full flex-col items-center">
-                    {nodes.map((node, index) => (
-                      <div
-                        key={node.id}
-                        className="flex w-full flex-col items-center"
-                      >
-                        {index > 0 && (
-                          <div
-                            className={`h-8 w-1 rounded-full ${
-                              skillTree[node.requires!]
-                                ? LINE_UNLOCKED[node.accent]
-                                : "bg-zinc-700"
-                            }`}
-                          />
-                        )}
-                        <SkillNodeButton
-                          node={node}
-                          cost={Math.max(
-                            1,
-                            Math.floor(node.cost * prestigeCostMul),
+                    {nodes.map((node, index) => {
+                      const reqsMet = areRequirementsMet(skillTree, node.id);
+                      const missing = getMissingRequirements(
+                        skillTree,
+                        node.id,
+                      );
+                      const cost = Math.max(
+                        1,
+                        Math.floor(node.cost * prestigeCostMul),
+                      );
+                      const unlocked = skillTree[node.id];
+                      const available =
+                        !unlocked && reqsMet && gems >= cost;
+                      const locked = !unlocked && !reqsMet;
+
+                      const sameBranchPrev = node.requires.find(
+                        (id) => getSkillNode(id).branch === branch.id,
+                      );
+                      const showConnector = !isSynergy && index > 0;
+                      const connectorLit = sameBranchPrev
+                        ? skillTree[sameBranchPrev]
+                        : reqsMet || unlocked;
+
+                      return (
+                        <div
+                          key={node.id}
+                          className="flex w-full flex-col items-center"
+                        >
+                          {showConnector && (
+                            <div
+                              className={`h-8 w-1 rounded-full ${
+                                connectorLit
+                                  ? LINE_UNLOCKED[node.accent]
+                                  : "bg-zinc-700"
+                              }`}
+                            />
                           )}
-                          unlocked={skillTree[node.id]}
-                          available={
-                            !skillTree[node.id] &&
-                            (!node.requires || skillTree[node.requires]) &&
-                            gems >=
-                              Math.max(
-                                1,
-                                Math.floor(node.cost * prestigeCostMul),
-                              )
-                          }
-                          locked={
-                            !skillTree[node.id] &&
-                            !!node.requires &&
-                            !skillTree[node.requires]
-                          }
-                          onUnlock={() =>
-                            void handleUnlock(
-                              node.id,
-                              Math.max(
-                                1,
-                                Math.floor(node.cost * prestigeCostMul),
-                              ),
-                            )
-                          }
-                        />
-                      </div>
-                    ))}
+                          {isSynergy && index > 0 && (
+                            <div className="h-5" />
+                          )}
+                          <SkillNodeButton
+                            node={node}
+                            cost={cost}
+                            unlocked={unlocked}
+                            available={available}
+                            locked={locked}
+                            missing={missing}
+                            onUnlock={() => void handleUnlock(node.id, cost)}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -265,6 +287,7 @@ function SkillNodeButton({
   unlocked,
   available,
   locked,
+  missing,
   onUnlock,
 }: {
   node: SkillNodeDef;
@@ -272,19 +295,23 @@ function SkillNodeButton({
   unlocked: boolean;
   available: boolean;
   locked: boolean;
+  missing: SkillNodeId[];
   onUnlock: () => void;
 }) {
   let className =
     "w-full max-w-[14rem] rounded-xl border-2 px-4 py-3 text-left transition shadow-lg ";
 
   if (unlocked) {
-    className += ACCENT_UNLOCKED[node.accent];
+    className += ACCENT_UNLOCKED[node.accent] ?? ACCENT_UNLOCKED.fuchsia;
   } else if (locked || !available) {
     className +=
       "border-zinc-700 bg-zinc-900/80 text-zinc-500 cursor-not-allowed opacity-70";
   } else {
-    className += `${ACCENT_AVAILABLE[node.accent]} cursor-pointer`;
+    className += `${ACCENT_AVAILABLE[node.accent] ?? ACCENT_AVAILABLE.fuchsia} cursor-pointer`;
   }
+
+  const multiReq = node.requires.length > 1;
+  const reqLabel = formatRequirementLabels(node.requires);
 
   return (
     <button
@@ -302,6 +329,21 @@ function SkillNodeButton({
         )}
       </div>
       <p className="text-xs opacity-80">{node.description}</p>
+      {multiReq && !unlocked && (
+        <p className="mt-1.5 text-[10px] leading-snug text-fuchsia-300/90">
+          Requer: {reqLabel}
+        </p>
+      )}
+      {locked && missing.length > 0 && !multiReq && (
+        <p className="mt-1.5 text-[10px] leading-snug text-zinc-500">
+          Precisa: {formatRequirementLabels(missing)}
+        </p>
+      )}
+      {locked && multiReq && missing.length > 0 && (
+        <p className="mt-1 text-[10px] leading-snug text-zinc-500">
+          Falta: {formatRequirementLabels(missing)}
+        </p>
+      )}
       <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold tabular-nums opacity-90">
         {unlocked ? (
           "Desbloqueado"
