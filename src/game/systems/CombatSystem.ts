@@ -245,16 +245,34 @@ export const CHAIN_DAMAGE_MULT = 0.5;
 
 /**
  * Distribui `armCount` socos pelos candidatos (já ordenados por prioridade).
- * Com menos inimigos do que braços, reutiliza alvos em round-robin —
- * vários braços podem bater no mesmo inimigo.
+ * Cada braço pega um inimigo distinto; só bosses podem receber vários socos
+ * quando sobram braços sem alvo único.
  */
-export function assignArmTargets<T>(candidates: T[], armCount: number): T[] {
+export function assignArmTargets<T extends { enemy: Enemy }>(
+  candidates: T[],
+  armCount: number,
+): T[] {
   if (candidates.length === 0 || armCount <= 0) return [];
   const count = Math.max(1, Math.floor(armCount));
   const out: T[] = [];
-  for (let i = 0; i < count; i++) {
-    out.push(candidates[i % candidates.length]!);
+
+  // 1) Um soco por inimigo (mais próximos primeiro)
+  for (const candidate of candidates) {
+    if (out.length >= count) break;
+    out.push(candidate);
   }
+
+  // 2) Braços extras: só concentrar em bosses no alcance
+  if (out.length < count) {
+    const bosses = candidates.filter((c) => c.enemy.isBoss);
+    if (bosses.length === 0) return out;
+    let i = 0;
+    while (out.length < count) {
+      out.push(bosses[i % bosses.length]!);
+      i += 1;
+    }
+  }
+
   return out;
 }
 
@@ -299,7 +317,7 @@ function chainRicochet(
 
 /**
  * Sistema de combate: colisão de contato + auto-ataque multi-braço + knockback
- * (vários braços podem acertar o mesmo inimigo) + procs elementais
+ * (vários braços no mesmo alvo só contra bosses) + procs elementais
  * (gelo / raio / fogo) da skill tree e Purple Diamonds.
  */
 export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {

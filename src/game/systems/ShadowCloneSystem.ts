@@ -217,11 +217,21 @@ export function pickShadowCloneTargets(
   const ranked = [...preferred, ...fallback].map((s) => s.enemy);
   if (ranked.length === 0) return [];
 
-  // Mesma regra do herói: com poucos inimigos, vários braços no mesmo alvo
+  // Mesma regra do herói: alvos únicos; só bosses recebem braços extras
   const count = Math.max(1, Math.floor(maxTargets));
   const out: Enemy[] = [];
-  for (let i = 0; i < count; i++) {
-    out.push(ranked[i % ranked.length]!);
+  for (const enemy of ranked) {
+    if (out.length >= count) break;
+    out.push(enemy);
+  }
+  if (out.length < count) {
+    const bosses = ranked.filter((e) => e.isBoss);
+    if (bosses.length === 0) return out;
+    let i = 0;
+    while (out.length < count) {
+      out.push(bosses[i % bosses.length]!);
+      i += 1;
+    }
   }
   return out;
 }
