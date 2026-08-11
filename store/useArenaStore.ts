@@ -400,6 +400,8 @@ const DEFAULT_ENEMY_HP = 30;
 const DEFAULT_ENEMY_SPEED = 55;
 const GOLD_PER_KILL = 10;
 const XP_PER_KILL = 25;
+/** Cada nível in-run multiplica o XP de kills por este fator (Lv.1 = ×1). */
+const MATCH_LEVEL_XP_GROWTH = 1.4;
 const CONTACT_DAMAGE = 20;
 const BASE_XP_TO_LEVEL = 100;
 /** Tempo (s) para o jogador escolher uma carta antes da auto-seleção. */
@@ -991,10 +993,15 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       state.runMode === "endless"
         ? getEndlessXpMultiplier(state.timeAlive)
         : 1;
+    const matchLevelMul = Math.pow(
+      MATCH_LEVEL_XP_GROWTH,
+      Math.max(0, state.matchLevel - 1),
+    );
     const finalXp = Math.round(
       baseAmount *
         useGameStore.getState().getEffectiveStats().xpMultiplier *
-        endlessMul,
+        endlessMul *
+        matchLevelMul,
     );
 
     // Durante level_up, só acumula XP sem subir de novo

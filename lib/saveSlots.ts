@@ -38,6 +38,10 @@ import {
   type SkillUpgradeType,
   type UnlockedSkillsData,
 } from "@/db/schema";
+import {
+  incomeLevelFromLegacyMultiplier,
+  incomeMultiplierAt,
+} from "@/lib/goldIncome";
 import { normalizeSkillMasteryUnlocked } from "@/lib/skillMastery";
 import { resolveAuraPrimaryElement } from "@/src/game/systems/AuraSystem";
 
@@ -214,6 +218,7 @@ export function createDefaultSaveData(): SaveData {
     arms: 2,
     armTier: 1,
     armsNextCost: 80,
+    incomeLevel: 0,
     incomeMultiplier: 1,
     xpBonusLevel: 0,
     knockbackLevel: 0,
@@ -301,6 +306,33 @@ export function normalizeSaveData(
     ...rest,
     baseDamage,
     armsNextCost: data.armsNextCost ?? 80,
+    incomeLevel: (() => {
+      const hasPersistedLevel = Object.prototype.hasOwnProperty.call(
+        data,
+        "incomeLevel",
+      );
+      if (
+        hasPersistedLevel &&
+        typeof data.incomeLevel === "number" &&
+        Number.isFinite(data.incomeLevel)
+      ) {
+        return Math.max(0, Math.floor(data.incomeLevel));
+      }
+      return incomeLevelFromLegacyMultiplier(data.incomeMultiplier ?? 1);
+    })(),
+    incomeMultiplier: (() => {
+      const hasPersistedLevel = Object.prototype.hasOwnProperty.call(
+        data,
+        "incomeLevel",
+      );
+      const level =
+        hasPersistedLevel &&
+        typeof data.incomeLevel === "number" &&
+        Number.isFinite(data.incomeLevel)
+          ? Math.max(0, Math.floor(data.incomeLevel))
+          : incomeLevelFromLegacyMultiplier(data.incomeMultiplier ?? 1);
+      return incomeMultiplierAt(level);
+    })(),
     xpBonusLevel: data.xpBonusLevel ?? 0,
     knockbackLevel: data.knockbackLevel ?? 0,
     baseKnockbackPower: data.baseKnockbackPower ?? 5,

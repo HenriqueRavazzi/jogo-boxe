@@ -83,6 +83,20 @@ import {
   normalizeSkills,
 } from "@/lib/saveSlots";
 import {
+  INCOME_STEP,
+  INCOME_STEP_SCALE_PER_LEVEL,
+  incomeLevelFromLegacyMultiplier,
+  incomeMultiplierAt,
+  incomeStepGainAt,
+} from "@/lib/goldIncome";
+export {
+  INCOME_STEP,
+  INCOME_STEP_SCALE_PER_LEVEL,
+  incomeLevelFromLegacyMultiplier,
+  incomeMultiplierAt,
+  incomeStepGainAt,
+} from "@/lib/goldIncome";
+import {
   DEFAULT_SKILL_TREE,
   areRequirementsMet,
   getLifeStealLevel,
@@ -200,6 +214,9 @@ export type GameStoreState = {
   armTier: number;
   /** Próximo custo do upgrade de braços (×1.4 a cada compra). */
   armsNextCost: number;
+  /** Nível do multiplicador de ouro (fonte da verdade). */
+  incomeLevel: number;
+  /** Multiplicador de ouro derivado de `incomeLevel`. */
   incomeMultiplier: number;
   /** Nível de bônus de XP (+10% por nível). */
   xpBonusLevel: number;
@@ -462,19 +479,53 @@ export type GameStoreState = {
   getBaseRange: () => number;
 };
 
-/** Bônus percentual de Max HP por nível de upgrade de ouro (aditivo). */
+/**
+ * Bônus % base no 1º upgrade de ouro (nível 1→2).
+ * Níveis seguintes ganham mais: base × (1 + (n−1) × scale).
+ */
 export const GOLD_HP_PCT_PER_LEVEL = 0.08;
-/** Bônus percentual de dano por nível de upgrade de ouro (aditivo). */
 export const GOLD_DAMAGE_PCT_PER_LEVEL = 0.07;
+/** Escala do %/nível — faz o retorno acompanhar o custo crescente. */
+export const GOLD_HP_PCT_SCALE_PER_LEVEL = 0.012;
+export const GOLD_DAMAGE_PCT_SCALE_PER_LEVEL = 0.012;
 
-/** Multiplicador de HP vindo dos upgrades de ouro (nível 1 = 1×). */
-export function goldHpMultiplier(level: number): number {
-  return 1 + Math.max(0, Math.floor(level) - 1) * GOLD_HP_PCT_PER_LEVEL;
+/** % de HP ganho ao comprar o próximo nível a partir de `currentLevel`. */
+export function goldHpPctGainAt(currentLevel: number): number {
+  const steps = Math.max(0, Math.floor(currentLevel) - 1);
+  return GOLD_HP_PCT_PER_LEVEL * (1 + steps * GOLD_HP_PCT_SCALE_PER_LEVEL);
 }
 
-/** Multiplicador de dano vindo dos upgrades de ouro (nível 1 = 1×). */
+/** % de dano ganho ao comprar o próximo nível a partir de `currentLevel`. */
+export function goldDamagePctGainAt(currentLevel: number): number {
+  const steps = Math.max(0, Math.floor(currentLevel) - 1);
+  return (
+    GOLD_DAMAGE_PCT_PER_LEVEL *
+    (1 + steps * GOLD_DAMAGE_PCT_SCALE_PER_LEVEL)
+  );
+}
+
+/**
+ * Multiplicador de HP dos upgrades de ouro (nível 1 = 1×).
+ * Soma aritmética crescente: cada nível vale mais que o anterior.
+ */
+export function goldHpMultiplier(level: number): number {
+  const n = Math.max(0, Math.floor(level) - 1);
+  if (n <= 0) return 1;
+  const base = GOLD_HP_PCT_PER_LEVEL;
+  const scale = GOLD_HP_PCT_SCALE_PER_LEVEL;
+  return 1 + base * (n + (scale * n * (n - 1)) / 2);
+}
+
+/**
+ * Multiplicador de dano dos upgrades de ouro (nível 1 = 1×).
+ * Mesma curva crescente do HP.
+ */
 export function goldDamageMultiplier(level: number): number {
-  return 1 + Math.max(0, Math.floor(level) - 1) * GOLD_DAMAGE_PCT_PER_LEVEL;
+  const n = Math.max(0, Math.floor(level) - 1);
+  if (n <= 0) return 1;
+  const base = GOLD_DAMAGE_PCT_PER_LEVEL;
+  const scale = GOLD_DAMAGE_PCT_SCALE_PER_LEVEL;
+  return 1 + base * (n + (scale * n * (n - 1)) / 2);
 }
 
 /** Base de custo compartilhada (income/outros). */
@@ -484,21 +535,26 @@ const UPGRADE_COST_BASE = 50;
  * para o ouro render mais efeito por nível.
  */
 const COMBAT_UPGRADE_COST_BASE = 40;
-const COMBAT_UPGRADE_COST_GROWTH = 1.18;
+const COMBAT_UPGRADE_COST_GROWTH = 1.05;
 const INCOME_COST_BASE = 75;
-/** Passo de renda por upgrade — menor = ouro de partida sobe mais devagar. */
-export const INCOME_STEP = 0.1;
-const ARMS_COST_GROWTH = 1.4;
+const ARMS_COST_GROWTH = 1.2;
 const ARMS_PRESTIGE_DAMAGE = 1.15;
 const ARMS_MAX = 6;
 const ARMS_MIN = 2;
 
-/** Crescimento de custo meta (ouro/diamantes): base × 1.25^nível. */
-export const UPGRADE_COST_GROWTH = 1.25;
-/** Multiplicador extra por nível de prestígio: ×1.25^prestigeLevel. */
-export const PRESTIGE_COST_GROWTH = 1.25;
+/** Crescimento de custo meta (ouro/diamantes) na fase inicial. */
+export const UPGRADE_COST_GROWTH = 1.2;
+/** Multiplicador extra por nível de prestígio (mais suave que 1.25). */
+export const PRESTIGE_COST_GROWTH = 1.12;
+/**
+ * Até este nível o custo usa `growth` cheio; depois entra o soft-tail
+ * para HP/dano/income não explodirem em centenas de níveis.
+ */
+export const UPGRADE_COST_SOFT_TAIL_START = 25;
+/** Fração de (growth−1) mantida após o soft-tail (ex.: 1.2 → ~1.06). */
+export const UPGRADE_COST_SOFT_TAIL_FACTOR = 0.3;
 
-/** ×1.25^n — encarece upgrades conforme a Ascensão. */
+/** ×PRESTIGE_COST_GROWTH^n — encarece upgrades conforme a Ascensão. */
 export function getPrestigeCostMultiplier(prestigeLevel: number): number {
   return Math.pow(
     PRESTIGE_COST_GROWTH,
@@ -507,8 +563,8 @@ export function getPrestigeCostMultiplier(prestigeLevel: number): number {
 }
 
 /**
- * Custo exponencial com prestígio:
- * floor(base × growth^nível × 1.25^prestigeLevel)
+ * Custo com soft-tail:
+ * floor(base × growth^min(nível,25) × softGrowth^max(0,nível−25) × prestige)
  */
 export function getUpgradeCost(
   baseCost: number,
@@ -516,11 +572,17 @@ export function getUpgradeCost(
   prestigeLevel = 0,
   growthRate: number = UPGRADE_COST_GROWTH,
 ): number {
+  const lv = Math.max(0, Math.floor(currentLevel));
+  const early = Math.min(lv, UPGRADE_COST_SOFT_TAIL_START);
+  const late = Math.max(0, lv - UPGRADE_COST_SOFT_TAIL_START);
+  const softGrowth =
+    1 + Math.max(0, growthRate - 1) * UPGRADE_COST_SOFT_TAIL_FACTOR;
   return Math.max(
     1,
     Math.floor(
       baseCost *
-        Math.pow(growthRate, Math.max(0, currentLevel)) *
+        Math.pow(growthRate, early) *
+        Math.pow(softGrowth, late) *
         getPrestigeCostMultiplier(prestigeLevel),
     ),
   );
@@ -637,8 +699,8 @@ export const MAX_UPGRADE_LEVELS = {
   /** Só via cartas in-run (`matchBuffs.attackSpeed`). */
   attackSpeed: 0,
   range: 10,
-  /** Bônus de XP com diamantes (+10%/nível). */
-  xpBonus: 20,
+  /** Bônus de XP com diamantes (+10%/nível), até Lv.50. */
+  xpBonus: 50,
 } as const;
 
 /** Árvore de atributos permanentes (Diamantes Normais). */
@@ -755,7 +817,8 @@ const CRIT_DAMAGE_COST_BASE = 70;
 const PURPLE_SKILL_STAT_COST_BASE = 3;
 /** Custo base em diamantes do 1º nível de bônus de XP. */
 const XP_BONUS_COST_BASE = 40;
-const XP_BONUS_COST_GROWTH = 1.85;
+/** Crescimento mais suave para permitir upar até Lv.50 sem custo absurdo. */
+const XP_BONUS_COST_GROWTH = 1.3;
 
 export function getMetaLifeStealRatio(level: number): number {
   const capped = Math.min(
@@ -813,7 +876,7 @@ function getMetaTreeLevel(
   return state[type];
 }
 
-/** Custo de um atributo: floor(base × 1.25^nível × prestígio). */
+/** Custo de um atributo: floor(base × growth^nível × prestígio), com soft-tail. */
 export function getPurpleSkillCostAt(
   level: number,
   prestigeLevel = 0,
@@ -1017,19 +1080,25 @@ function skillCooldownReduction(tree: SkillTreeState): number {
   return getSkillTreeCooldownReduction(tree);
 }
 
-/** Floor duro de cooldown de ataque (ms) — hard cap absoluto / cartas in-run. */
-export const MIN_ATTACK_COOLDOWN_MS = 300;
+/**
+ * Floor absoluto de cooldown (ms) — só evita CD ≤0.
+ * Cartas in-run de velocidade param de aparecer em
+ * `MATCH_COOLDOWN_UPGRADE_FLOOR` (300ms); meta/equipe/cartas podem ir abaixo disso.
+ */
+export const MIN_ATTACK_COOLDOWN_MS = 50;
+/** Referência de design do “chão” de CD para a fatia meta (ouro). */
+export const ATTACK_COOLDOWN_DESIGN_FLOOR_MS = 300;
 /** Teto duro de alcance (px) — hard cap absoluto / cartas in-run. */
 export const MAX_ATTACK_RANGE = 650;
 
 /**
- * Teto de meta-progresso (ouro) para CD: só 40% do caminho até 300ms.
+ * Teto de meta-progresso (ouro) para CD: só 40% do caminho até o design floor.
  * Ex.: base 1500 → meta floor = 1500 − 1200×0.4 = 1020ms.
  */
 export function getMetaMaxCooldownMs(
   baseAttackSpeedMs = FALLBACK_GAME_SETTINGS.baseAttackSpeed,
 ): number {
-  const span = Math.max(0, baseAttackSpeedMs - MIN_ATTACK_COOLDOWN_MS);
+  const span = Math.max(0, baseAttackSpeedMs - ATTACK_COOLDOWN_DESIGN_FLOOR_MS);
   return Math.round(baseAttackSpeedMs - span * META_ATTACK_SPEED_SHARE);
 }
 
@@ -1046,7 +1115,7 @@ export function getMetaMaxRangePx(
 
 /**
  * Cooldown só com upgrades de ouro (sem cards in-game).
- * Interpola linearmente até o teto meta (40%); hard cap 300ms fica para a arena.
+ * Interpola linearmente até o teto meta (40%).
  */
 export function cooldownAtLevel(
   level: number,
@@ -1119,6 +1188,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   arms: defaults.arms,
   armTier: defaults.armTier,
   armsNextCost: defaults.armsNextCost,
+  incomeLevel: defaults.incomeLevel ?? 0,
   incomeMultiplier: defaults.incomeMultiplier,
   xpBonusLevel: defaults.xpBonusLevel,
   knockbackLevel: defaults.knockbackLevel,
@@ -1197,6 +1267,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       arms: n.arms,
       armTier: n.armTier,
       armsNextCost: n.armsNextCost,
+      incomeLevel: n.incomeLevel ?? 0,
       incomeMultiplier: n.incomeMultiplier,
       xpBonusLevel: Math.min(
         MAX_UPGRADE_LEVELS.xpBonus,
@@ -1318,7 +1389,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       arms: s.arms,
       armTier: s.armTier,
       armsNextCost: s.armsNextCost,
-      incomeMultiplier: s.incomeMultiplier,
+      incomeLevel: s.incomeLevel,
+      incomeMultiplier: incomeMultiplierAt(s.incomeLevel),
       xpBonusLevel: Math.min(
         MAX_UPGRADE_LEVELS.xpBonus,
         Math.max(0, Math.floor(s.xpBonusLevel)),
@@ -1733,6 +1805,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       arms: fresh.arms,
       armTier: fresh.armTier,
       armsNextCost: fresh.armsNextCost,
+      incomeLevel: fresh.incomeLevel ?? 0,
       incomeMultiplier: fresh.incomeMultiplier,
       knockbackLevel: fresh.knockbackLevel,
       baseKnockbackPower: fresh.baseKnockbackPower,
@@ -1992,7 +2065,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Incrementa um atributo específico da skill com Diamantes Roxos.
-   * Custo: base × 1.25^nívelAtual do atributo. Teto: MAX_PURPLE_SKILL_STAT_LEVEL.
+   * Custo: base × growth^nível (com soft-tail) × prestígio. Teto: MAX_PURPLE_SKILL_STAT_LEVEL.
    */
   upgradeSkillStat: (skillId, statKey) => {
     if (!isSkillUpgradeType(skillId) || !isSkillStatKey(skillId, statKey)) {
@@ -2108,11 +2181,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     getUpgradeCost(RANGE_COST_BASE, get().rangeLevel, get().prestigeLevel),
 
   getIncomeUpgradeCost: () => {
-    const incomeLevel = Math.max(
-      0,
-      Math.round((get().incomeMultiplier - 1) / INCOME_STEP),
+    return getUpgradeCost(
+      INCOME_COST_BASE,
+      get().incomeLevel,
+      get().prestigeLevel,
     );
-    return getUpgradeCost(INCOME_COST_BASE, incomeLevel, get().prestigeLevel);
   },
 
   getArmsUpgradeCost: () =>
@@ -2450,12 +2523,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }
 
     if (kind === "income") {
-      const incomeLevel = Math.max(
-        0,
-        Math.round((s.incomeMultiplier - 1) / INCOME_STEP),
-      );
       return planSequentialGoldUpgrades({
-        startLevel: incomeLevel,
+        startLevel: s.incomeLevel,
         gold,
         quantity,
         getCostAt: (lv) => getUpgradeCost(INCOME_COST_BASE, lv, prestige),
@@ -2500,12 +2569,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         rangeLevel: Math.min(MAX_UPGRADE_LEVELS.range, s.rangeLevel + n),
       }));
     } else if (kind === "income") {
-      set((s) => ({
-        gold: s.gold - cost,
-        incomeMultiplier: Number(
-          (s.incomeMultiplier + INCOME_STEP * n).toFixed(1),
-        ),
-      }));
+      set((s) => {
+        const nextLevel = s.incomeLevel + n;
+        return {
+          gold: s.gold - cost,
+          incomeLevel: nextLevel,
+          incomeMultiplier: incomeMultiplierAt(nextLevel),
+        };
+      });
     } else if (kind === "critChance") {
       set((s) => ({
         gold: s.gold - cost,
@@ -2591,17 +2662,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   upgradeIncome: () => {
-    const incomeLevel = Math.max(
-      0,
-      Math.round((get().incomeMultiplier - 1) / INCOME_STEP),
-    );
-    if (isLevelCapped(incomeLevel, MAX_UPGRADE_LEVELS.income)) return false;
+    if (isLevelCapped(get().incomeLevel, MAX_UPGRADE_LEVELS.income))
+      return false;
     const cost = get().getIncomeUpgradeCost();
     if (get().gold < cost) return false;
-    set((s) => ({
-      gold: s.gold - cost,
-      incomeMultiplier: Number((s.incomeMultiplier + INCOME_STEP).toFixed(1)),
-    }));
+    set((s) => {
+      const nextLevel = s.incomeLevel + 1;
+      return {
+        gold: s.gold - cost,
+        incomeLevel: nextLevel,
+        incomeMultiplier: incomeMultiplierAt(nextLevel),
+      };
+    });
     return true;
   },
 

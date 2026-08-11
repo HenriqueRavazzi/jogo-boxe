@@ -94,6 +94,7 @@ export async function GET() {
       "arms",
       "armTier",
       "armsNextCost",
+      "incomeLevel",
       "incomeMultiplier",
       "xpBonusLevel",
       "knockbackLevel",

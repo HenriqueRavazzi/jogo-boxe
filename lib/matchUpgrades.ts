@@ -18,7 +18,8 @@ import {
   type SkillMasteryUpgradeType,
 } from "@/lib/skillMastery";
 
-/** Para de oferecer cartas de velocidade abaixo deste cooldown efetivo (ms). */
+/** Para de oferecer cartas de velocidade abaixo deste cooldown efetivo (ms).
+ * O CD real pode ir abaixo via meta/equipe; só as cartas in-run param aqui. */
 export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
 /** Teto de chance crítica efetiva in-run (meta + cartas). */
 export const MATCH_CRIT_CHANCE_CAP = 1;

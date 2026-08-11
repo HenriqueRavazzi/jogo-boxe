@@ -10,11 +10,11 @@ import {
   Swords,
 } from "lucide-react";
 import {
-  GOLD_DAMAGE_PCT_PER_LEVEL,
-  GOLD_HP_PCT_PER_LEVEL,
   goldDamageMultiplier,
+  goldDamagePctGainAt,
   goldHpMultiplier,
-  INCOME_STEP,
+  goldHpPctGainAt,
+  incomeStepGainAt,
   MAX_CRIT_CHANCE,
   MAX_UPGRADE_LEVELS,
   formatLevelLabel,
@@ -44,6 +44,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const critChanceLevel = useGameStore((s) => s.critChanceLevel);
   const arms = useGameStore((s) => s.arms);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
+  const incomeLevel = useGameStore((s) => s.incomeLevel);
   const gold = useGameStore((s) => s.gold);
   const baseConfig = useGameStore((s) => s.baseConfig);
 
@@ -55,10 +56,6 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const getUpgradeRangeAt = useGameStore((s) => s.getUpgradeRangeAt);
 
   const critChance = getCritChance();
-  const incomeLevel = Math.max(
-    0,
-    Math.round((incomeMultiplier - 1) / INCOME_STEP),
-  );
 
   const hpAtMax = isLevelCapped(maxHpLevel, MAX_UPGRADE_LEVELS.hp);
   const damageAtMax = isLevelCapped(baseDamageLevel, MAX_UPGRADE_LEVELS.damage);
@@ -115,8 +112,10 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const dmgBonusPct = Math.round(
     (goldDamageMultiplier(baseDamageLevel) - 1) * 100,
   );
-  const hpPctLabel = `${Math.round(GOLD_HP_PCT_PER_LEVEL * 100)}%`;
-  const dmgPctLabel = `${Math.round(GOLD_DAMAGE_PCT_PER_LEVEL * 100)}%`;
+  const hpNextPct = Math.round(goldHpPctGainAt(maxHpLevel) * 1000) / 10;
+  const dmgNextPct =
+    Math.round(goldDamagePctGainAt(baseDamageLevel) * 1000) / 10;
+  const incomeNext = incomeStepGainAt(incomeLevel);
 
   const grid = (
     <div
@@ -125,7 +124,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
         title={`Max HP: ${formatLevelLabel(maxHpLevel, MAX_UPGRADE_LEVELS.hp)}`}
-        subtitle={`HP atual: ${getMaxHp()} · +${hpBonusPct}% (+${hpPctLabel}/nv)`}
+        subtitle={`HP atual: ${getMaxHp()} · +${hpBonusPct}% (próx. +${hpNextPct}%)`}
         plan={planFor("hp")}
         atMax={hpAtMax}
         onUpgrade={() => void buy("hp")}
@@ -133,7 +132,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<Swords className="h-5 w-5 text-amber-400" />}
         title={`Dano: ${getBaseDamage()}`}
-        subtitle={`${formatLevelLabel(baseDamageLevel, MAX_UPGRADE_LEVELS.damage)} · +${dmgBonusPct}% (+${dmgPctLabel}/nv)`}
+        subtitle={`${formatLevelLabel(baseDamageLevel, MAX_UPGRADE_LEVELS.damage)} · +${dmgBonusPct}% (próx. +${dmgNextPct}%)`}
         plan={planFor("damage")}
         atMax={damageAtMax}
         onUpgrade={() => void buy("damage")}
@@ -169,7 +168,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       <UpgradeCard
         icon={<Coins className="h-5 w-5 text-yellow-400" />}
         title={`Multiplicador: ${incomeMultiplier.toFixed(1)}x`}
-        subtitle={formatLevelLabel(incomeLevel, MAX_UPGRADE_LEVELS.income)}
+        subtitle={`${formatLevelLabel(incomeLevel, MAX_UPGRADE_LEVELS.income)} · próx. +${incomeNext.toFixed(2)}x`}
         plan={planFor("income")}
         atMax={incomeAtMax}
         onUpgrade={() => void buy("income")}

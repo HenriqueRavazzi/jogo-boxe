@@ -271,6 +271,12 @@ export type SaveData = {
   armTier: number;
   /** Custo atual do próximo upgrade de braços (cresce ×1.4 por compra). */
   armsNextCost: number;
+  /**
+   * Nível do multiplicador de ouro (fonte da verdade).
+   * Saves antigos migram via `(incomeMultiplier - 1) / 0.1`.
+   */
+  incomeLevel: number;
+  /** Multiplicador de ouro derivado de `incomeLevel` (legado / combate). */
   incomeMultiplier: number;
   /** Nível de bônus de XP (+10% por nível). */
   xpBonusLevel: number;
