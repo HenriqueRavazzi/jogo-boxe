@@ -64,7 +64,8 @@ const CARDS: SkillCardDef[] = [
   {
     type: "fire",
     title: "Fogo",
-    description: "Queimadura on-hit com stacks cumulativos.",
+    description:
+      "Queimadura on-hit com stacks cumulativos. Na Aura: DPS contínuo na área.",
     icon: <Flame className="h-5 w-5" aria-hidden />,
     statActions: {
       damage: {
@@ -81,7 +82,7 @@ const CARDS: SkillCardDef[] = [
     type: "ice",
     title: "Gelo",
     description:
-      "Onda a 40% do alcance: congela e deixa vulnerável (+30% dano).",
+      "Onda a 40% do alcance: congela e deixa vulnerável (+30% dano). Na Aura: stun periódico na área.",
     icon: <Snowflake className="h-5 w-5" aria-hidden />,
     statActions: {
       duration: {
@@ -97,7 +98,8 @@ const CARDS: SkillCardDef[] = [
   {
     type: "lightning",
     title: "Raio",
-    description: "Estouro massivo no inimigo mais próximo + mini-stun.",
+    description:
+      "Estouro massivo no inimigo mais próximo + mini-stun. Na Aura: lentidão forte (−45% AS).",
     icon: <Zap className="h-5 w-5" aria-hidden />,
     statActions: {
       damage: {
