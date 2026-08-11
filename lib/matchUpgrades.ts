@@ -35,7 +35,7 @@ export type SpecialSkillKey =
   | "aura"
   | "vendaval";
 
-/** Categoria da carta — até 2 por pack se raridades forem diferentes. */
+/** Categoria da carta — única por pack de level-up. */
 export type UpgradeCategory =
   | "damage"
   | "speed"
@@ -832,13 +832,10 @@ export function getEligibleStatCategories(ctx?: {
   });
 }
 
-/** Máx. de cartas da mesma área (ex.: dano) na mesma tela de level-up. */
-const MAX_SAME_CATEGORY_PER_PACK = 2;
-
 /**
  * Pode aceitar esta carta no pack atual?
- * - Skills especiais: type único
- * - Stats: até 2 da mesma área, desde que raridades diferentes
+ * Skills especiais / maestria: type único.
+ * Stats: categoria única (sem duplicar a mesma área em raridades diferentes).
  */
 function canAcceptUpgradeCard(
   selected: MatchUpgrade[],
@@ -851,20 +848,17 @@ function canAcceptUpgradeCard(
     return !selected.some((c) => c.type === candidate.type);
   }
 
-  const sameArea = selected.filter((c) => c.category === candidate.category);
-  if (sameArea.length >= MAX_SAME_CATEGORY_PER_PACK) return false;
-  if (sameArea.some((c) => c.rarity === candidate.rarity)) return false;
-  return true;
+  return !selected.some((c) => c.category === candidate.category);
 }
 
 /**
  * Gera N cartas com raridade ponderada (pity por tempo/nível).
  * Por slot: 15% tenta skill especial elegível; senão, upgrade de status.
  * No máx. getMaxActiveRunSkills skills novas por run — depois só upgrades delas.
- * Até 2 cartas da mesma área (ex.: dano) se forem de tiers/raridades diferentes.
+ * Nunca repete a mesma categoria/`type` na mesma tela.
  */
 export function generateUpgradeOptions(
-  count = 3,
+  count = 4,
   ctx?: GenerateUpgradeOptionsContext,
 ): MatchUpgrade[] {
   const unlocked = ctx?.unlockedSkills;
@@ -936,10 +930,7 @@ export function generateUpgradeOptions(
       (key) => !selectedCards.some((c) => c.type === key),
     );
     const availableStats = baseStatPool.filter((category) => {
-      const sameArea = selectedCards.filter((c) => c.category === category);
-      if (sameArea.length >= MAX_SAME_CATEGORY_PER_PACK) return false;
-      if (sameArea.some((c) => c.rarity === rarity)) return false;
-      return true;
+      return !selectedCards.some((c) => c.category === category);
     });
 
     let picked: MatchUpgrade | null = null;
@@ -978,7 +969,7 @@ export function generateUpgradeOptions(
       picked = createSpecialUpgrade(key, rarity, nextLevel);
       specialPool = specialPool.filter((k) => k !== key);
     } else {
-      // Raridade batendo com duplicata de área — tenta de novo com outro roll
+      // Pool esgotado para esta raridade / tentativa — tenta de novo
       continue;
     }
 

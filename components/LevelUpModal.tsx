@@ -8,7 +8,7 @@ import {
 } from "@/lib/matchUpgrades";
 import { useArenaStore } from "@/store/useArenaStore";
 
-/** Modal de level up com 3 cartas de raridade + countdown de auto-seleção. */
+/** Modal de level up com cartas de raridade + countdown de auto-seleção. */
 export function LevelUpModal() {
   const matchLevel = useArenaStore((s) => s.matchLevel);
   const options = useArenaStore((s) => s.levelUpOptions);
@@ -55,9 +55,11 @@ export function LevelUpModal() {
 
         <div
           className={`grid w-full grid-cols-1 gap-3 ${
-            options.length >= 4
-              ? "sm:grid-cols-2 lg:grid-cols-4"
-              : "sm:grid-cols-3"
+            options.length >= 5
+              ? "sm:grid-cols-2 lg:grid-cols-5"
+              : options.length >= 4
+                ? "sm:grid-cols-2 lg:grid-cols-4"
+                : "sm:grid-cols-3"
           }`}
         >
           {options.map((card) => (

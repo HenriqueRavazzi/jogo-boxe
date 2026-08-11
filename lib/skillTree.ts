@@ -420,7 +420,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     id: "node_skill_fortune",
     name: "Skill Fortune",
     description:
-      "+20% chance de cartas de skill na roleta · 40% de chance de 4 opções no level-up",
+      "+20% chance de cartas de skill na roleta · 40% de chance de 5 opções no level-up",
     cost: 550_000,
     requires: ["node_adrenaline", "node_ring_master"],
     branch: "synergy",
@@ -477,9 +477,11 @@ export function getExtraActiveRunSkillSlots(
   return skillTree.node_skill_slot ? 1 : 0;
 }
 
+/** Quantidade base de cartas no level-up. */
+export const BASE_LEVEL_UP_OPTION_COUNT = 4;
 /** Bônus absoluto na chance de carta de skill especial por slot da roleta. */
 export const SKILL_FORTUNE_CARD_CHANCE_BONUS = 0.2;
-/** Chance de oferecer 4 cartas no level-up com Skill Fortune. */
+/** Chance de oferecer 5 cartas no level-up com Skill Fortune. */
 export const SKILL_FORTUNE_EXTRA_OPTION_CHANCE = 0.4;
 
 /** Chance efetiva de tentar skill especial por slot (base 15% + fortuna). */
@@ -493,10 +495,12 @@ export function getSpecialSkillCardChance(
   return Math.min(0.75, Math.max(0, baseChance + bonus));
 }
 
-/** Quantas cartas no pack de level-up (3, ou 4 com Skill Fortune). */
+/** Quantas cartas no pack de level-up (4 base, ou 5 com Skill Fortune). */
 export function rollLevelUpOptionCount(skillTree: SkillTreeState): number {
-  if (!skillTree.node_skill_fortune) return 3;
-  return Math.random() < SKILL_FORTUNE_EXTRA_OPTION_CHANCE ? 4 : 3;
+  if (!skillTree.node_skill_fortune) return BASE_LEVEL_UP_OPTION_COUNT;
+  return Math.random() < SKILL_FORTUNE_EXTRA_OPTION_CHANCE
+    ? BASE_LEVEL_UP_OPTION_COUNT + 1
+    : BASE_LEVEL_UP_OPTION_COUNT;
 }
 
 /** Pré-requisitos ainda não desbloqueados. */
