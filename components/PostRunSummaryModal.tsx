@@ -164,7 +164,7 @@ export function PostRunSummaryModal({
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
       <div
-        className={`w-full max-w-md rounded-2xl border bg-zinc-950/95 p-6 shadow-2xl sm:p-8 ${
+        className={`w-full max-w-2xl rounded-2xl border bg-zinc-950/95 p-5 shadow-2xl sm:p-7 ${
           isVictory ? "border-emerald-400/35" : "border-white/10"
         }`}
       >
@@ -177,7 +177,7 @@ export function PostRunSummaryModal({
             {isVictory ? "Vitória" : "Derrota"}
           </p>
           <h2
-            className={`mt-2 text-4xl font-black tracking-tight sm:text-5xl ${
+            className={`mt-2 text-3xl font-black tracking-tight sm:text-5xl ${
               isVictory ? "text-emerald-400" : "text-rose-500"
             }`}
           >
@@ -202,24 +202,24 @@ export function PostRunSummaryModal({
           )}
         </div>
 
-        <ul className="mt-6 max-h-[min(50vh,360px)] space-y-2 overflow-y-auto">
+        <ul className="mt-5 grid grid-cols-2 gap-2">
           {rows.map((row) => (
             <li
               key={row.label}
-              className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/5 px-4 py-2.5"
+              className="flex min-w-0 flex-col gap-1 rounded-xl border border-white/8 bg-white/5 px-3 py-2.5"
             >
-              <span className="inline-flex items-center gap-2 text-sm text-zinc-300">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400 sm:text-xs">
                 {row.icon}
                 {row.label}
               </span>
-              <span className="font-bold tabular-nums text-zinc-50">
+              <span className="break-all text-sm font-bold leading-snug tabular-nums text-zinc-50 sm:text-base">
                 {row.value}
               </span>
             </li>
           ))}
         </ul>
 
-        <div className="mt-6 flex flex-col gap-2">
+        <div className="mt-5 flex flex-col gap-2">
           {canAdvance && (
             <button
               type="button"
