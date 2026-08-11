@@ -523,10 +523,20 @@ export function isSpecialSkillType(type: UpgradeType): type is SpecialSkillKey {
 }
 
 /**
- * Teto in-run: 1 (após desbloqueio) + níveis meta com Diamantes Roxos.
+ * Teto duro in-run das skills especiais (cartas de level-up).
+ * Meta roxa ainda influencia até este limite: `min(8, 1 + metaCap)`.
+ */
+export const MATCH_SKILL_LEVEL_CAP = 8;
+
+/**
+ * Teto in-run: 1 (após desbloqueio) + níveis meta com Diamantes Roxos,
+ * limitado a MATCH_SKILL_LEVEL_CAP.
  */
 export function getMatchSkillMaxLevel(metaSkillLevel: number): number {
-  return 1 + Math.max(0, Math.floor(metaSkillLevel));
+  return Math.min(
+    MATCH_SKILL_LEVEL_CAP,
+    1 + Math.max(0, Math.floor(metaSkillLevel)),
+  );
 }
 
 export function canOfferSpecialSkill(
@@ -535,8 +545,11 @@ export function canOfferSpecialSkill(
   matchSkills: MatchSkillsData,
   skills: SkillsData,
   activeRunSkills: SpecialSkillKey[] = [],
+  /** Se a maestria da skill já foi ativada nesta run, não oferece mais upgrades. */
+  matchSkillMastery?: MatchSkillMasteryData,
 ): boolean {
   if (!unlockedSkills[key]) return false;
+  if (matchSkillMastery?.[key]) return false;
   const current = matchSkills[key] ?? 0;
   const max = getMatchSkillMaxLevel(getSkillMetaCap(skills[key]));
   if (current >= max) return false;
@@ -887,6 +900,7 @@ export function generateUpgradeOptions(
           matchSkills,
           skills,
           activeRunSkills,
+          ctx?.matchSkillMastery,
         )
       ) {
         continue;

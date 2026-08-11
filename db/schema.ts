@@ -149,7 +149,7 @@ export const SKILL_STAT_KEYS = {
 /** Teto permanente de cada atributo granular (Diamantes Roxos). */
 export const MAX_PURPLE_SKILL_STAT_LEVEL = 20;
 
-/** Teto in-run: maior nível entre os atributos meta da skill. */
+/** Teto in-run derivado do meta (maior atributo); limitado a 8 na roleta. */
 export function getSkillMetaCap(
   skill: SkillsData[SkillUpgradeType] | number | undefined,
 ): number {

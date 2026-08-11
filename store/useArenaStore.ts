@@ -17,6 +17,7 @@ import {
   applySkillBonusDelta,
   createEmptyMatchSkillBonuses,
   generateUpgradeOptions,
+  getMatchSkillMaxLevel,
   getMaxActiveRunSkills,
   isSpecialSkillType,
   MATCH_CRIT_CHANCE_CAP,
@@ -46,6 +47,7 @@ import {
 } from "@/src/game/systems/Spawner";
 import {
   DEFAULT_MATCH_SKILLS,
+  getSkillMetaCap,
   type MatchSkillsData,
 } from "@/db/schema";
 import {
@@ -975,11 +977,34 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       }));
     } else if (isSpecialSkillType(upgradeType)) {
       set((s) => {
+        // Com maestria ativa, não sobe mais o nível da skill
+        if (s.matchSkillMastery[upgradeType]) {
+          return {
+            gameState: "playing" as const,
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+          };
+        }
         const prevLevel = s.matchSkills[upgradeType] ?? 0;
         const alreadyTracked = s.activeRunSkills.includes(upgradeType);
+        const game = useGameStore.getState();
         const maxSlots = getMaxActiveRunSkills(
-          getExtraActiveRunSkillSlots(useGameStore.getState().skillTree),
+          getExtraActiveRunSkillSlots(game.skillTree),
         );
+        const skillMax = getMatchSkillMaxLevel(
+          getSkillMetaCap(game.skills[upgradeType]),
+        );
+        if (prevLevel >= skillMax) {
+          return {
+            gameState: "playing" as const,
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+          };
+        }
         const isNewSkill = prevLevel === 0 && !alreadyTracked;
         if (isNewSkill && s.activeRunSkills.length >= maxSlots) {
           return {
@@ -992,7 +1017,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         }
         const nextSkills = {
           ...s.matchSkills,
-          [upgradeType]: prevLevel + 1,
+          [upgradeType]: Math.min(skillMax, prevLevel + 1),
         };
         const activeRunSkills = isNewSkill
           ? [...s.activeRunSkills, upgradeType]

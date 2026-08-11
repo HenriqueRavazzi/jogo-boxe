@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Circle, Flame, Ghost, Mountain, Snowflake, Spline, Wind, X, Zap } from "lucide-react";
+import {
+  Circle,
+  Crown,
+  Flame,
+  Ghost,
+  Mountain,
+  Snowflake,
+  Spline,
+  Wind,
+  X,
+  Zap,
+} from "lucide-react";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
   getMaxActiveRunSkills,
@@ -10,6 +21,7 @@ import {
   type MatchSkillBonusState,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
+import { SKILL_MASTERY_CARD_INFO } from "@/lib/skillMastery";
 import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
 import {
   AURA_ELEMENT_LABELS,
@@ -692,6 +704,7 @@ function SkillDetailPanel({
   onClose: () => void;
 }) {
   const matchSkills = useArenaStore((s) => s.matchSkills);
+  const matchSkillMastery = useArenaStore((s) => s.matchSkillMastery);
   const matchBuffs = useArenaStore((s) => s.matchBuffs);
   const matchSkillBonuses = useArenaStore((s) => s.matchSkillBonuses);
   const pulse = useArenaStore((s) => s.activeSkillPulse);
@@ -700,6 +713,8 @@ function SkillDetailPanel({
 
   const ui = SKILL_UI[skillKey];
   const level = matchSkills[skillKey] ?? 0;
+  const mastered = Boolean(matchSkillMastery[skillKey]);
+  const masteryInfo = SKILL_MASTERY_CARD_INFO[skillKey];
   const bonus = matchSkillBonuses[skillKey] ?? DEFAULT_MATCH_SKILL_BONUS;
   const skillDmgMul = matchBuffs.skillDamageMultiplier ?? 1;
   const info = getSkillCooldownInfo(
@@ -734,12 +749,24 @@ function SkillDetailPanel({
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-zinc-900 ${ui.fill}`}
+            className={`relative flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-zinc-900 ${ui.fill}`}
           >
             {ui.icon}
+            {mastered && (
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-amber-300/80 bg-amber-500 text-amber-950">
+                <Crown className="h-2.5 w-2.5" aria-hidden />
+              </span>
+            )}
           </div>
           <div>
-            <p className="text-sm font-black text-zinc-50">{ui.name}</p>
+            <p className="inline-flex flex-wrap items-center gap-1.5 text-sm font-black text-zinc-50">
+              {ui.name}
+              {mastered && (
+                <span className="rounded-md border border-amber-400/50 bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-200">
+                  Master
+                </span>
+              )}
+            </p>
             <p className="text-[10px] text-zinc-400">
               Nv. {level} · {modeLabel}
               {info.cycleMs > 0
@@ -776,9 +803,30 @@ function SkillDetailPanel({
             </span>
           </li>
         ))}
+        <li className="flex items-center justify-between gap-3 text-[11px]">
+          <span className="text-zinc-500">Maestria Suprema</span>
+          <span
+            className={`font-semibold ${
+              mastered ? "text-amber-200" : "text-zinc-500"
+            }`}
+          >
+            {mastered ? "Ativa" : "—"}
+          </span>
+        </li>
       </ul>
 
       <div className="space-y-2">
+        {mastered && (
+          <div className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-2.5 py-2">
+            <p className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.14em] text-amber-300/90">
+              <Crown className="h-3 w-3" aria-hidden />
+              {masteryInfo.title}
+            </p>
+            <p className="mt-0.5 text-[11px] leading-snug text-amber-100/90">
+              {masteryInfo.description}
+            </p>
+          </div>
+        )}
         <div className="rounded-lg border border-orange-400/30 bg-orange-500/10 px-2.5 py-2">
           <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-orange-300/80">
             Bônus por nível da skill
@@ -806,6 +854,7 @@ function SkillDetailPanel({
 export function HUD() {
   const activeRunSkills = useArenaStore((s) => s.activeRunSkills);
   const matchSkills = useArenaStore((s) => s.matchSkills);
+  const matchSkillMastery = useArenaStore((s) => s.matchSkillMastery);
   const matchSkillBonuses = useArenaStore((s) => s.matchSkillBonuses);
   const pulse = useArenaStore((s) => s.activeSkillPulse);
   const gameClockMs = useArenaStore((s) => s.gameClockMs);
@@ -905,6 +954,7 @@ export function HUD() {
                 bonus.cooldownMul,
               );
               const level = matchSkills[key] ?? 0;
+              const mastered = Boolean(matchSkillMastery[key]);
               const selected = selectedSkill === key;
 
               return (
@@ -918,10 +968,10 @@ export function HUD() {
                     selected
                       ? "ring-2 ring-amber-300/80 ring-offset-2 ring-offset-black/60"
                       : "hover:brightness-110"
-                  }`}
-                  title={`${ui.name} · Nv. ${level} · ver stats`}
+                  } ${mastered ? "ring-1 ring-amber-400/50" : ""}`}
+                  title={`${ui.name} · Nv. ${level}${mastered ? " · Master" : ""} · ver stats`}
                   aria-expanded={selected}
-                  aria-label={`${ui.name}, nível ${level}. Clique para ver detalhes.`}
+                  aria-label={`${ui.name}, nível ${level}${mastered ? ", maestria ativa" : ""}. Clique para ver detalhes.`}
                 >
                   <CooldownRing
                     progress={info.progress}
@@ -933,6 +983,11 @@ export function HUD() {
                   >
                     {ui.icon}
                   </div>
+                  {mastered && (
+                    <span className="absolute -right-0.5 -top-0.5 z-[2] flex h-3.5 w-3.5 items-center justify-center rounded-full border border-amber-300/80 bg-amber-500 text-amber-950">
+                      <Crown className="h-2 w-2" aria-hidden />
+                    </span>
+                  )}
                   <span className="absolute -bottom-1 rounded bg-black/80 px-1 text-[8px] font-bold tabular-nums text-zinc-200">
                     {level}
                   </span>
