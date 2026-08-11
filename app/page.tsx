@@ -93,6 +93,12 @@ export default function Home() {
     if (busy) return;
     setBusy(true);
     try {
+      // completeStageClear pode avançar selectedStage; Repetir Fase deve
+      // reiniciar a mesma fase da run atual, não o frontier desbloqueado.
+      const arena = useArenaStore.getState();
+      if (arena.runMode === "stage" && arena.runStageNumber > 0) {
+        useGameStore.getState().setSelectedStage(arena.runStageNumber);
+      }
       await syncWithDB();
       startGame();
     } finally {

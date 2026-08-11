@@ -1618,10 +1618,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           s.endlessUnlocked || nextCleared >= ENDLESS_UNLOCK_STAGE,
         gold: s.gold + rewards.gold,
         gems: s.gems + rewards.gems,
-        selectedStage: Math.min(
-          TOTAL_STAGES,
-          Math.max(s.selectedStage, Math.min(TOTAL_STAGES, nextCleared + 1)),
-        ),
+        // Só avança a seleção na 1ª clear — replay de fase antiga não deve
+        // pular para o frontier (ex.: limpar 14 com max 26 → selected 27).
+        selectedStage: firstClear
+          ? Math.min(TOTAL_STAGES, nextCleared + 1)
+          : s.selectedStage,
       };
     });
 
