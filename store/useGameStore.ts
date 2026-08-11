@@ -325,9 +325,10 @@ export type GameStoreState = {
    */
   enforcePurpleSkillCap: () => number;
   /**
-   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades de ouro/níveis roxos,
-   * skills liberadas (in-game) e abates de unlock. Mantém upgrades de diamante
-   * (meta, XP, skill tree) e passivas de Ascensão. Equipe: Nv.1 + pity zerado.
+   * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades de ouro/níveis roxos
+   * (skills liberadas permanecem; atributos voltam ao Nv.1) e abates de unlock.
+   * Mantém upgrades de diamante (meta, XP, skill tree), desbloqueios de skill
+   * avançada, maestrias e passivas de Ascensão. Equipe: Nv.1 + pity zerado.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -852,6 +853,33 @@ export function getSkillStatLevel(
     MAX_PURPLE_SKILL_STAT_LEVEL,
     Math.max(0, Math.floor(Number(skill[statKey]) || 0)),
   );
+}
+
+/**
+ * Após Ascensão: skills já liberadas permanecem; atributos granulares voltam ao Nv.1.
+ * Skills ainda bloqueadas ficam em 0.
+ */
+export function resetUnlockedSkillsToLevel1(
+  unlocked: UnlockedSkillsData,
+): SkillsData {
+  const next: SkillsData = {
+    ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
+    ice: { ...DEFAULT_SKILLS_DATA.ice },
+    fire: { ...DEFAULT_SKILLS_DATA.fire },
+    lightning: { ...DEFAULT_SKILLS_DATA.lightning },
+    aura: { ...DEFAULT_SKILLS_DATA.aura },
+    shadow: { ...DEFAULT_SKILLS_DATA.shadow },
+    stone: { ...DEFAULT_SKILLS_DATA.stone },
+    vendaval: { ...DEFAULT_SKILLS_DATA.vendaval },
+  };
+  for (const skillId of Object.keys(SKILL_STAT_KEYS) as SkillUpgradeType[]) {
+    if (!unlocked[skillId]) continue;
+    const stats = next[skillId] as Record<string, number>;
+    for (const statKey of SKILL_STAT_KEYS[skillId]) {
+      stats[statKey] = 1;
+    }
+  }
+  return next;
 }
 
 /**
@@ -1630,11 +1658,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
-   * roxos), upgrades de base (ouro), árvore roxa granular, skills liberadas
-   * (precisam ser desbloqueadas de novo para a roleta in-game) e abates usados
-   * nos unlocks. Mantém upgrades de diamante (meta tree, XP, skill tree) e
-   * passivas de Ascensão. Equipe: membros obtidos voltam ao Nv.1 e o custo de
-   * recrutamento (pity) zera.
+   * roxos), upgrades de base (ouro) e atributos granulares das skills (voltam
+   * ao Nv.1). Desbloqueios de skills avançadas e Maestrias permanecem.
+   * Mantém upgrades de diamante (meta tree, XP, skill tree) e passivas de
+   * Ascensão. Equipe: membros obtidos voltam ao Nv.1 e o custo de recrutamento
+   * (pity) zera.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -1656,6 +1684,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     set((s) => {
       const resetTeam = resetOwnedTeamMembersToBase(s.teamMembersOwned);
+      const unlockedSkills = { ...s.unlockedSkills };
       return {
       prestigeLevel: s.prestigeLevel + 1,
       ascensionShards: s.ascensionShards + shardsGained,
@@ -1680,22 +1709,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       critDamageLevel: fresh.critDamageLevel,
       // Upgrades de diamante (normais) permanentes — não resetam
       // xpBonusLevel, skillTree e meta tree são preservados
-      unlockedSkills: { ...DEFAULT_UNLOCKED_SKILLS },
-      // Maestria Suprema é permanente (paga com shards) — não reseta
+      // Skills avançadas: desbloqueio permanente; attrs → Nv.1
+      unlockedSkills,
       skillMasteryUnlocked: normalizeSkillMasteryUnlocked(
         s.skillMasteryUnlocked,
       ),
-      auraPrimaryElement: null,
-      skills: {
-        ricochet: { ...DEFAULT_SKILLS_DATA.ricochet },
-        ice: { ...DEFAULT_SKILLS_DATA.ice },
-        fire: { ...DEFAULT_SKILLS_DATA.fire },
-        lightning: { ...DEFAULT_SKILLS_DATA.lightning },
-        aura: { ...DEFAULT_SKILLS_DATA.aura },
-        shadow: { ...DEFAULT_SKILLS_DATA.shadow },
-        stone: { ...DEFAULT_SKILLS_DATA.stone },
-        vendaval: { ...DEFAULT_SKILLS_DATA.vendaval },
-      },
+      auraPrimaryElement: resolveAuraPrimaryElement(
+        s.auraPrimaryElement,
+        unlockedSkills,
+      ),
+      skills: resetUnlockedSkillsToLevel1(unlockedSkills),
       totalMobsKilled: 0,
       totalBossesKilled: 0,
       teamMembersOwned: resetTeam,

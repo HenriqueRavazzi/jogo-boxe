@@ -578,6 +578,11 @@ export type GenerateUpgradeOptionsContext = {
   skillMasteryUnlocked?: SkillMasteryUnlockedData;
   /** Maestrias já ativadas nesta run. */
   matchSkillMastery?: MatchSkillMasteryData;
+  /**
+   * Chance por slot de tentar carta de skill especial (default SPECIAL_SKILL_CARD_CHANCE).
+   * Skill Fortune na árvore eleva este valor.
+   */
+  specialSkillCardChance?: number;
 };
 
 /** Base de habilidades especiais distintas por partida (sem talentos). */
@@ -902,6 +907,8 @@ export function generateUpgradeOptions(
   const selectedCards: MatchUpgrade[] = [];
   let specialPool = [...eligibleSpecials];
   let masteryPool = getEligibleSkillMasteries(ctx);
+  const skillCardChance =
+    ctx?.specialSkillCardChance ?? SPECIAL_SKILL_CARD_CHANCE;
   const baseStatPool = getEligibleStatCategories({
     ...ctx,
     hasActiveSkill: activeRunSkills.length > 0,
@@ -941,8 +948,7 @@ export function generateUpgradeOptions(
       availableMasteries.length > 0 &&
       Math.random() < SKILL_MASTERY_CARD_CHANCE;
     const canRollSpecial =
-      availableSpecials.length > 0 &&
-      Math.random() < SPECIAL_SKILL_CARD_CHANCE;
+      availableSpecials.length > 0 && Math.random() < skillCardChance;
 
     if (canRollMastery) {
       const idx = Math.floor(Math.random() * availableMasteries.length);

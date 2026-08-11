@@ -20,6 +20,7 @@ import {
   getMaxActiveRunSkills,
   isSpecialSkillType,
   MATCH_CRIT_CHANCE_CAP,
+  SPECIAL_SKILL_CARD_CHANCE,
   type MatchSkillBonusDelta,
   type MatchSkillBonuses,
   type MatchUpgrade,
@@ -36,6 +37,8 @@ import {
 import {
   getExtraActiveRunSkillSlots,
   getSkillGoldIncomeMultiplier,
+  getSpecialSkillCardChance,
+  rollLevelUpOptionCount,
 } from "@/lib/skillTree";
 import {
   getEndlessXpMultiplier,
@@ -441,7 +444,8 @@ function rollLevelUpOptions(
   const maxActiveRunSkills = getMaxActiveRunSkills(
     getExtraActiveRunSkillSlots(game.skillTree),
   );
-  return generateUpgradeOptions(3, {
+  const cardCount = rollLevelUpOptionCount(game.skillTree);
+  return generateUpgradeOptions(cardCount, {
     unlockedSkills: game.unlockedSkills,
     matchSkills,
     skills: game.skills,
@@ -457,6 +461,10 @@ function rollLevelUpOptions(
     matchLevel,
     skillMasteryUnlocked: game.skillMasteryUnlocked,
     matchSkillMastery,
+    specialSkillCardChance: getSpecialSkillCardChance(
+      game.skillTree,
+      SPECIAL_SKILL_CARD_CHANCE,
+    ),
   });
 }
 

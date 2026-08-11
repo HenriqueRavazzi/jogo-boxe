@@ -31,6 +31,7 @@ export type SkillNodeId =
   | "node_adrenaline"
   | "node_berserker"
   | "node_immortal_champion"
+  | "node_skill_fortune"
   | "node_skill_slot";
 
 export type SkillTreeState = Record<SkillNodeId, boolean>;
@@ -103,6 +104,7 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_adrenaline: false,
   node_berserker: false,
   node_immortal_champion: false,
+  node_skill_fortune: false,
   node_skill_slot: false,
 };
 
@@ -415,6 +417,17 @@ export const SKILL_NODES: SkillNodeDef[] = [
     accent: "silver",
   },
   {
+    id: "node_skill_fortune",
+    name: "Skill Fortune",
+    description:
+      "+20% chance de cartas de skill na roleta · 40% de chance de 4 opções no level-up",
+    cost: 550_000,
+    requires: ["node_adrenaline", "node_ring_master"],
+    branch: "synergy",
+    tier: 5,
+    accent: "violet",
+  },
+  {
     id: "node_skill_slot",
     name: "Skill Arsenal",
     description: "+1 slot de habilidade especial na partida",
@@ -422,7 +435,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     requires: [],
     requiresFullBoard: true,
     branch: "synergy",
-    tier: 5,
+    tier: 6,
     accent: "violet",
   },
 ];
@@ -462,6 +475,28 @@ export function getExtraActiveRunSkillSlots(
   skillTree: SkillTreeState,
 ): number {
   return skillTree.node_skill_slot ? 1 : 0;
+}
+
+/** Bônus absoluto na chance de carta de skill especial por slot da roleta. */
+export const SKILL_FORTUNE_CARD_CHANCE_BONUS = 0.2;
+/** Chance de oferecer 4 cartas no level-up com Skill Fortune. */
+export const SKILL_FORTUNE_EXTRA_OPTION_CHANCE = 0.4;
+
+/** Chance efetiva de tentar skill especial por slot (base 15% + fortuna). */
+export function getSpecialSkillCardChance(
+  skillTree: SkillTreeState,
+  baseChance: number,
+): number {
+  const bonus = skillTree.node_skill_fortune
+    ? SKILL_FORTUNE_CARD_CHANCE_BONUS
+    : 0;
+  return Math.min(0.75, Math.max(0, baseChance + bonus));
+}
+
+/** Quantas cartas no pack de level-up (3, ou 4 com Skill Fortune). */
+export function rollLevelUpOptionCount(skillTree: SkillTreeState): number {
+  if (!skillTree.node_skill_fortune) return 3;
+  return Math.random() < SKILL_FORTUNE_EXTRA_OPTION_CHANCE ? 4 : 3;
 }
 
 /** Pré-requisitos ainda não desbloqueados. */
