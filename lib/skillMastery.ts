@@ -12,10 +12,14 @@ import {
 } from "@/db/schema";
 import type { SpecialSkillKey } from "@/lib/matchUpgrades";
 
-/** Custo em Diamantes Roxos para liberar a Maestria de uma skill. */
-export const SKILL_MASTERY_PURPLE_COST = 200;
-/** Custo em Ascension Shards para liberar a Maestria. */
-export const SKILL_MASTERY_SHARD_COST = 5;
+/**
+ * Custo em Diamantes Roxos para liberar a Maestria de uma skill.
+ * Maxar 1 atributo 0→20 ≈ 1019; skill de 3 attrs ≈ 3057 — a maestria
+ * fica acima disso para valer como passo final.
+ */
+export const SKILL_MASTERY_PURPLE_COST = 5000;
+/** Custo em Ascension Shards para liberar a Maestria (~5 níveis iniciais de passiva). */
+export const SKILL_MASTERY_SHARD_COST = 50;
 /** Nível in-run mínimo da skill para a carta suprema poder surgir. */
 export const SKILL_MASTERY_MATCH_LEVEL_REQ = 5;
 /** Chance por slot de oferecer uma carta de Maestria elegível. */
