@@ -917,6 +917,7 @@ export function generateUpgradeOptions(
   let masteryPool = getEligibleSkillMasteries(ctx);
   const skillCardChance =
     ctx?.specialSkillCardChance ?? SPECIAL_SKILL_CARD_CHANCE;
+  // Skills masterizadas ainda liberam cartas de "dano de skill"
   const baseStatPool = getEligibleStatCategories({
     ...ctx,
     hasActiveSkill: activeRunSkills.length > 0,

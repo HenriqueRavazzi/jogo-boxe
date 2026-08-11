@@ -384,11 +384,12 @@ export function MainMenu({
               ) : (
                 <div className="rounded-xl border border-fuchsia-400/40 bg-fuchsia-950/80 p-3">
                   <p className="text-xs leading-relaxed text-fuchsia-100/90">
-                    Ascender reseta ouro, diamantes (moeda), upgrades de ouro e
-                    atributos das skills avançadas (voltam ao Nv.1). Skills já
-                    liberadas e maestrias permanecem no save. Mantém upgrades de
-                    diamante (árvore meta, XP e talentos), passivas/shards/equipe.
-                    Custos e poder sobem com a Ascensão e concede{" "}
+                    Ascender reseta ouro, diamantes (moeda), upgrades de ouro,
+                    atributos das skills avançadas (voltam ao Nv.1) e Maestrias
+                    Supremas (precisam ser liberadas de novo). Skills já liberadas
+                    permanecem no save. Mantém upgrades de diamante (árvore meta,
+                    XP e talentos), passivas/shards/equipe. Custos e poder sobem
+                    com a Ascensão e concede{" "}
                     <span className="font-semibold text-pink-200">
                       +{shardsPreview} Ascension Shards
                     </span>

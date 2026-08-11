@@ -216,7 +216,7 @@ export type GameStoreState = {
   skills: SkillsData;
   /** Desbloqueio permanente na base (Diamantes Normais). */
   unlockedSkills: UnlockedSkillsData;
-  /** Maestria Suprema liberada (persiste na Ascensão). */
+  /** Maestria Suprema liberada no meta (reseta na Ascensão). */
   skillMasteryUnlocked: SkillMasteryUnlockedData;
   /** Atributo principal da Aura (skills liberadas → 100%; demais 50%). */
   auraPrimaryElement: AuraElementKey | null;
@@ -338,9 +338,10 @@ export type GameStoreState = {
   enforcePurpleSkillCap: () => number;
   /**
    * Ascensão: +1 prestige, reseta ouro/diamantes/upgrades de ouro/níveis roxos
-   * (skills liberadas permanecem; atributos voltam ao Nv.1) e abates de unlock.
-   * Mantém upgrades de diamante (meta, XP, skill tree), desbloqueios de skill
-   * avançada, maestrias e passivas de Ascensão. Equipe: Nv.1 + pity zerado.
+   * (skills liberadas permanecem; atributos voltam ao Nv.1) e Maestrias
+   * Supremas (precisam ser liberadas de novo). Mantém upgrades de diamante
+   * (meta, XP, skill tree), desbloqueios de skill avançada e passivas de
+   * Ascensão. Equipe: Nv.1 + pity zerado.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -1689,10 +1690,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   /**
    * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
    * roxos), upgrades de base (ouro) e atributos granulares das skills (voltam
-   * ao Nv.1). Desbloqueios de skills avançadas e Maestrias permanecem.
-   * Mantém upgrades de diamante (meta tree, XP, skill tree) e passivas de
-   * Ascensão. Equipe: membros obtidos voltam ao Nv.1 e o custo de recrutamento
-   * (pity) zera.
+   * ao Nv.1). Desbloqueios de skills avançadas permanecem; Maestrias Supremas
+   * resetam e precisam ser liberadas de novo. Mantém upgrades de diamante
+   * (meta tree, XP, skill tree) e passivas de Ascensão. Equipe: membros
+   * obtidos voltam ao Nv.1 e o custo de recrutamento (pity) zera.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -1741,9 +1742,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       // xpBonusLevel, skillTree e meta tree são preservados
       // Skills avançadas: desbloqueio permanente; attrs → Nv.1
       unlockedSkills,
-      skillMasteryUnlocked: normalizeSkillMasteryUnlocked(
-        s.skillMasteryUnlocked,
-      ),
+      // Maestrias Supremas: resetam na Ascensão (recomprar após maxar attrs)
+      skillMasteryUnlocked: { ...DEFAULT_UNLOCKED_SKILLS },
       auraPrimaryElement: resolveAuraPrimaryElement(
         s.auraPrimaryElement,
         unlockedSkills,

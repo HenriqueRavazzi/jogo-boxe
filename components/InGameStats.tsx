@@ -16,6 +16,7 @@ import {
   type TeamMemberId,
   type TeamRole,
 } from "@/lib/teamMembers";
+import { getEndlessXpMultiplier } from "@/src/game/systems/Spawner";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -86,6 +87,9 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const timeLabel = `${Math.floor(totalSeconds / 60)}m ${String(
     totalSeconds % 60,
   ).padStart(2, "0")}s`;
+  const endlessXpMul =
+    runMode === "endless" ? getEndlessXpMultiplier(timeAlive) : 1;
+  const endlessXpBonusPct = Math.round((endlessXpMul - 1) * 100);
 
   const rows: { label: string; value: string }[] = [
     ...(runMode === "endless"
@@ -99,6 +103,14 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
             label: "Chefes",
             value: bossesKilled.toLocaleString("pt-BR"),
           },
+          ...(endlessXpBonusPct > 0
+            ? [
+                {
+                  label: "XP Endless",
+                  value: `+${endlessXpBonusPct}%`,
+                },
+              ]
+            : []),
         ]
       : runStage
         ? [

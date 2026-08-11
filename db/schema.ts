@@ -291,7 +291,8 @@ export type SaveData = {
   unlockedSkills: UnlockedSkillsData;
   /**
    * Maestria Suprema liberada no meta (após maxear attrs Lv.20).
-   * Persiste na Ascensão — a carta lendária ainda exige Lv.5 in-run.
+   * Reseta na Ascensão — precisa liberar de novo; a carta lendária
+   * ainda exige Lv.5 in-run.
    */
   skillMasteryUnlocked: UnlockedSkillsData;
   /**

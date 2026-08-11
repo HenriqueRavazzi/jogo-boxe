@@ -108,18 +108,52 @@ export function getEnemyPowerMultiplier(timeAliveSeconds: number): number {
  * Ex.: 0.18 → +18% XP a cada 30s vivos.
  */
 export const ENDLESS_XP_BONUS_PER_CYCLE = 0.18;
-/** Teto do multiplicador de XP só do Endless (antes do XP meta/prestígio). */
+/** Teto do multiplicador de XP por ciclo (antes do marco de tempo). */
 export const ENDLESS_XP_MULTIPLIER_CAP = 12;
 
 /**
- * Multiplicador de XP que cresce com o tempo no Endless.
- * Campanha deve usar 1 (não chamar / ignorar).
+ * Marco extra de XP no Endless:
+ * 15 min → +100% (×2), 20 min → +200% (×3), +100% a cada 5 min.
+ * Empilha multiplicando com o bônus por ciclo.
  */
-export function getEndlessXpMultiplier(timeAliveSeconds: number): number {
+export const ENDLESS_XP_BONUS_START_SECONDS = 15 * 60;
+export const ENDLESS_XP_BONUS_INTERVAL_SECONDS = 5 * 60;
+
+/** Multiplicador só do ramp por ciclo de 30s (1…cap). */
+export function getEndlessXpCycleMultiplier(timeAliveSeconds: number): number {
   const cycles = getScalingCycle(timeAliveSeconds);
   return Math.min(
     ENDLESS_XP_MULTIPLIER_CAP,
     1 + Math.max(0, cycles) * ENDLESS_XP_BONUS_PER_CYCLE,
+  );
+}
+
+/** Degraus do marco de tempo (0 antes dos 15 min). */
+export function getEndlessXpBonusTier(timeAliveSeconds: number): number {
+  const t = Math.max(0, timeAliveSeconds);
+  if (t < ENDLESS_XP_BONUS_START_SECONDS) return 0;
+  return (
+    Math.floor(
+      (t - ENDLESS_XP_BONUS_START_SECONDS) / ENDLESS_XP_BONUS_INTERVAL_SECONDS,
+    ) + 1
+  );
+}
+
+/** ×(1 + tier) do marco — empilha com o ciclo. */
+export function getEndlessXpMilestoneMultiplier(
+  timeAliveSeconds: number,
+): number {
+  return 1 + getEndlessXpBonusTier(timeAliveSeconds);
+}
+
+/**
+ * Multiplicador total de XP no Endless (ciclo × marco).
+ * Campanha deve usar 1 (não chamar / ignorar).
+ */
+export function getEndlessXpMultiplier(timeAliveSeconds: number): number {
+  return (
+    getEndlessXpCycleMultiplier(timeAliveSeconds) *
+    getEndlessXpMilestoneMultiplier(timeAliveSeconds)
   );
 }
 
