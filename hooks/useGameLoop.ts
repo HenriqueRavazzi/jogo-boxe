@@ -33,6 +33,7 @@ import {
   drawRicochetArmPath,
   drawShadowClone,
 } from "@/src/game/render/drawSkillEffects";
+import { drawArenaBackground, invalidateArenaBackgroundCache } from "@/src/game/systems/BackgroundRenderer";
 import { getAuraRadius } from "@/src/game/systems/AuraSystem";
 import { DEFAULT_MATCH_SKILL_BONUS } from "@/lib/matchUpgrades";
 import { runSpawner } from "@/src/game/systems/Spawner";
@@ -154,6 +155,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
       // Posição do player = sempre o centro do canvas (espaço de desenho CSS)
       useArenaStore.getState().centerPlayer(w, h);
+      invalidateArenaBackgroundCache();
     };
 
     resize();
@@ -262,6 +264,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         gameNow,
       );
 
+      const visual = game.visualSettings ?? {
+        screenShake: true,
+        damageTextMode: "all" as const,
+        highParticleQuality: true,
+      };
+
       const floatingTexts = [
         ...arena.floatingTexts.map((t) => ({
           ...t,
@@ -269,7 +277,13 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
           y: t.y - 0.8 * gameSpeed,
         })),
         ...combat.hitSplats,
-      ].filter((t) => t.age < FLOATING_TEXT_MAX_AGE);
+      ]
+        .filter((t) => t.age < FLOATING_TEXT_MAX_AGE)
+        .filter((t) => {
+          if (visual.damageTextMode === "off") return false;
+          if (visual.damageTextMode === "crits") return Boolean(t.isCrit);
+          return true;
+        });
 
       const ricochetPathEffects = [
         ...arena.ricochetPathEffects.filter((e) => e.expiresAt > gameNow),
@@ -282,15 +296,19 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       ];
 
       let shakeFrames = arena.shakeFrames;
-      if (combat.contactHits > 0) {
-        shakeFrames = 10;
-      } else if (
-        combat.activeSkillPulse.stonePulseAt > 0 &&
-        gameNow - combat.activeSkillPulse.stonePulseAt < 80
-      ) {
-        shakeFrames = 16;
-      } else if (shakeFrames > 0) {
-        shakeFrames = Math.max(0, shakeFrames - gameSpeed);
+      if (visual.screenShake) {
+        if (combat.contactHits > 0) {
+          shakeFrames = 10;
+        } else if (
+          combat.activeSkillPulse.stonePulseAt > 0 &&
+          gameNow - combat.activeSkillPulse.stonePulseAt < 80
+        ) {
+          shakeFrames = 16;
+        } else if (shakeFrames > 0) {
+          shakeFrames = Math.max(0, shakeFrames - gameSpeed);
+        }
+      } else {
+        shakeFrames = 0;
       }
 
       // Drops: ouro + diamantes conforme rewards do enemy_types
@@ -346,11 +364,29 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         useArenaStore.getState().recordEnemyDefeats(defeatedThisFrame);
         let mobs = 0;
         let bosses = 0;
+        let killsNormal = 0;
+        let killsDasher = 0;
+        let killsRanged = 0;
         for (const site of combat.killSites) {
           if (site.enemyType === "boss") bosses += 1;
-          else mobs += 1;
+          else {
+            mobs += 1;
+            if (site.enemyType === "dasher") killsDasher += 1;
+            else if (site.enemyType === "ranged") killsRanged += 1;
+            else killsNormal += 1;
+          }
         }
+        useArenaStore.getState().recordCombatStats({
+          killsNormal,
+          killsDasher,
+          killsRanged,
+        });
         game.recordLifetimeKills(mobs, bosses);
+      }
+      if (combat.damageDealt > 0) {
+        useArenaStore.getState().recordCombatStats({
+          damageDealt: combat.damageDealt,
+        });
       }
       if (loot.collectedGold > 0 || loot.collectedDiamonds > 0 || loot.collectedPurpleDiamonds > 0) {
         useArenaStore
@@ -442,6 +478,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         aliveBossCount,
         invasionBossCooldownMs: arena.invasionBossCooldownMs,
         endlessBossCooldownMs: arena.endlessBossCooldownMs,
+        endlessBossQueue: arena.endlessBossQueue ?? [],
         spawnAccumulatorMs: spawnAccumulator,
         dt,
         difficulty: {
@@ -502,6 +539,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         bossesKilled: arena.bossesKilled + dropResult.bossesKilledThisBatch,
         invasionBossCooldownMs: spawn.invasionBossCooldownMs,
         endlessBossCooldownMs: spawn.endlessBossCooldownMs,
+        endlessBossQueue: spawn.endlessBossQueue,
         stageBossDefeated,
         stageCommonsSpawned: nextCommonsSpawned,
         stageEnemiesDefeated: nextStageDefeated,
@@ -691,29 +729,18 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         activeSkillPulse,
       } = useArenaStore.getState();
       const arms = useGameStore.getState().getEffectiveStats().arms;
+      const prestigeLevel = useGameStore.getState().prestigeLevel;
       const now = gameClockMs;
 
-      ctx.fillStyle = "#0f1419";
-      ctx.fillRect(0, 0, w, h);
+      // Fundo dinâmico por Prestígio (cache offscreen + overlays leves)
+      drawArenaBackground(ctx, w, h, prestigeLevel, now);
 
-      ctx.strokeStyle = "rgba(255,255,255,0.04)";
-      ctx.lineWidth = 1;
-      const grid = 48;
-      for (let x = 0; x < w; x += grid) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
+      // VFX de skills (gelo / raio / fogo / parry) — opcional por desempenho
+      const highParticles =
+        useGameStore.getState().visualSettings?.highParticleQuality !== false;
+      if (highParticles) {
+        drawAllSkillVfx(ctx, skillVfxEffects, now);
       }
-      for (let y = 0; y < h; y += grid) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-      }
-
-      // VFX de skills (gelo / raio / fogo / parry)
-      drawAllSkillVfx(ctx, skillVfxEffects, now);
 
       // Anel de ricochete (janela ativa)
       const ricoT = pulseVisualProgress(
@@ -801,7 +828,9 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
       // Caminho do braço ricocheteando entre inimigos
       for (const effect of ricochetPathEffects ?? []) {
-        drawRicochetArmPath(ctx, effect, playerX, playerY, now);
+        if (highParticles) {
+          drawRicochetArmPath(ctx, effect, playerX, playerY, now);
+        }
       }
 
       for (const drop of drops) {

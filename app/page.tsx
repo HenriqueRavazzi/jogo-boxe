@@ -5,10 +5,11 @@ import { ActiveSkillsHud } from "@/components/ActiveSkillsHud";
 import { BossHealthBar } from "@/components/BossHealthBar";
 import { BossHordeAlert } from "@/components/BossHordeAlert";
 import { GameCanvas } from "@/components/GameCanvas";
-import { GameOverModal } from "@/components/GameOverModal";
 import { InGameStats } from "@/components/InGameStats";
 import { LevelUpModal } from "@/components/LevelUpModal";
 import { MainMenu } from "@/components/MainMenu";
+import { MilestoneToastStack } from "@/components/MilestoneToast";
+import { PostRunSummaryModal } from "@/components/PostRunSummaryModal";
 import { QuestsPanel } from "@/components/QuestsPanel";
 import { SkillTree } from "@/components/SkillTree";
 import { TopBar } from "@/components/TopBar";
@@ -42,6 +43,12 @@ export default function Home() {
     gameState === "level_up";
   const showRunSummary =
     gameState === "gameover" || gameState === "victory";
+
+  // Persiste save ao entrar no resumo (recompensas já no store)
+  useEffect(() => {
+    if (!showRunSummary || !activeSaveId) return;
+    void syncWithDB();
+  }, [showRunSummary, activeSaveId]);
 
   // Carrega game_settings + difficulties do Neon
   useEffect(() => {
@@ -190,7 +197,7 @@ export default function Home() {
       )}
 
       {showRunSummary && (
-        <GameOverModal
+        <PostRunSummaryModal
           outcome={gameState === "victory" ? "victory" : "defeat"}
           busy={busy}
           onRestart={() => void handleRestart()}
@@ -198,6 +205,8 @@ export default function Home() {
           onReturnToMenu={() => void handleExitMatch()}
         />
       )}
+
+      <MilestoneToastStack />
 
       {showTalents && gameState === "menu" && canPlay && (
         <SkillTree

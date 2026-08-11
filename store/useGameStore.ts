@@ -27,6 +27,11 @@ import {
   type SkillMasteryUnlockedData,
 } from "@/lib/skillMastery";
 import {
+  DEFAULT_GAME_VISUAL_SETTINGS,
+  normalizeGameVisualSettings,
+  type GameVisualSettings,
+} from "@/lib/gameVisualSettings";
+import {
   listUnlockedAuraElements,
   resolveAuraPrimaryElement,
 } from "@/src/game/systems/AuraSystem";
@@ -49,6 +54,7 @@ import {
 import {
   applyMilestoneProgress,
   canClaimMilestone,
+  listNewlyClaimableMilestones,
   createDefaultMilestoneQuests,
   getMilestonePhaseRewards,
   getMilestoneQuestDef,
@@ -59,6 +65,7 @@ import {
   type MilestoneQuestRewards,
   type MilestoneQuestsState,
 } from "@/lib/milestoneQuests";
+import { buildMilestoneToastItems, type MilestoneToastItem } from "@/lib/milestoneToasts";
 import {
   DIFFICULTY_STAT_SCALE,
   FALLBACK_DIFFICULTIES,
@@ -234,6 +241,9 @@ export type GameStoreState = {
   ascensionPassives: AscensionPassivesData;
   /** Missões de marco / conquistas (persistidas no save). */
   milestoneQuests: MilestoneQuestsState;
+  /** Fila de toasts de marco (volátil — não vai no save). */
+  milestoneToasts: MilestoneToastItem[];
+  dismissMilestoneToast: (uid: string) => void;
   /** Abates cumulativos de mobs (não-boss). */
   totalMobsKilled: number;
   /** Abates cumulativos de bosses. */
@@ -249,6 +259,8 @@ export type GameStoreState = {
   endlessUnlocked: boolean;
   selectedStage: number;
   selectedRunMode: "stage" | "endless";
+  /** Preferências de desempenho / visual (persistidas no save). */
+  visualSettings: GameVisualSettings;
   /** Status iniciais vindos do Neon (`game_settings`). */
   baseConfig: GameBaseSettings;
   /** Lista de dificuldades do Neon. */
@@ -367,6 +379,7 @@ export type GameStoreState = {
   unequipTeamMember: (id: TeamMemberId) => void;
   setSelectedStage: (stage: number) => void;
   setSelectedRunMode: (mode: "stage" | "endless") => void;
+  setVisualSettings: (patch: Partial<GameVisualSettings>) => void;
   /** Marca fase limpa + recompensas; libera Endless em ≥15. */
   completeStageClear: (stageNumber: number) => {
     firstClear: boolean;
@@ -1127,6 +1140,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   ascensionShards: defaults.ascensionShards ?? 0,
   ascensionPassives: normalizeAscensionPassives(defaults.ascensionPassives),
   milestoneQuests: createDefaultMilestoneQuests(),
+  milestoneToasts: [],
   totalMobsKilled: defaults.totalMobsKilled ?? 0,
   totalBossesKilled: defaults.totalBossesKilled ?? 0,
   teamPity: normalizeTeamPity(defaults.teamPity),
@@ -1141,6 +1155,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     isEndlessUnlocked(defaults.maxStageCleared ?? 0),
   selectedStage: defaults.selectedStage ?? 1,
   selectedRunMode: defaults.selectedRunMode ?? "stage",
+  visualSettings: normalizeGameVisualSettings(defaults.visualSettings),
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
@@ -1262,6 +1277,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           isEndlessUnlocked(n.maxStageCleared ?? 0))
           ? "endless"
           : "stage",
+      visualSettings: normalizeGameVisualSettings(n.visualSettings),
     });
     if (refund > 0) {
       void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
@@ -1343,6 +1359,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       endlessUnlocked: s.endlessUnlocked || isEndlessUnlocked(s.maxStageCleared),
       selectedStage: s.selectedStage,
       selectedRunMode: s.selectedRunMode,
+      visualSettings: normalizeGameVisualSettings(s.visualSettings),
     };
   },
 
@@ -1599,6 +1616,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ selectedRunMode: "stage" });
   },
 
+  setVisualSettings: (patch) => {
+    set((s) => ({
+      visualSettings: normalizeGameVisualSettings({
+        ...s.visualSettings,
+        ...patch,
+      }),
+    }));
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+  },
+
   completeStageClear: (stageNumber) => {
     const stage = Math.min(
       TOTAL_STAGES,
@@ -1749,8 +1778,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   progressMilestoneQuests: (events) => {
     if (events.length === 0) return;
+    const before = get().milestoneQuests;
+    const after = applyMilestoneProgress(before, events);
+    const newly = listNewlyClaimableMilestones(before, after);
+    const toasts =
+      newly.length > 0 ? buildMilestoneToastItems(newly, after) : [];
     set((s) => ({
-      milestoneQuests: applyMilestoneProgress(s.milestoneQuests, events),
+      milestoneQuests: after,
+      milestoneToasts:
+        toasts.length > 0
+          ? [...toasts, ...s.milestoneToasts].slice(0, 8)
+          : s.milestoneToasts,
+    }));
+  },
+
+  dismissMilestoneToast: (uid) => {
+    set((s) => ({
+      milestoneToasts: s.milestoneToasts.filter((t) => t.uid !== uid),
     }));
   },
 
@@ -1776,6 +1820,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         gems: s.gems + rewards.gems,
         purpleDiamonds: s.purpleDiamonds + rewards.purpleDiamonds,
         ascensionShards: s.ascensionShards + rewards.ascensionShards,
+        milestoneToasts: s.milestoneToasts.filter((t) => t.questId !== id),
       };
     });
 

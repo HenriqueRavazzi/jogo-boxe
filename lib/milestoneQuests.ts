@@ -600,6 +600,20 @@ export function canClaimMilestone(
   return isMilestoneComplete(state, id);
 }
 
+/** IDs que acabaram de ficar resgatáveis (antes incompletos → agora completos). */
+export function listNewlyClaimableMilestones(
+  before: MilestoneQuestsState,
+  after: MilestoneQuestsState,
+): MilestoneQuestId[] {
+  const out: MilestoneQuestId[] = [];
+  for (const id of MILESTONE_QUEST_IDS) {
+    if (!canClaimMilestone(before, id) && canClaimMilestone(after, id)) {
+      out.push(id);
+    }
+  }
+  return out;
+}
+
 /**
  * Avança para a próxima fase após resgate.
  * add: carry-over do excedente (pode completar a próxima de imediato) · max: zera.

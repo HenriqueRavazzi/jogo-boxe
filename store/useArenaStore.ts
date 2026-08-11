@@ -44,6 +44,7 @@ import {
 import {
   getEndlessXpMultiplier,
   getInitialEndlessBossCooldownMs,
+  type QueuedEndlessBoss,
 } from "@/src/game/systems/Spawner";
 import {
   DEFAULT_MATCH_SKILLS,
@@ -152,6 +153,8 @@ export type FloatingText = {
   color: string;
   /** Escala de fonte (ex.: críticos). */
   scale?: number;
+  /** Marca crítico para filtro de textos flutuantes. */
+  isCrit?: boolean;
 };
 
 export type RunStats = {
@@ -160,6 +163,13 @@ export type RunStats = {
   diamondsCollected: number;
   purpleDiamondsCollected: number;
   bossesKilled: number;
+  /** Dano total causado aos inimigos nesta run. */
+  damageDealt: number;
+  killsNormal: number;
+  killsDasher: number;
+  killsRanged: number;
+  /** Shards de Ascensão creditados nesta run (ex.: se claim via toast). */
+  ascensionShardsGained: number;
 };
 
 export type MatchBuffs = {
@@ -196,6 +206,11 @@ const EMPTY_RUN_STATS: RunStats = {
   diamondsCollected: 0,
   purpleDiamondsCollected: 0,
   bossesKilled: 0,
+  damageDealt: 0,
+  killsNormal: 0,
+  killsDasher: 0,
+  killsRanged: 0,
+  ascensionShardsGained: 0,
 };
 
 /** Estado volátil da partida atual (não persistido). */
@@ -275,6 +290,8 @@ export type ArenaStoreState = {
   invasionBossCooldownMs: number;
   /** Cooldown (ms) até o próximo boss agendado no Endless. */
   endlessBossCooldownMs: number;
+  /** Chefes agendados aguardando slot (máx. 3 vivos no Endless). */
+  endlessBossQueue: QueuedEndlessBoss[];
   /**
    * Até quando (game clock ms) o alerta de boss na horda permanece ativo.
    * 0 = sem alerta.
@@ -313,11 +330,19 @@ export type ArenaStoreState = {
   exitMatch: () => void;
   togglePause: () => void;
   recordEnemyDefeats: (count: number) => void;
+  recordCombatStats: (stats: {
+    damageDealt?: number;
+    killsNormal?: number;
+    killsDasher?: number;
+    killsRanged?: number;
+    bossesKilled?: number;
+  }) => void;
   recordLootCollected: (
     gold: number,
     diamonds: number,
     purpleDiamonds?: number,
   ) => void;
+  recordAscensionShardsGained: (amount: number) => void;
   /** Dispara alerta visual de boss surpresa na horda (2s). */
   triggerBossHordeAlert: (durationMs?: number) => void;
   /** Incrementa progresso das quests; quests concluídas são auto-coletadas. */
@@ -543,6 +568,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   bossesKilled: 0,
   invasionBossCooldownMs: 0,
   endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
+  endlessBossQueue: [],
   bossHordeAlertUntil: 0,
   activeQuests: [],
   questsClaimedThisRun: 0,
@@ -613,6 +639,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
       endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
+      endlessBossQueue: [],
       bossHordeAlertUntil: 0,
       activeQuests: createRandomQuests(
         ACTIVE_QUEST_COUNT,
@@ -735,6 +762,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
       endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
+      endlessBossQueue: [],
       bossHordeAlertUntil: 0,
       activeQuests: [],
       questsClaimedThisRun: 0,
@@ -774,6 +802,35 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       runStats: {
         ...s.runStats,
         enemiesDefeated: s.runStats.enemiesDefeated + count,
+      },
+    }));
+  },
+
+  recordCombatStats: (stats) => {
+    const dmg = Math.max(0, stats.damageDealt ?? 0);
+    const n = Math.max(0, Math.floor(stats.killsNormal ?? 0));
+    const d = Math.max(0, Math.floor(stats.killsDasher ?? 0));
+    const r = Math.max(0, Math.floor(stats.killsRanged ?? 0));
+    const b = Math.max(0, Math.floor(stats.bossesKilled ?? 0));
+    if (dmg <= 0 && n + d + r + b <= 0) return;
+    set((s) => ({
+      runStats: {
+        ...s.runStats,
+        damageDealt: s.runStats.damageDealt + dmg,
+        killsNormal: s.runStats.killsNormal + n,
+        killsDasher: s.runStats.killsDasher + d,
+        killsRanged: s.runStats.killsRanged + r,
+        bossesKilled: s.runStats.bossesKilled + b,
+      },
+    }));
+  },
+
+  recordAscensionShardsGained: (amount) => {
+    if (amount <= 0) return;
+    set((s) => ({
+      runStats: {
+        ...s.runStats,
+        ascensionShardsGained: s.runStats.ascensionShardsGained + amount,
       },
     }));
   },
@@ -1393,6 +1450,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
       endlessBossCooldownMs: getInitialEndlessBossCooldownMs(),
+      endlessBossQueue: [],
       bossHordeAlertUntil: 0,
     }),
 }));

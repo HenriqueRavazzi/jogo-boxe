@@ -3,6 +3,10 @@ import {
   normalizeAscensionPassives,
 } from "@/lib/ascensionPassives";
 import {
+  DEFAULT_GAME_VISUAL_SETTINGS,
+  normalizeGameVisualSettings,
+} from "@/lib/gameVisualSettings";
+import {
   createDefaultMilestoneQuests,
   normalizeMilestoneQuests,
 } from "@/lib/milestoneQuests";
@@ -235,6 +239,7 @@ export function createDefaultSaveData(): SaveData {
     endlessUnlocked: false,
     selectedStage: 1,
     selectedRunMode: "stage",
+    visualSettings: { ...DEFAULT_GAME_VISUAL_SETTINGS },
   };
 }
 
@@ -361,6 +366,7 @@ export function normalizeSaveData(
       if (data.selectedRunMode === "endless" && unlocked) return "endless";
       return "stage";
     })(),
+    visualSettings: normalizeGameVisualSettings(data.visualSettings),
   };
 }
 

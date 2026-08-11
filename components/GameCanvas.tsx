@@ -5,7 +5,11 @@ import { useGameLoop } from "@/hooks/useGameLoop";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
-/** Canvas fullscreen — camada de fundo do jogo. */
+/**
+ * Canvas fullscreen — camada de fundo do jogo.
+ * O tema visual da arena muda com `prestigeLevel` via BackgroundRenderer
+ * (chamado no início de cada frame em `useGameLoop`).
+ */
 export function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useGameLoop(canvasRef);

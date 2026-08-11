@@ -12,6 +12,7 @@ import {
 import { sql } from "drizzle-orm";
 
 import type { AscensionPassivesData } from "@/lib/ascensionPassives";
+import type { GameVisualSettings } from "@/lib/gameVisualSettings";
 import type { MilestoneQuestsState } from "@/lib/milestoneQuests";
 import type { SkillTreeState } from "@/lib/skillTree";
 import type {
@@ -334,6 +335,8 @@ export type SaveData = {
   selectedStage: number;
   /** Modo de run selecionado. */
   selectedRunMode: "stage" | "endless";
+  /** Preferências de desempenho / visual do canvas (por save). */
+  visualSettings: GameVisualSettings;
 };
 
 export const gameSaves = pgTable("game_saves", {

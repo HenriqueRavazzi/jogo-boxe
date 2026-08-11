@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Coins, Gem, Sparkles } from "lucide-react";
+import { Coins, Gem, Settings, Sparkles } from "lucide-react";
 import { AdvancedSkillsPanel } from "@/components/AdvancedSkillsPanel";
 import { AscensionPanel } from "@/components/AscensionPanel";
 import { MetaTreePanel } from "@/components/MetaTreePanel";
 import { MilestoneQuestsPanel } from "@/components/MilestoneQuestsPanel";
 import { SaveMenu } from "@/components/SaveMenu";
+import { SettingsModal } from "@/components/SettingsModal";
 import { TeamPanel } from "@/components/TeamPanel";
 import { UpgradePanel } from "@/components/UpgradePanel";
 import {
@@ -107,6 +108,7 @@ export function MainMenu({
   const [upgradeTab, setUpgradeTab] = useState<UpgradeTab>("gold");
   const [showUpgrades, setShowUpgrades] = useState(false);
   const [confirmPrestige, setConfirmPrestige] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const selected = difficulties.find((d) => d.id === selectedDifficultyId);
   const prestigeReady = canTriggerPrestige();
@@ -126,13 +128,24 @@ export function MainMenu({
     <div className="pointer-events-none absolute inset-0 z-20 flex">
       {/* Sidebar esquerda — 100% da altura */}
       <aside className="pointer-events-auto flex h-full w-full shrink-0 flex-col gap-4 overflow-y-auto border-r border-white/10 bg-zinc-950/90 p-5 backdrop-blur-md sm:w-[22rem]">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
-            {isGameOver ? "Game Over" : "Menu Principal"}
-          </p>
-          <h1 className="mt-1 text-3xl font-black tracking-tight text-zinc-50">
-            Joguin Boxe
-          </h1>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
+              {isGameOver ? "Game Over" : "Menu Principal"}
+            </p>
+            <h1 className="mt-1 text-3xl font-black tracking-tight text-zinc-50">
+              Joguin Boxe
+            </h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="mt-1 shrink-0 rounded-xl border border-white/10 bg-zinc-900/80 p-2.5 text-zinc-400 transition hover:border-sky-400/40 hover:bg-zinc-800 hover:text-sky-300"
+            aria-label="Configurações"
+            title="Configurações"
+          >
+            <Settings className="h-5 w-5" aria-hidden />
+          </button>
         </div>
 
         {/* Moedas compactas no mobile (no desktop ficam na barra à direita) */}
@@ -578,6 +591,11 @@ export function MainMenu({
           </div>
         </div>
       )}
+
+      <SettingsModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }

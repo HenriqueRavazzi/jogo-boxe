@@ -2,6 +2,7 @@
 
 import type { EnemyRewards } from "@/lib/gameConfig";
 import { useGameStore } from "@/store/useGameStore";
+import { drawThemedEnemy } from "@/src/game/entities/EnemyRenderer";
 
 const EDGE_MARGIN = 24;
 const DEFAULT_HP = 30;
@@ -153,30 +154,6 @@ export function getPrestigeEnemySides(prestigeLevel: number): number {
   if (p === 3) return 6;
   if (p === 4) return 8;
   return -1; // estrela
-}
-
-function fillEnemyBodyShape(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  color: string,
-  stroke?: { strokeStyle: string; lineWidth: number },
-): void {
-  const prestige = useGameStore.getState().prestigeLevel ?? 0;
-  const sides = getPrestigeEnemySides(prestige);
-  // Quadrados: scale levemente menor para bounding box similar ao círculo
-  const r = sides === 4 ? radius * 0.92 : radius;
-  const strokeOpts = stroke
-    ? { strokeStyle: stroke.strokeStyle, lineWidth: stroke.lineWidth }
-    : undefined;
-
-  if (sides < 0) {
-    const points = Math.min(8, 5 + (prestige - 5));
-    drawStar(ctx, x, y, r, points, color, strokeOpts);
-    return;
-  }
-  drawPolygon(ctx, x, y, r, sides, color, strokeOpts);
 }
 
 export type EnemyData = {
@@ -819,8 +796,8 @@ export class Enemy {
   }
 
   /**
-   * Desenha o inimigo + overlays de status (gelo / raio / melee / ranged).
-   * Forma geométrica depende do prestigeLevel (círculo → polígonos / estrela).
+   * Desenha o inimigo temático (prestígio) + overlays de status.
+   * Hitbox de colisão permanece o círculo `this.radius` — só o visual muda.
    */
   draw(ctx: CanvasRenderingContext2D, now: number): void {
     this.pruneStatusEffects(now);
@@ -830,102 +807,21 @@ export class Enemy {
     const burning = this.hasStatus("burn", now);
     const quaked = this.hasStatus("quake", now);
     const vulnerable = this.isVulnerable(now);
-
-    let bodyColor = `rgb(${Math.floor(255 * hpPercent)}, 0, 0)`;
-    let bodyStroke: { strokeStyle: string; lineWidth: number } | undefined;
-
-    if (this.color) {
-      bodyColor = frozen
-        ? vulnerable
-          ? "#a5b4fc"
-          : "#7dd3fc"
-        : burning
-          ? "#ea580c"
-          : this.color;
-      if (this.type === "boss") {
-        bodyStroke = {
-          strokeStyle: frozen ? "#c7d2fe" : "#e9d5ff",
-          lineWidth: 4,
-        };
-      } else if (this.type === "ranged") {
-        bodyStroke = {
-          strokeStyle: frozen ? "#bae6fd" : "#99f6e4",
-          lineWidth: 2,
-        };
-      }
-    } else if (this.type === "boss") {
-      bodyColor = frozen
-        ? vulnerable
-          ? "#6366f1"
-          : "#5b21b6"
-        : burning
-          ? "#9a3412"
-          : "#7e22ce";
-      bodyStroke = {
-        strokeStyle: frozen ? "#c7d2fe" : "#e9d5ff",
-        lineWidth: 4,
-      };
-    } else if (this.type === "dasher") {
-      if (frozen) {
-        bodyColor = vulnerable
-          ? `rgb(${Math.floor(120 + 60 * hpPercent)}, ${Math.floor(140 + 40 * hpPercent)}, ${Math.floor(230 + 25 * hpPercent)})`
-          : `rgb(${Math.floor(100 + 80 * hpPercent)}, ${Math.floor(160 + 60 * hpPercent)}, ${Math.floor(220 + 35 * hpPercent)})`;
-      } else if (burning) {
-        bodyColor = `rgb(${Math.floor(220 + 35 * hpPercent)}, ${Math.floor(80 * hpPercent)}, 20)`;
-      } else {
-        const orange = Math.floor(180 + 75 * hpPercent);
-        bodyColor = `rgb(${orange}, ${Math.floor(90 * hpPercent)}, 20)`;
-      }
-    } else if (this.type === "ranged") {
-      if (frozen) {
-        bodyColor = `rgb(${Math.floor(80 + 40 * hpPercent)}, ${Math.floor(160 + 60 * hpPercent)}, ${Math.floor(180 + 50 * hpPercent)})`;
-      } else {
-        const g = Math.floor(160 + 70 * hpPercent);
-        bodyColor = `rgb(${Math.floor(30 + 40 * hpPercent)}, ${g}, ${Math.floor(140 + 50 * hpPercent)})`;
-      }
-      bodyStroke = {
-        strokeStyle: frozen ? "#bae6fd" : "#5eead4",
-        lineWidth: 2,
-      };
-    } else if (frozen) {
-      const blue = Math.floor(160 + 95 * hpPercent);
-      bodyColor = vulnerable
-        ? `rgb(${Math.floor(90 + 40 * hpPercent)}, ${Math.floor(120 + 60 * hpPercent)}, ${blue})`
-        : `rgb(${Math.floor(60 * hpPercent)}, ${Math.floor(140 + 80 * hpPercent)}, ${blue})`;
-    } else if (burning) {
-      bodyColor = `rgb(${Math.floor(220 + 35 * hpPercent)}, ${Math.floor(60 + 40 * hpPercent)}, 10)`;
-    } else {
-      bodyColor = `rgb(${Math.floor(255 * hpPercent)}, 0, 0)`;
-    }
-
-    // Hexágono+ (prestígio ≥ 3): contorno de blindagem
     const prestige = useGameStore.getState().prestigeLevel ?? 0;
-    if (prestige >= 3 && !bodyStroke) {
-      bodyStroke = {
-        strokeStyle: "rgba(226, 232, 240, 0.55)",
-        lineWidth: 2.5,
-      };
-    }
 
-    fillEnemyBodyShape(
-      ctx,
-      this.x,
-      this.y,
-      this.radius,
-      bodyColor,
-      bodyStroke,
-    );
-
-    if (this.isAttacking && !frozen) {
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.radius + 2, 0, Math.PI * 2);
-      ctx.strokeStyle =
-        this.type === "ranged"
-          ? "rgba(45, 212, 191, 0.9)"
-          : "rgba(248, 113, 113, 0.85)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
+    drawThemedEnemy(ctx, {
+      x: this.x,
+      y: this.y,
+      radius: this.radius,
+      type: this.type,
+      hpPercent,
+      prestigeLevel: prestige,
+      now,
+      isAttacking: this.isAttacking,
+      frozen,
+      burning,
+      catalogColor: this.color || undefined,
+    });
 
     if (frozen) {
       ctx.save();

@@ -107,6 +107,8 @@ export type HitSplat = {
   color: string;
   /** Escala de fonte (críticos > 1). */
   scale?: number;
+  /** Marca crítico para filtro de textos flutuantes. */
+  isCrit?: boolean;
 };
 
 /** Segmento visual da cadeia de ricochete (player → alvos). */
@@ -186,6 +188,8 @@ export type CombatSystemResult = {
   /** Traços de ricochete gerados neste frame (VFX). */
   ricochetPaths: RicochetPathEffect[];
   kills: number;
+  /** Dano total absorvido pelos inimigos neste frame (HP removido). */
+  damageDealt: number;
   /** Coordenadas dos inimigos mortos neste frame (para loot). */
   killSites: {
     x: number;
@@ -417,6 +421,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   let contactHits = 0;
   let kills = 0;
+  let damageDealt = 0;
   const killSites: {
     x: number;
     y: number;
@@ -1115,6 +1120,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   // Regen por skill dos pulsos ativos (raio/gelo/fogo) — não usa life steal físico
   if (skillDamageDealt > 0 || skillHitsLanded > 0) {
+    damageDealt += skillDamageDealt;
     applySkillRegen(skillDamageDealt, skillHitsLanded);
     skillDamageDealt = 0;
     skillHitsLanded = 0;
@@ -1225,6 +1231,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           age: 0,
           color: isCrit ? "#fb923c" : "#ffffff",
           scale: isCrit ? 1.4 : 1,
+          isCrit,
         });
 
         addDamage(enemy.id, damage, "physical");
@@ -1385,6 +1392,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         if (dealt > 0 && absorbed > 0) {
           physicalDealt += absorbed * (physicalPart / dealt);
           skillDealt += absorbed * (skillPart / dealt);
+          damageDealt += absorbed;
         }
         if (enemy.takeDamage(dealt, now)) {
           pushKill(enemy);
@@ -1458,6 +1466,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     hitSplats,
     ricochetPaths,
     kills,
+    damageDealt,
     killSites,
     contactHits,
     questEvents,

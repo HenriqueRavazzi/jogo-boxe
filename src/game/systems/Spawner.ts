@@ -192,6 +192,11 @@ export type SpawnerInput = {
    * Reinicia a cada spawn com getEndlessBossIntervalSeconds(timeAlive).
    */
   endlessBossCooldownMs?: number;
+  /**
+   * Fila de chefes agendados no Endless quando já há MAX_ALIVE_BOSSES vivos.
+   * Drena assim que um chefe morre (aliveBossCount cai).
+   */
+  endlessBossQueue?: QueuedEndlessBoss[];
   spawnAccumulatorMs: number;
   dt: number;
   difficulty?: DifficultySpawnMultipliers;
@@ -220,6 +225,8 @@ export type SpawnerResult = {
   bossesSpawned: number;
   invasionBossCooldownMs: number;
   endlessBossCooldownMs: number;
+  /** Fila restante de chefes agendados (Endless). */
+  endlessBossQueue: QueuedEndlessBoss[];
   /** True se um boss surgiu via invasão na horda (não o agendado). */
   hordeBossInvaded: boolean;
   /** Comuns spawnados neste tick (campanha). */
@@ -228,8 +235,14 @@ export type SpawnerResult = {
 
 /** Intervalo mínimo entre invasões de boss na horda (ms). */
 export const HORDE_BOSS_INVASION_COOLDOWN_MS = 45_000;
-/** Máximo de bosses vivos via invasão + agenda. */
-export const MAX_ALIVE_BOSSES = 2;
+/** Máximo de bosses vivos no Endless (agenda + invasão + fila). */
+export const MAX_ALIVE_BOSSES = 3;
+
+/** Chefe agendado aguardando slot livre (máx. 3 ativos). */
+export type QueuedEndlessBoss = {
+  /** Índice em `pickBossConfig` / contagem de bossesSpawned no enqueue. */
+  bossIndex: number;
+};
 /** Tempo mínimo de partida antes de invasões (s). */
 export const HORDE_BOSS_INVASION_UNLOCK_SECONDS = 90;
 
@@ -519,6 +532,9 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     (input.endlessBossCooldownMs ?? getInitialEndlessBossCooldownMs()) -
       dt * 1000,
   );
+  let endlessBossQueue: QueuedEndlessBoss[] = [
+    ...(input.endlessBossQueue ?? []),
+  ];
   let spawnAccumulatorMs = input.spawnAccumulatorMs + dt * 1000;
   const paceMul = Math.max(1, stage?.spawnPaceMul ?? 1);
   const spawned: EnemyData[] = [];
@@ -650,15 +666,8 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
     }
   } else {
-    // Boss agendado: timer próprio; a cada spawn o próximo intervalo
-    // encolhe com o tempo vivo (piso 10s).
-    if (
-      endlessBossCooldownMs <= 0 &&
-      bosses.length > 0 &&
-      count < MAX_ENEMIES
-    ) {
-      const bossCount = bossesSpawned;
-      const { config, overflow } = pickBossConfig(bosses, bossCount);
+    const spawnEndlessBoss = (bossIndex: number) => {
+      const { config, overflow } = pickBossConfig(bosses, bossIndex);
       spawned.push(
         spawnFromConfig(
           canvasWidth,
@@ -670,12 +679,35 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
           overflow,
         ),
       );
-      bossesSpawned += 1;
       bossesAlive += 1;
       count += 1;
+    };
+
+    // Libera slots da fila quando um chefe morre (aliveBossCount cai).
+    while (
+      endlessBossQueue.length > 0 &&
+      bossesAlive < MAX_ALIVE_BOSSES &&
+      count < MAX_ENEMIES &&
+      bosses.length > 0
+    ) {
+      const next = endlessBossQueue.shift()!;
+      spawnEndlessBoss(next.bossIndex);
+      invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
+    }
+
+    // Boss agendado: timer próprio; se já há 3 vivos, entra na fila.
+    if (endlessBossCooldownMs <= 0 && bosses.length > 0) {
+      const bossIndex = bossesSpawned;
+      bossesSpawned += 1;
       endlessBossCooldownMs =
         getEndlessBossIntervalSeconds(timeAliveInSeconds) * 1000;
       invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
+
+      if (bossesAlive < MAX_ALIVE_BOSSES && count < MAX_ENEMIES) {
+        spawnEndlessBoss(bossIndex);
+      } else {
+        endlessBossQueue.push({ bossIndex });
+      }
     }
 
     let spawnEvents = 0;
@@ -746,6 +778,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     bossesSpawned,
     invasionBossCooldownMs,
     endlessBossCooldownMs,
+    endlessBossQueue,
     hordeBossInvaded,
     commonsSpawnedDelta,
   };
