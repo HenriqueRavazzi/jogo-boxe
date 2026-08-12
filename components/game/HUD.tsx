@@ -201,8 +201,7 @@ function CooldownRing({
 
 function formatMs(ms: number): string {
   if (ms <= 0) return "—";
-  if (ms >= 10_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 type StatRow = { label: string; value: string; accent?: boolean };
@@ -283,13 +282,9 @@ function buildSkillStatRows(
           value: `${(burnPerStack * maxStacks).toFixed(1)} DPS`,
         },
         { label: "Duração do stack", value: formatMs(durationMs) },
-        {
-          label: "Fórmula",
-          value: `dano×20%×(1+nv×15%)`,
-        },
       ],
       levelBonusNote: [
-        `Nível ${level} da skill: +${levelPct}% no burn (+15% por nível).`,
+        `Nível ${level} da skill: +${levelPct}% no burn.`,
         runBonusNote,
       ]
         .filter(Boolean)

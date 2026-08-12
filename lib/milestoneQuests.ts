@@ -85,8 +85,10 @@ export type MilestoneProgressEvent =
 
 /** Meta ×1.5 por fase (multiply). */
 export const MILESTONE_TARGET_GROWTH = 1.5;
-/** Recompensas ×1.4 por fase. */
+/** Ouro/diamantes ×1.4 por fase. */
 export const MILESTONE_REWARD_GROWTH = 1.4;
+/** Roxos sobem mais devagar — ×1.4 explodia em fases altas. */
+export const MILESTONE_PURPLE_REWARD_GROWTH = 1.2;
 
 export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
   {
@@ -98,7 +100,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_200,
       gems: 18,
-      purpleDiamonds: 5,
+      purpleDiamonds: 2,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -112,7 +114,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_400,
       gems: 22,
-      purpleDiamonds: 7,
+      purpleDiamonds: 3,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -126,7 +128,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_400,
       gems: 22,
-      purpleDiamonds: 7,
+      purpleDiamonds: 3,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -140,7 +142,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 2000,
       gems: 40,
-      purpleDiamonds: 15,
+      purpleDiamonds: 6,
     },
     progressMode: "max",
     targetScale: "multiply",
@@ -154,7 +156,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1500,
       gems: 25,
-      purpleDiamonds: 8,
+      purpleDiamonds: 3,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -168,7 +170,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_450,
       gems: 24,
-      purpleDiamonds: 8,
+      purpleDiamonds: 3,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -182,7 +184,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_450,
       gems: 24,
-      purpleDiamonds: 8,
+      purpleDiamonds: 3,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -196,7 +198,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1200,
       gems: 20,
-      purpleDiamonds: 6,
+      purpleDiamonds: 2,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -210,7 +212,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_300,
       gems: 22,
-      purpleDiamonds: 7,
+      purpleDiamonds: 3,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -224,7 +226,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_350,
       gems: 23,
-      purpleDiamonds: 8,
+      purpleDiamonds: 3,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -238,7 +240,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_500,
       gems: 28,
-      purpleDiamonds: 10,
+      purpleDiamonds: 4,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -252,7 +254,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_250,
       gems: 20,
-      purpleDiamonds: 6,
+      purpleDiamonds: 2,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -266,7 +268,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 2500,
       gems: 15,
-      purpleDiamonds: 5,
+      purpleDiamonds: 2,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -280,7 +282,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 800,
       gems: 35,
-      purpleDiamonds: 12,
+      purpleDiamonds: 5,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -294,7 +296,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_000,
       gems: 20,
-      purpleDiamonds: 18,
+      purpleDiamonds: 8,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -308,7 +310,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 2_000,
       gems: 18,
-      purpleDiamonds: 6,
+      purpleDiamonds: 2,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -322,7 +324,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_100,
       gems: 25,
-      purpleDiamonds: 20,
+      purpleDiamonds: 8,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -336,7 +338,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1_300,
       gems: 40,
-      purpleDiamonds: 10,
+      purpleDiamonds: 4,
     },
     progressMode: "add",
     targetScale: "multiply",
@@ -350,7 +352,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1800,
       gems: 30,
-      purpleDiamonds: 10,
+      purpleDiamonds: 4,
     },
     progressMode: "max",
     targetScale: "multiply",
@@ -364,7 +366,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
     rewards: {
       gold: 1000,
       gems: 50,
-      purpleDiamonds: 20,
+      purpleDiamonds: 8,
     },
     progressMode: "max",
     targetScale: "linear",
@@ -409,12 +411,13 @@ export function getMilestonePhaseRewards(
 ): MilestoneQuestRewards {
   const p = Math.max(0, Math.floor(phase));
   const mul = Math.pow(MILESTONE_REWARD_GROWTH, p);
+  const purpleMul = Math.pow(MILESTONE_PURPLE_REWARD_GROWTH, p);
   return {
     gold: Math.max(1, Math.floor(def.rewards.gold * mul)),
     gems: Math.max(1, Math.floor(def.rewards.gems * mul)),
     purpleDiamonds: Math.max(
       1,
-      Math.floor(def.rewards.purpleDiamonds * mul),
+      Math.floor(def.rewards.purpleDiamonds * purpleMul),
     ),
   };
 }

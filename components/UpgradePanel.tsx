@@ -44,6 +44,9 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
   const rangeLevel = useGameStore((s) => s.rangeLevel);
   const critChanceLevel = useGameStore((s) => s.critChanceLevel);
   const arms = useGameStore((s) => s.arms);
+  const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
+  const getAscensionExtraArms = useGameStore((s) => s.getAscensionExtraArms);
+  const skillTree = useGameStore((s) => s.skillTree);
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
   const incomeLevel = useGameStore((s) => s.incomeLevel);
   const gold = useGameStore((s) => s.gold);
@@ -78,6 +81,9 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
 
   const armsCfg = getArmsUpgradeConfig();
   const maxGoldArms = armsCfg.maxGoldArms;
+  const totalArms = getEffectiveStats().arms;
+  const treeArms = skillTree.node_extra_arm ? 1 : 0;
+  const ascensionArms = getAscensionExtraArms();
 
   const planFor = (kind: GoldUpgradeKind) =>
     previewGoldUpgradeBulk(kind, quantity);
@@ -179,11 +185,11 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       />
       <UpgradeCard
         icon={<Hand className="h-5 w-5 text-sky-400" />}
-        title={`Braços (ouro): ${arms}`}
+        title={`Braços: ${totalArms} total`}
         subtitle={
           arms < maxGoldArms
-            ? `Próximo: +1 braço (até ${maxGoldArms}) · teto total ${armsCfg.maxTotalArms}`
-            : `Próximo: reseta para ${armsCfg.minArms} (+15% dano base, custo ×2)`
+            ? `Ouro ${arms}/${maxGoldArms}${treeArms || ascensionArms ? ` · árvore +${treeArms} · ascensão +${ascensionArms}` : ""} · teto ${armsCfg.maxTotalArms}`
+            : `Ouro no máx. (${arms}) — próximo compra reseta p/ ${armsCfg.minArms} (+15% dano, custo ×2)${treeArms || ascensionArms ? ` · árvore +${treeArms} · ascensão +${ascensionArms}` : ""}`
         }
         subtitleClassName={
           arms >= maxGoldArms ? "font-semibold text-amber-300" : undefined

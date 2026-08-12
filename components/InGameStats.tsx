@@ -51,6 +51,7 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const incomeMultiplier = useGameStore((s) => s.incomeMultiplier);
   const teamMembersOwned = useGameStore((s) => s.teamMembersOwned);
   const equippedTeamMemberIds = useGameStore((s) => s.equippedTeamMemberIds);
+  const arms = useGameStore((s) => s.arms);
   const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
   const getEquippedTeamBuffs = useGameStore((s) => s.getEquippedTeamBuffs);
 
@@ -146,7 +147,13 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
         : []),
     { label: "HP", value: `${Math.ceil(currentHp)}/${stats.maxHp}` },
     { label: "Dano", value: String(damage) },
-    { label: "Braços", value: String(stats.arms) },
+    {
+      label: "Braços",
+      value:
+        stats.arms === arms
+          ? String(stats.arms)
+          : `${stats.arms} (${arms}+${stats.arms - arms})`,
+    },
     { label: "APS", value: attacksPerSecond.toFixed(2) },
     { label: "Alcance", value: String(range) },
     { label: "Chance Crít.", value: `${critChancePct}%` },
