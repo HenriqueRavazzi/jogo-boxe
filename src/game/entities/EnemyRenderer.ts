@@ -5,8 +5,7 @@
 
 import type { EnemyType } from "@/src/game/entities/Enemy";
 import {
-  getPrestigeVisualTier,
-  type PrestigeVisualTier,
+  type DimensionId,
 } from "@/src/game/prestigeVisual";
 
 export type ThemedEnemyDrawInput = {
@@ -16,7 +15,8 @@ export type ThemedEnemyDrawInput = {
   type: EnemyType;
   /** 0–1 vida restante (tinta). */
   hpPercent: number;
-  prestigeLevel: number;
+  /** Dimensão visual ativa (Multiverse Loop ou prestígio). */
+  visualDimension: DimensionId;
   now: number;
   isAttacking: boolean;
   frozen: boolean;
@@ -508,10 +508,141 @@ function drawStarSimple(
   ctx.fill();
 }
 
+/* ─── Tier 4 · Glacial ─────────────────────────────────────────── */
+
+function drawGlacialNormal(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, hpPercent: hp, frozen, burning, now } = i;
+  drawPoly(ctx, x, y, r, 6, now * 0.001, mixHp("#1e3a5f", hp, frozen, burning), "#93c5fd");
+  drawCircle(ctx, x, y, r * 0.25, "#e0f2fe");
+}
+
+function drawGlacialDasher(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, now, hpPercent: hp, frozen, burning } = i;
+  const ang = idleFacing(x, y, now);
+  for (let k = 1; k <= 4; k++) {
+    const back = ang + Math.PI;
+    ctx.fillStyle = `rgba(186, 230, 253, ${0.35 - k * 0.07})`;
+    ctx.beginPath();
+    ctx.arc(
+      x + Math.cos(back) * (r + k * 5),
+      y + Math.sin(back) * (r + k * 5),
+      r * 0.3,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+  }
+  drawPoly(ctx, x, y, r, 4, ang, mixHp("#0369a1", hp, frozen, burning), "#bae6fd");
+}
+
+function drawGlacialRanged(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, now, hpPercent: hp, frozen, burning } = i;
+  drawCircle(ctx, x, y, r, mixHp("#0c4a6e", hp, frozen, burning), "#7dd3fc", 2);
+  for (let k = 0; k < 3; k++) {
+    const a = now * 0.003 + (k * Math.PI * 2) / 3;
+    ctx.fillStyle = "#e0f2fe";
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * (r + 5), y + Math.sin(a) * (r + 5), 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawGlacialBoss(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, now, hpPercent: hp, frozen, burning } = i;
+  drawPoly(ctx, x, y, r, 8, now * 0.0012, mixHp("#1d4ed8", hp, frozen, burning), "#bfdbfe");
+  drawStarSimple(ctx, x, y, r * 0.35, 6, "#f0f9ff");
+}
+
+/* ─── Tier 5 · Vulcânico ───────────────────────────────────────── */
+
+function drawVolcanicNormal(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, hpPercent: hp, frozen, burning } = i;
+  drawCircle(ctx, x, y, r, mixHp("#991b1b", hp, frozen, burning), "#ea580c", 2);
+  ctx.fillStyle = "#fde047";
+  ctx.beginPath();
+  ctx.arc(x - r * 0.22, y - r * 0.05, r * 0.12, 0, Math.PI * 2);
+  ctx.arc(x + r * 0.22, y - r * 0.05, r * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawVolcanicDasher(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  drawInfernalDasher(ctx, i);
+}
+
+function drawVolcanicRanged(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  drawInfernalRanged(ctx, i);
+}
+
+function drawVolcanicBoss(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, now, hpPercent: hp, frozen, burning } = i;
+  const glow = ctx.createRadialGradient(x, y, r * 0.2, x, y, r + 14);
+  glow.addColorStop(0, "rgba(254, 215, 170, 0.45)");
+  glow.addColorStop(1, "rgba(127, 29, 29, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, r + 14, 0, Math.PI * 2);
+  ctx.fill();
+  drawPoly(ctx, x, y, r, 6, now * 0.0018, mixHp("#7f1d1d", hp, frozen, burning), "#fb923c");
+}
+
+/* ─── Tier 6 · Ciber-Abissal ───────────────────────────────────── */
+
+function drawAbyssNormal(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, hpPercent: hp, frozen, burning, now } = i;
+  drawPoly(ctx, x, y, r, 4, Math.PI / 4, mixHp("#14532d", hp, frozen, burning), "#4ade80");
+  ctx.strokeStyle = `rgba(74, 222, 128, ${0.45 + 0.3 * Math.sin(now * 0.025)})`;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x - r * 0.45, y - r * 0.45, r * 0.9, r * 0.9);
+  drawCircle(ctx, x, y, r * 0.2, "#bbf7d0");
+}
+
+function drawAbyssDasher(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, now, hpPercent: hp, frozen, burning } = i;
+  const ang = idleFacing(x, y, now);
+  for (let k = 1; k <= 4; k++) {
+    const back = ang + Math.PI;
+    ctx.fillStyle = `rgba(34, 197, 94, ${0.35 - k * 0.06})`;
+    ctx.fillRect(
+      x + Math.cos(back) * (r + k * 4) - 2,
+      y + Math.sin(back) * (r + k * 4) - 2,
+      4,
+      4,
+    );
+  }
+  drawPoly(ctx, x, y, r, 3, ang, mixHp("#166534", hp, frozen, burning), "#86efac");
+}
+
+function drawAbyssRanged(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, now, hpPercent: hp, frozen, burning, isAttacking } = i;
+  drawCircle(ctx, x, y, r, mixHp("#052e16", hp, frozen, burning), "#22c55e", 2);
+  const ang = idleFacing(x, y, now);
+  const len = r + (isAttacking ? 10 : 6);
+  ctx.strokeStyle = isAttacking ? "#bbf7d0" : "#4ade80";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+  ctx.stroke();
+}
+
+function drawAbyssBoss(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): void {
+  const { x, y, radius: r, now, hpPercent: hp, frozen, burning } = i;
+  const pulse = 0.5 + 0.5 * Math.sin(now * 0.018);
+  ctx.shadowColor = "#22c55e";
+  ctx.shadowBlur = 10 + pulse * 8;
+  drawPoly(ctx, x, y, r, 6, now * 0.002, mixHp("#14532d", hp, frozen, burning), "#4ade80");
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#bbf7d0";
+  ctx.font = `${Math.max(8, r * 0.5)}px monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("01", x, y);
+}
+
 type Drawer = (ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput) => void;
 
 const DRAWERS: Record<
-  PrestigeVisualTier,
+  DimensionId,
   Record<EnemyType, Drawer>
 > = {
   0: {
@@ -539,6 +670,24 @@ const DRAWERS: Record<
     boss: drawInfernalBoss,
   },
   4: {
+    normal: drawGlacialNormal,
+    dasher: drawGlacialDasher,
+    ranged: drawGlacialRanged,
+    boss: drawGlacialBoss,
+  },
+  5: {
+    normal: drawVolcanicNormal,
+    dasher: drawVolcanicDasher,
+    ranged: drawVolcanicRanged,
+    boss: drawVolcanicBoss,
+  },
+  6: {
+    normal: drawAbyssNormal,
+    dasher: drawAbyssDasher,
+    ranged: drawAbyssRanged,
+    boss: drawAbyssBoss,
+  },
+  7: {
     normal: drawCosmicNormal,
     dasher: drawCosmicDasher,
     ranged: drawCosmicRanged,
@@ -554,8 +703,8 @@ export function drawThemedEnemy(
   ctx: CanvasRenderingContext2D,
   input: ThemedEnemyDrawInput,
 ): void {
-  const tier = getPrestigeVisualTier(input.prestigeLevel);
-  const drawer = DRAWERS[tier][input.type] ?? DRAWERS[tier].normal;
+  const dimension = input.visualDimension;
+  const drawer = DRAWERS[dimension][input.type] ?? DRAWERS[dimension].normal;
   ctx.save();
   drawer(ctx, input);
   ctx.restore();
@@ -573,4 +722,4 @@ export function drawThemedEnemy(
   }
 }
 
-export { getPrestigeVisualTier };
+export type { DimensionId };

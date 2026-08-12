@@ -7,7 +7,8 @@ import { useGameStore } from "@/store/useGameStore";
 
 /**
  * Canvas fullscreen — camada de fundo do jogo.
- * O tema visual da arena muda com `prestigeLevel` via BackgroundRenderer
+ * O tema visual da arena roda pelo Multiverse Loop (Endless / campanha avançada)
+ * ou segue o prestígio via BackgroundRenderer.
  * (chamado no início de cada frame em `useGameLoop`).
  */
 export function GameCanvas() {

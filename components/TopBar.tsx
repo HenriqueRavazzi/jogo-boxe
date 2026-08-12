@@ -1,7 +1,13 @@
 "use client";
 
-import { Coins, Gem, Gauge, Heart, Star } from "lucide-react";
+import { Coins, Gem, Gauge, Heart, Sparkles, Star } from "lucide-react";
 import { useArenaStore } from "@/store/useArenaStore";
+import {
+  getDimensionDisplayName,
+  getMultiverseCycleProgress,
+  isMultiverseLoopActive,
+  resolveVisualDimension,
+} from "@/src/game/multiverseLoop";
 import {
   GAME_SPEED_OPTIONS,
   clampGameSpeed,
@@ -22,7 +28,9 @@ export function TopBar() {
   const matchLevel = useArenaStore((s) => s.matchLevel);
   const runMode = useArenaStore((s) => s.runMode);
   const runStage = useArenaStore((s) => s.runStage);
+  const runStageNumber = useArenaStore((s) => s.runStageNumber);
   const timeAlive = useArenaStore((s) => s.timeAlive);
+  const prestigeLevel = useGameStore((s) => s.prestigeLevel);
   const stageBossDefeated = useArenaStore((s) => s.stageBossDefeated);
   const stageEnemiesDefeated = useArenaStore((s) => s.stageEnemiesDefeated);
   const stageCommonsSpawned = useArenaStore((s) => s.stageCommonsSpawned);
@@ -39,6 +47,20 @@ export function TopBar() {
     Math.min(100, (currentXp / xpToNextLevel) * 100),
   );
   const gameSpeed = clampGameSpeed(gameSpeedMultiplier);
+
+  const multiverseCtx = {
+    runMode,
+    timeAliveMs: timeAlive * 1000,
+    runStageNumber,
+    prestigeLevel,
+  };
+  const multiverseActive = isMultiverseLoopActive(multiverseCtx);
+  const dimensionName = getDimensionDisplayName(
+    resolveVisualDimension(multiverseCtx),
+  );
+  const riftProgress = multiverseActive
+    ? Math.round(getMultiverseCycleProgress(multiverseCtx) * 100)
+    : 0;
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-4 p-4">
@@ -130,10 +152,22 @@ export function TopBar() {
         {runMode === "endless" ? (
           <div className="rounded-lg bg-black/55 px-3 py-1.5 text-[11px] font-semibold text-fuchsia-200/90 shadow-lg backdrop-blur-sm">
             Endless · {Math.floor(timeAlive)}s
+            {multiverseActive && (
+              <span className="ml-1.5 inline-flex items-center gap-1 text-violet-200/90">
+                <Sparkles className="h-3 w-3" aria-hidden />
+                {dimensionName} · {riftProgress}%
+              </span>
+            )}
           </div>
         ) : runStage ? (
           <div className="rounded-lg bg-black/55 px-3 py-1.5 text-[11px] font-semibold text-sky-200/90 shadow-lg backdrop-blur-sm">
             Fase {runStage.stageNumber}: {runStage.name}
+            {multiverseActive && (
+              <span className="ml-1.5 inline-flex items-center gap-1 text-violet-200/90">
+                <Sparkles className="h-3 w-3" aria-hidden />
+                {dimensionName}
+              </span>
+            )}
             <span className="ml-1.5 tabular-nums text-zinc-400">
               {stageEnemiesDefeated}/{runStage.enemyCount + 1}
               {stageBossDefeated

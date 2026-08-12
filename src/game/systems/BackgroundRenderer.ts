@@ -4,14 +4,14 @@
  */
 
 import {
-  getPrestigeVisualTier,
-  type PrestigeVisualTier,
+  getDefaultDimensionForPrestige,
+  type DimensionId,
 } from "@/src/game/prestigeVisual";
 
-export type PrestigeBgTier = PrestigeVisualTier;
+export type PrestigeBgTier = DimensionId;
 
 export function getPrestigeBgTier(prestigeLevel: number): PrestigeBgTier {
-  return getPrestigeVisualTier(prestigeLevel);
+  return getDefaultDimensionForPrestige(prestigeLevel);
 }
 
 type StarSpec = { x: number; y: number; r: number; twinkle: number };
@@ -33,8 +33,8 @@ type BgCache = {
 
 let cache: BgCache | null = null;
 
-function cacheKey(w: number, h: number, tier: PrestigeBgTier): string {
-  return `${tier}:${Math.round(w)}x${Math.round(h)}`;
+function cacheKey(w: number, h: number, dimension: DimensionId): string {
+  return `${dimension}:${Math.round(w)}x${Math.round(h)}`;
 }
 
 function ensureOffscreen(w: number, h: number): HTMLCanvasElement {
@@ -318,7 +318,116 @@ function paintInfernal(ctx: CanvasRenderingContext2D, w: number, h: number): voi
   ctx.fill();
 }
 
-/** Tier 4+ — Dimensão Poligonal / Cósmica */
+/** Tier 4 — Glacial */
+function paintGlacial(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  const base = ctx.createLinearGradient(0, 0, 0, h);
+  base.addColorStop(0, "#0b1329");
+  base.addColorStop(0.45, "#0a1020");
+  base.addColorStop(1, "#060a14");
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, h);
+
+  const rand = seededRand(512);
+  ctx.strokeStyle = "rgba(186, 230, 253, 0.08)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 14; i++) {
+    const x = rand() * w;
+    const y = h * 0.2 + rand() * h * 0.75;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 4; s++) {
+      const nx = x + (rand() - 0.5) * 40;
+      const ny = y - 12 - rand() * 28;
+      ctx.lineTo(nx, ny);
+    }
+    ctx.stroke();
+  }
+
+  // Cristais no chão
+  for (let i = 0; i < 22; i++) {
+    const x = rand() * w;
+    const y = h * 0.55 + rand() * h * 0.42;
+    ctx.fillStyle = `rgba(147, 197, 253, ${0.06 + rand() * 0.1})`;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 4, y + 10);
+    ctx.lineTo(x + 4, y + 10);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+/** Tier 5 — Vulcânico (lava nas bordas) */
+function paintVolcanic(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  const base = ctx.createRadialGradient(w * 0.5, h * 0.85, 10, w * 0.5, h * 0.5, Math.max(w, h));
+  base.addColorStop(0, "#3d1510");
+  base.addColorStop(0.4, "#1a0f0d");
+  base.addColorStop(1, "#0c0605");
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, h);
+
+  const rand = seededRand(909);
+  // Rachaduras de lava
+  ctx.strokeStyle = "rgba(251, 146, 60, 0.22)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 10; i++) {
+    let x = rand() * w;
+    let y = h * 0.65 + rand() * h * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 6; s++) {
+      x += (rand() - 0.5) * 50;
+      y -= rand() * 22;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Bordas incandescentes
+  const edgeGlow = ctx.createLinearGradient(0, 0, w, 0);
+  edgeGlow.addColorStop(0, "rgba(234, 88, 12, 0.35)");
+  edgeGlow.addColorStop(0.08, "rgba(234, 88, 12, 0)");
+  edgeGlow.addColorStop(0.92, "rgba(234, 88, 12, 0)");
+  edgeGlow.addColorStop(1, "rgba(234, 88, 12, 0.35)");
+  ctx.fillStyle = edgeGlow;
+  ctx.fillRect(0, h * 0.78, w, h * 0.22);
+}
+
+/** Tier 6 — Ciber-Abissal (Matrix) */
+function paintCyberAbyss(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  const base = ctx.createLinearGradient(0, 0, 0, h);
+  base.addColorStop(0, "#051a0e");
+  base.addColorStop(0.5, "#031208");
+  base.addColorStop(1, "#020805");
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, h);
+
+  const rand = seededRand(1337);
+  const cols = Math.max(8, Math.floor(w / 28));
+  ctx.font = "10px monospace";
+  for (let c = 0; c < cols; c++) {
+    const x = (c + 0.5) * (w / cols);
+    const len = 4 + Math.floor(rand() * 8);
+    for (let r = 0; r < len; r++) {
+      const y = h * 0.08 + r * 14;
+      const ch = rand() > 0.5 ? "1" : "0";
+      ctx.fillStyle = `rgba(74, 222, 128, ${0.04 + (len - r) * 0.018})`;
+      ctx.fillText(ch, x, y);
+    }
+  }
+
+  ctx.strokeStyle = "rgba(34, 197, 94, 0.12)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const y = h * (0.15 + i * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y + (i % 2 === 0 ? 6 : -6));
+    ctx.stroke();
+  }
+}
+
+/** Tier 7 — Dimensão Poligonal / Cósmica */
 function paintCosmic(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -401,25 +510,28 @@ function buildFloats(w: number, h: number, count: number): FloatSpec[] {
   return out;
 }
 
-function rebuildCache(w: number, h: number, tier: PrestigeBgTier): BgCache {
+function rebuildCache(w: number, h: number, dimension: DimensionId): BgCache {
   const canvas = ensureOffscreen(w, h);
   const ctx = canvas.getContext("2d");
-  const stars = tier === 4 ? buildStars(w, h, 90) : [];
-  const floats = tier === 4 ? buildFloats(w, h, 18) : [];
+  const stars = dimension === 7 ? buildStars(w, h, 90) : [];
+  const floats = dimension === 7 ? buildFloats(w, h, 18) : [];
   if (ctx) {
-    if (tier === 0) paintStreet(ctx, w, h);
-    else if (tier === 1) paintGym(ctx, w, h);
-    else if (tier === 2) paintCyber(ctx, w, h);
-    else if (tier === 3) paintInfernal(ctx, w, h);
+    if (dimension === 0) paintStreet(ctx, w, h);
+    else if (dimension === 1) paintGym(ctx, w, h);
+    else if (dimension === 2) paintCyber(ctx, w, h);
+    else if (dimension === 3) paintInfernal(ctx, w, h);
+    else if (dimension === 4) paintGlacial(ctx, w, h);
+    else if (dimension === 5) paintVolcanic(ctx, w, h);
+    else if (dimension === 6) paintCyberAbyss(ctx, w, h);
     else paintCosmic(ctx, w, h, stars);
   }
-  return { key: cacheKey(w, h, tier), canvas, stars, floats };
+  return { key: cacheKey(w, h, dimension), canvas, stars, floats };
 }
 
-function getCache(w: number, h: number, tier: PrestigeBgTier): BgCache {
-  const key = cacheKey(w, h, tier);
+function getCache(w: number, h: number, dimension: DimensionId): BgCache {
+  const key = cacheKey(w, h, dimension);
   if (!cache || cache.key !== key) {
-    cache = rebuildCache(w, h, tier);
+    cache = rebuildCache(w, h, dimension);
   }
   return cache;
 }
@@ -460,26 +572,25 @@ function drawTri(
 }
 
 /**
- * Desenha o fundo da arena conforme o prestígio.
+ * Desenha o fundo da arena conforme a dimensão ativa.
  * Camada estática via offscreen cache; overlays animados leves.
  */
 export function drawArenaBackground(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  prestigeLevel: number,
+  dimension: DimensionId,
   timeMs = 0,
 ): void {
   const w = Math.max(1, Math.floor(width));
   const h = Math.max(1, Math.floor(height));
-  const tier = getPrestigeBgTier(prestigeLevel);
-  const bg = getCache(w, h, tier);
+  const bg = getCache(w, h, dimension);
 
   ctx.drawImage(bg.canvas, 0, 0);
 
   const t = timeMs / 1000;
 
-  if (tier === 2) {
+  if (dimension === 2) {
     // Neon pulse nas linhas de energia (overlay barato)
     const pulse = 0.35 + 0.25 * Math.sin(t * 2.2);
     ctx.save();
@@ -496,7 +607,7 @@ export function drawArenaBackground(
     ctx.restore();
   }
 
-  if (tier === 3) {
+  if (dimension === 3) {
     // Brasas flutuantes (overlay leve)
     ctx.save();
     for (let i = 0; i < 12; i++) {
@@ -511,7 +622,78 @@ export function drawArenaBackground(
     ctx.restore();
   }
 
-  if (tier === 4) {
+  if (dimension === 4) {
+    // Flocos de neve / cristais caindo
+    ctx.save();
+    for (let i = 0; i < 28; i++) {
+      const px = ((i * 113 + t * 22) % (w + 30)) - 15;
+      const py = ((i * 67 + t * (18 + (i % 5) * 3)) % (h + 20)) - 10;
+      const size = 1.2 + (i % 4) * 0.6;
+      ctx.globalAlpha = 0.2 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2 + i));
+      ctx.fillStyle = i % 3 === 0 ? "#bae6fd" : "#e0f2fe";
+      if (i % 5 === 0) {
+        ctx.beginPath();
+        ctx.moveTo(px, py - size * 2);
+        ctx.lineTo(px, py + size * 2);
+        ctx.moveTo(px - size * 2, py);
+        ctx.lineTo(px + size * 2, py);
+        ctx.strokeStyle = ctx.fillStyle as string;
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(px, py, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  if (dimension === 5) {
+    // Brasas subindo + pulso de lava nas bordas
+    ctx.save();
+    for (let i = 0; i < 16; i++) {
+      const px = ((i * 89 + t * 14) % w);
+      const py = h - ((i * 41 + t * 28) % (h * 0.45));
+      ctx.globalAlpha = 0.2 + 0.25 * Math.sin(t * 2.5 + i);
+      ctx.fillStyle = i % 2 === 0 ? "#fb923c" : "#ef4444";
+      ctx.beginPath();
+      ctx.arc(px, py, 1.5 + (i % 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const pulse = 0.25 + 0.15 * Math.sin(t * 1.8);
+    const lava = ctx.createLinearGradient(0, h * 0.82, 0, h);
+    lava.addColorStop(0, `rgba(234, 88, 12, ${pulse})`);
+    lava.addColorStop(1, "rgba(220, 38, 38, 0)");
+    ctx.fillStyle = lava;
+    ctx.fillRect(0, h * 0.82, w, h * 0.18);
+    ctx.restore();
+  }
+
+  if (dimension === 6) {
+    // Colunas de código subindo + glitch
+    ctx.save();
+    ctx.font = "11px monospace";
+    const cols = Math.max(6, Math.floor(w / 32));
+    for (let c = 0; c < cols; c++) {
+      const x = (c + 0.5) * (w / cols);
+      const headY = ((t * (40 + c * 3) + c * 120) % (h + 80)) - 40;
+      for (let r = 0; r < 10; r++) {
+        const y = headY - r * 14;
+        if (y < 0 || y > h) continue;
+        const ch = (Math.floor(t * 8 + c + r) % 2) === 0 ? "1" : "0";
+        ctx.globalAlpha = Math.max(0, 0.55 - r * 0.05);
+        ctx.fillStyle = r === 0 ? "#86efac" : "#22c55e";
+        if (Math.sin(t * 12 + c * 3.7 + r * 1.3) > 0.96) {
+          ctx.fillStyle = "#bbf7d0";
+        }
+        ctx.fillText(ch, x + (Math.sin(t * 12 + c) * 1.5), y);
+      }
+    }
+    ctx.restore();
+  }
+
+  if (dimension === 7) {
     // Poeira cósmica / drift lento das estrelas
     ctx.save();
     for (const s of bg.stars) {
@@ -543,7 +725,34 @@ export function drawArenaBackground(
   }
 }
 
-/** Invalida o cache (ex.: resize extremo). */
+/** Invalida o cache (ex.: resize extremo ou troca de dimensão). */
 export function invalidateArenaBackgroundCache(): void {
   cache = null;
+}
+
+/** Flash de Fenda Dimensional sobre a cena (0 = início, 1 = fim). */
+export function drawMultiverseRiftFlash(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  progress: number,
+): void {
+  if (progress <= 0 || progress >= 1) return;
+  const peak = progress < 0.35 ? progress / 0.35 : (1 - progress) / 0.65;
+  const alpha = Math.max(0, Math.min(0.92, peak * 0.92));
+  ctx.save();
+  const grad = ctx.createRadialGradient(
+    width * 0.5,
+    height * 0.5,
+    0,
+    width * 0.5,
+    height * 0.5,
+    Math.max(width, height) * 0.65,
+  );
+  grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+  grad.addColorStop(0.35, `rgba(196, 181, 253, ${alpha * 0.75})`);
+  grad.addColorStop(1, `rgba(139, 92, 246, 0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
 }

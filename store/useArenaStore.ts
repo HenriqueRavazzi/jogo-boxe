@@ -27,6 +27,8 @@ import {
   type UpgradeType,
 } from "@/lib/matchUpgrades";
 import { getMatchGlobals } from "@/lib/balanceConfig";
+import { resolveVisualDimension } from "@/src/game/multiverseLoop";
+import type { DimensionId } from "@/src/game/prestigeVisual";
 import {
   DEFAULT_MATCH_SKILL_MASTERY,
   isSkillMasteryUpgradeType,
@@ -332,6 +334,10 @@ export type ArenaStoreState = {
     gold: number;
     gems: number;
   } | null;
+  /** Dimensão visual ativa (Multiverse Loop). */
+  activeVisualDimension: DimensionId;
+  /** gameClockMs em que a Fenda Dimensional começou (0 = inativa). */
+  multiverseRiftStartedAt: number;
   startGame: () => void;
   setGameOver: () => void;
   /** Vitória da fase: persiste progresso e recompensas bônus. */
@@ -611,6 +617,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   stageCommonsSpawned: 0,
   stageEnemiesDefeated: 0,
   stageClearReward: null,
+  activeVisualDimension: 0,
+  multiverseRiftStartedAt: 0,
 
   startGame: () => {
     const game = useGameStore.getState();
@@ -632,6 +640,13 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         ? Math.max(1, Math.min(50, game.selectedStage || 1))
         : 0;
     const runStage = runMode === "stage" ? getStageDef(runStageNumber) : null;
+    const prestigeLevel = game.prestigeLevel ?? 0;
+    const initialDimension = resolveVisualDimension({
+      runMode,
+      timeAliveMs: 0,
+      runStageNumber,
+      prestigeLevel,
+    });
 
     set({
       gameState: "playing",
@@ -695,6 +710,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       stageCommonsSpawned: 0,
       stageEnemiesDefeated: 0,
       stageClearReward: null,
+      activeVisualDimension: initialDimension,
+      multiverseRiftStartedAt: 0,
     });
   },
 

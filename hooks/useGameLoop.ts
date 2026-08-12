@@ -33,7 +33,11 @@ import {
   drawRicochetArmPath,
   drawShadowClone,
 } from "@/src/game/render/drawSkillEffects";
-import { drawArenaBackground, invalidateArenaBackgroundCache } from "@/src/game/systems/BackgroundRenderer";
+import { drawArenaBackground, drawMultiverseRiftFlash, invalidateArenaBackgroundCache } from "@/src/game/systems/BackgroundRenderer";
+import {
+  MULTIVERSE_RIFT_FLASH_MS,
+  resolveVisualDimension,
+} from "@/src/game/multiverseLoop";
 import { getAuraRadius } from "@/src/game/systems/AuraSystem";
 import { DEFAULT_MATCH_SKILL_BONUS } from "@/lib/matchUpgrades";
 import { runSpawner } from "@/src/game/systems/Spawner";
@@ -134,6 +138,7 @@ function shoulderOf(
  */
 export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
   const rafId = useRef<number>(0);
+  const lastVisualDimensionRef = useRef<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -731,13 +736,51 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         skillVfxEffects,
         lightningProjectiles,
         activeSkillPulse,
+        runMode,
+        timeAlive,
+        runStageNumber,
+        multiverseRiftStartedAt,
+        gameState,
       } = useArenaStore.getState();
       const arms = useGameStore.getState().getEffectiveStats().arms;
-      const prestigeLevel = useGameStore.getState().prestigeLevel;
+      const prestigeLevel = useGameStore.getState().prestigeLevel ?? 0;
       const now = gameClockMs;
 
-      // Fundo dinâmico por Prestígio (cache offscreen + overlays leves)
-      drawArenaBackground(ctx, w, h, prestigeLevel, now);
+      if (gameState !== "playing" && gameState !== "level_up") {
+        lastVisualDimensionRef.current = null;
+      }
+
+      const visualDimension = resolveVisualDimension({
+        runMode,
+        timeAliveMs: timeAlive * 1000,
+        runStageNumber,
+        prestigeLevel,
+      });
+
+      if (lastVisualDimensionRef.current !== visualDimension) {
+        if (lastVisualDimensionRef.current !== null) {
+          invalidateArenaBackgroundCache();
+          useArenaStore.setState({
+            multiverseRiftStartedAt: now,
+            activeVisualDimension: visualDimension,
+          });
+        } else {
+          useArenaStore.setState({ activeVisualDimension: visualDimension });
+        }
+        lastVisualDimensionRef.current = visualDimension;
+      }
+
+      drawArenaBackground(ctx, w, h, visualDimension, now);
+
+      if (multiverseRiftStartedAt > 0) {
+        const riftProgress =
+          (now - multiverseRiftStartedAt) / MULTIVERSE_RIFT_FLASH_MS;
+        if (riftProgress >= 1) {
+          useArenaStore.setState({ multiverseRiftStartedAt: 0 });
+        } else {
+          drawMultiverseRiftFlash(ctx, w, h, riftProgress);
+        }
+      }
 
       // VFX de skills (gelo / raio / fogo / parry) — opcional por desempenho
       const highParticles =

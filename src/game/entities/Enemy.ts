@@ -1,8 +1,10 @@
 /** Entidade inimigo — atributos, chase, melee, ranged, status e desenho. */
 
 import type { EnemyRewards } from "@/lib/gameConfig";
-import { useGameStore } from "@/store/useGameStore";
+import { resolveVisualDimension } from "@/src/game/multiverseLoop";
 import { drawThemedEnemy } from "@/src/game/entities/EnemyRenderer";
+import { useArenaStore } from "@/store/useArenaStore";
+import { useGameStore } from "@/store/useGameStore";
 
 const EDGE_MARGIN = 24;
 const DEFAULT_HP = 30;
@@ -808,6 +810,13 @@ export class Enemy {
     const quaked = this.hasStatus("quake", now);
     const vulnerable = this.isVulnerable(now);
     const prestige = useGameStore.getState().prestigeLevel ?? 0;
+    const arena = useArenaStore.getState();
+    const visualDimension = resolveVisualDimension({
+      runMode: arena.runMode,
+      timeAliveMs: arena.timeAlive * 1000,
+      runStageNumber: arena.runStageNumber,
+      prestigeLevel: prestige,
+    });
 
     drawThemedEnemy(ctx, {
       x: this.x,
@@ -815,7 +824,7 @@ export class Enemy {
       radius: this.radius,
       type: this.type,
       hpPercent,
-      prestigeLevel: prestige,
+      visualDimension,
       now,
       isAttacking: this.isAttacking,
       frozen,
