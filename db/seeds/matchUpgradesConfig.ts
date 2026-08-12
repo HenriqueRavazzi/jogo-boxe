@@ -29,7 +29,7 @@ export const MATCH_GLOBALS_SEED: MatchGlobalsSeed = {
   mitigationBonusPerTier: 0.02,
   skillLevelCap: 8,
   baseActiveRunSkills: 2,
-  specialSkillCardChance: 0.15,
+  specialSkillCardChance: 0.25,
   maxLuckBonus: 0.15,
   luckPerMinute: 0.03,
   luckPerFiveLevels: 0.025,
@@ -92,20 +92,6 @@ export const MATCH_STAT_CARD_SEEDS = [
     name: "Skill Damage",
     short: "Dano das Skills",
     sortOrder: 6,
-  },
-  {
-    category: "range",
-    upgradeType: "attackRange",
-    name: "Range",
-    short: "Alcance",
-    sortOrder: 7,
-  },
-  {
-    category: "knockback",
-    upgradeType: "knockbackMultiplier",
-    name: "Knockback",
-    short: "Knockback",
-    sortOrder: 8,
   },
 ] as const;
 

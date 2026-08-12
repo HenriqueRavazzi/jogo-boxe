@@ -297,19 +297,10 @@ const STAT_UPGRADE_POOL: {
     name: "Skill Damage",
     short: "Dano das Skills",
   },
-  {
-    type: "attackRange",
-    category: "range",
-    name: "Range",
-    short: "Alcance",
-  },
-  {
-    type: "knockbackMultiplier",
-    category: "knockback",
-    name: "Knockback",
-    short: "Knockback",
-  },
 ];
+
+/** Alcance só no upgrade de ouro (10 lv); knockback não entra na roleta. */
+const RETIRED_STAT_CATEGORIES = new Set<StatCategory>(["range", "knockback"]);
 
 const SPECIAL_SKILL_POOL: {
   type: SpecialSkillKey;
@@ -384,16 +375,22 @@ function getStatUpgradePool() {
         short: row.displayName,
       });
     }
-    if (byCategory.size > 0) return [...byCategory.values()];
+    if (byCategory.size > 0) {
+      return [...byCategory.values()].filter(
+        (p) => !RETIRED_STAT_CATEGORIES.has(p.category),
+      );
+    }
   }
   const cards = getMatchStatCards();
   if (cards.length === 0) return STAT_UPGRADE_POOL;
-  return cards.map((c) => ({
-    type: c.upgradeType as UpgradeType,
-    category: c.category as StatCategory,
-    name: c.name,
-    short: c.short,
-  }));
+  return cards
+    .map((c) => ({
+      type: c.upgradeType as UpgradeType,
+      category: c.category as StatCategory,
+      name: c.name,
+      short: c.short,
+    }))
+    .filter((p) => !RETIRED_STAT_CATEGORIES.has(p.category));
 }
 
 function getSpecialSkillPool() {
@@ -424,19 +421,20 @@ export function isSpecialSkillType(type: UpgradeType): type is SpecialSkillKey {
 
 /**
  * Teto duro in-run das skills especiais (cartas de level-up).
- * Meta roxa ainda influencia até este limite: `min(8, 1 + metaCap)`.
+ * Piso 5 mesmo sem meta roxa — senão a roleta some no Lv.1–2.
+ * Meta alta ainda sobe até `skillLevelCap` (8).
  */
 export const MATCH_SKILL_LEVEL_CAP = 8;
+/** Mínimo de níveis in-run por skill, independente do investimento roxo. */
+export const MATCH_SKILL_LEVEL_FLOOR = 5;
 
 /**
- * Teto in-run: 1 (após desbloqueio) + níveis meta com Diamantes Roxos,
- * limitado a MATCH_SKILL_LEVEL_CAP.
+ * Teto in-run: no mínimo FLOOR, no máximo `1 + meta` limitado ao cap global.
  */
 export function getMatchSkillMaxLevel(metaSkillLevel: number): number {
-  return Math.min(
-    getMatchGlobals().skillLevelCap,
-    1 + Math.max(0, Math.floor(metaSkillLevel)),
-  );
+  const cap = getMatchGlobals().skillLevelCap;
+  const fromMeta = 1 + Math.max(0, Math.floor(metaSkillLevel));
+  return Math.min(cap, Math.max(MATCH_SKILL_LEVEL_FLOOR, fromMeta));
 }
 
 export function canOfferSpecialSkill(
@@ -781,7 +779,7 @@ export const RARITY_STYLES: Record<
 /**
  * Chance por slot de oferecer uma skill especial (desbloqueada e ainda upável).
  */
-export const SPECIAL_SKILL_CARD_CHANCE = 0.15;
+export const SPECIAL_SKILL_CARD_CHANCE = 0.25;
 
 /** Quais categorias de status ainda podem aparecer na roleta. */
 export function getEligibleStatCategories(ctx?: {
@@ -797,8 +795,8 @@ export function getEligibleStatCategories(ctx?: {
   /** True se o jogador já tem ≥1 skill especial ativa na run. */
   hasActiveSkill?: boolean;
 }): StatCategory[] {
-  void ctx?.effectiveRange;
   return getStatUpgradePool().map((p) => p.category).filter((category) => {
+    if (RETIRED_STAT_CATEGORIES.has(category)) return false;
     if (category === "skillDamage" && !ctx?.hasActiveSkill) {
       return false;
     }
@@ -859,7 +857,7 @@ function canAcceptUpgradeCard(
 
 /**
  * Gera N cartas com raridade ponderada (pity por tempo/nível).
- * Por slot: 15% tenta skill especial elegível; senão, upgrade de status.
+ * Por slot: 25% tenta skill especial elegível; senão, upgrade de status.
  * No máx. getMaxActiveRunSkills skills novas por run — depois só upgrades delas.
  * Nunca repete a mesma categoria/`type` na mesma tela.
  */

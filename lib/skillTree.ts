@@ -508,7 +508,7 @@ export const SKILL_FORTUNE_CARD_CHANCE_BONUS = 0.2;
 /** Chance de oferecer 5 cartas no level-up com Skill Fortune. */
 export const SKILL_FORTUNE_EXTRA_OPTION_CHANCE = 0.4;
 
-/** Chance efetiva de tentar skill especial por slot (base 15% + fortuna). */
+/** Chance efetiva de tentar skill especial por slot (base 25% + fortuna). */
 export function getSpecialSkillCardChance(
   skillTree: SkillTreeState,
   baseChance: number,

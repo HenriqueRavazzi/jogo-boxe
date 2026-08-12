@@ -688,10 +688,10 @@ export function getMetaTreeCostAt(
 }
 
 /**
- * Margem meta vs in-game: ouro cobre só parte do caminho até o hard cap;
- * o restante fica reservado aos cards de level-up na arena.
+ * Margem meta vs in-game: ouro cobre o caminho até o hard cap de alcance
+ * (cartas in-run de range foram removidas).
  */
-export const META_PROGRESS_SHARE = 0.65;
+export const META_PROGRESS_SHARE = 1;
 /** Attack speed meta mais fraco — exige cartas in-run para chegar perto do teto. */
 export const META_ATTACK_SPEED_SHARE = 0.4;
 
@@ -812,7 +812,8 @@ export function getMetaTreeMaxLevel(type: MetaTreeUpgradeType): number {
 const MAX_STAT_LEVEL = MAX_UPGRADE_LEVELS.attackSpeed;
 
 const ATTACK_SPEED_COST_BASE = 60;
-const RANGE_COST_BASE = 60;
+const RANGE_COST_BASE = 150;
+const RANGE_COST_GROWTH = 1.5;
 const KNOCKBACK_COST_BASE = 55;
 const KNOCKBACK_POWER_PER_LEVEL = 2;
 const CRIT_CHANCE_BASE = 0.05;
@@ -1097,7 +1098,7 @@ function skillAttackSpeedMultiplier(tree: SkillTreeState): number {
 export const MIN_ATTACK_COOLDOWN_MS = 50;
 /** Referência de design do “chão” de CD para a fatia meta (ouro). */
 export const ATTACK_COOLDOWN_DESIGN_FLOOR_MS = 300;
-/** Teto duro de alcance (px) — hard cap absoluto / cartas in-run. */
+/** Teto duro de alcance (px) — hard cap absoluto. */
 export const MAX_ATTACK_RANGE = 650;
 
 /**
@@ -1112,8 +1113,8 @@ export function getMetaMaxCooldownMs(
 }
 
 /**
- * Teto de meta-progresso (ouro) para range: só 65% do caminho até 650px.
- * Ex.: base 200 → meta ceil = 200 + 400×0.65 = 460px.
+ * Teto de meta-progresso (ouro) para range: os 10 níveis cobrem até o hard cap.
+ * Ex.: base 100 → 650px no Lv.10 (~+55px por nível).
  */
 export function getMetaMaxRangePx(
   baseRange = FALLBACK_GAME_SETTINGS.baseRange,
@@ -1139,8 +1140,7 @@ export function cooldownAtLevel(
 }
 
 /**
- * Range só com upgrades de ouro (sem cards in-game).
- * Interpola linearmente até o teto meta (65%); hard cap 600px fica para a arena.
+ * Range só com upgrades de ouro (10 níveis até o hard cap).
  */
 export function rangeAtLevel(
   level: number,
@@ -2199,7 +2199,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     ),
 
   getRangeUpgradeCost: () =>
-    getUpgradeCost(RANGE_COST_BASE, get().rangeLevel, get().prestigeLevel),
+    getUpgradeCost(
+      RANGE_COST_BASE,
+      get().rangeLevel,
+      get().prestigeLevel,
+      RANGE_COST_GROWTH,
+    ),
 
   getIncomeUpgradeCost: () => {
     return getUpgradeCost(
@@ -2277,8 +2282,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return xpBonusCostAt(level, get().prestigeLevel);
   },
 
-  getXpMultiplier: () =>
-    xpMultiplierAt(get().xpBonusLevel) * get().getPrestigeMultiplier(),
+  getXpMultiplier: () => xpMultiplierAt(get().xpBonusLevel),
 
   getMetaTreeUpgradeCost: (type) =>
     getMetaTreeCostAt(
@@ -2398,9 +2402,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ),
       ),
       xpMultiplier:
-        xpMultiplierAt(s.xpBonusLevel) *
-        prestigeMul *
-        (1 + team.xpMultiplierBonus),
+        xpMultiplierAt(s.xpBonusLevel) * (1 + team.xpMultiplierBonus),
       arms: s.arms + getSkillExtraArms(tree) + getExtraArmsBonus(s.ascensionPassives.extraArms),
       lifeStealLevel,
       lifeStealPercent:
@@ -2531,7 +2533,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         startLevel: s.rangeLevel,
         gold,
         quantity,
-        getCostAt: (lv) => getUpgradeCost(RANGE_COST_BASE, lv, prestige),
+        getCostAt: (lv) =>
+          getUpgradeCost(RANGE_COST_BASE, lv, prestige, RANGE_COST_GROWTH),
         canBuyAt: (lv) => {
           if (lv >= MAX_UPGRADE_LEVELS.range) return false;
           const cur = rangeAtLevel(lv, s.baseConfig.baseRange);

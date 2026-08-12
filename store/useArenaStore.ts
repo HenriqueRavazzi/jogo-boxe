@@ -65,7 +65,7 @@ import type { ShadowCloneState } from "@/src/game/systems/ShadowCloneSystem";
 import type { RicochetPathEffect } from "@/src/game/systems/CombatSystem";
 import { PUNCH_DURATION_MS } from "@/src/game/systems/CombatSystem";
 import type { Drop } from "@/src/game/systems/LootSystem";
-import { useGameStore } from "@/store/useGameStore";
+import { getXpMultiplier, useGameStore } from "@/store/useGameStore";
 import type { EnemyRewards } from "@/lib/gameConfig";
 import {
   getStageDef,
@@ -410,10 +410,12 @@ const DEFAULT_ENEMY_HP = 30;
 const DEFAULT_ENEMY_SPEED = 55;
 const GOLD_PER_KILL = 10;
 const XP_PER_KILL = 25;
-/** Cada nível in-run multiplica o XP de kills por este fator (Lv.1 = ×1). */
-const MATCH_LEVEL_XP_GROWTH = 1.4;
-const CONTACT_DAMAGE = 20;
-const BASE_XP_TO_LEVEL = 100;
+/** Custo do 1º nível in-run. */
+const BASE_XP_TO_LEVEL = 80;
+/** Custo do próximo nível (80, 102, 131…). */
+const XP_TO_NEXT_GROWTH = 1.28;
+/** XP acumulado no máximo ~1 nível extra (evita fila de cartas). */
+const XP_OVERFLOW_LEVELS = 1;
 /** Tempo (s) para o jogador escolher uma carta antes da auto-seleção. */
 const LEVEL_UP_TIMEOUT_SEC = 45;
 
@@ -1020,32 +1022,32 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       state.runMode === "endless"
         ? getEndlessXpMultiplier(state.timeAlive)
         : 1;
-    const matchLevelMul = Math.pow(
-      MATCH_LEVEL_XP_GROWTH,
-      Math.max(0, state.matchLevel - 1),
-    );
-    const finalXp = Math.round(
-      baseAmount *
-        useGameStore.getState().getEffectiveStats().xpMultiplier *
-        endlessMul *
-        matchLevelMul,
-    );
+    const game = useGameStore.getState();
+    const matchXpMul =
+      getXpMultiplier(game.xpBonusLevel) *
+      (1 + game.getEquippedTeamBuffs().xpMultiplierBonus);
+    const finalXp = Math.round(baseAmount * matchXpMul * endlessMul);
 
-    // Durante level_up, só acumula XP sem subir de novo
+    const overflowCap =
+      state.xpToNextLevel * (1 + XP_OVERFLOW_LEVELS);
+
+    // Durante level_up, só acumula XP sem subir de novo (com teto de overflow)
     if (state.gameState === "level_up") {
-      set({ currentXp: state.currentXp + finalXp });
+      set({
+        currentXp: Math.min(overflowCap, state.currentXp + finalXp),
+      });
       return;
     }
 
-    let xp = state.currentXp + finalXp;
+    let xp = Math.min(overflowCap, state.currentXp + finalXp);
     let nextReq = state.xpToNextLevel;
     let level = state.matchLevel;
 
     if (xp >= nextReq) {
       xp -= nextReq;
       level += 1;
-      nextReq = Math.floor(nextReq * 1.5);
-      enterLevelUp(set, get, xp, nextReq, level);
+      nextReq = Math.max(nextReq + 1, Math.floor(nextReq * XP_TO_NEXT_GROWTH));
+      enterLevelUp(set, get, Math.min(nextReq * XP_OVERFLOW_LEVELS, xp), nextReq, level);
       return;
     }
 
@@ -1241,14 +1243,15 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     // Se ainda houver XP sobrando para outro nível, abre o próximo card pack
     const { currentXp, xpToNextLevel, matchLevel } = get();
     if (currentXp >= xpToNextLevel) {
-      const remainder = currentXp - xpToNextLevel;
-      enterLevelUp(
-        set,
-        get,
-        remainder,
-        Math.floor(xpToNextLevel * 1.5),
-        matchLevel + 1,
+      const nextReq = Math.max(
+        xpToNextLevel + 1,
+        Math.floor(xpToNextLevel * XP_TO_NEXT_GROWTH),
       );
+      const remainder = Math.min(
+        nextReq * XP_OVERFLOW_LEVELS,
+        currentXp - xpToNextLevel,
+      );
+      enterLevelUp(set, get, remainder, nextReq, matchLevel + 1);
     }
   },
 

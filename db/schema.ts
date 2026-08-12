@@ -151,7 +151,7 @@ export const SKILL_STAT_KEYS = {
 /** Teto permanente de cada atributo granular (Diamantes Roxos). */
 export const MAX_PURPLE_SKILL_STAT_LEVEL = 20;
 
-/** Teto in-run derivado do meta (maior atributo); limitado a 8 na roleta. */
+/** Teto in-run: piso 5 (roleta), até 8; meta roxa só empurra o teto. */
 export function getSkillMetaCap(
   skill: SkillsData[SkillUpgradeType] | number | undefined,
 ): number {
@@ -602,7 +602,7 @@ export const gameMatchGlobals = pgTable("game_match_globals", {
   baseActiveRunSkills: integer("base_active_run_skills").notNull().default(2),
   specialSkillCardChance: real("special_skill_card_chance")
     .notNull()
-    .default(0.15),
+    .default(0.25),
   maxLuckBonus: real("max_luck_bonus").notNull().default(0.15),
   luckPerMinute: real("luck_per_minute").notNull().default(0.03),
   luckPerFiveLevels: real("luck_per_five_levels").notNull().default(0.025),

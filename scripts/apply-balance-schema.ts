@@ -85,7 +85,7 @@ const STATEMENTS = [
     mitigation_bonus_per_tier real NOT NULL DEFAULT 0.02,
     skill_level_cap integer NOT NULL DEFAULT 8,
     base_active_run_skills integer NOT NULL DEFAULT 2,
-    special_skill_card_chance real NOT NULL DEFAULT 0.15,
+    special_skill_card_chance real NOT NULL DEFAULT 0.25,
     max_luck_bonus real NOT NULL DEFAULT 0.15,
     luck_per_minute real NOT NULL DEFAULT 0.03,
     luck_per_five_levels real NOT NULL DEFAULT 0.025

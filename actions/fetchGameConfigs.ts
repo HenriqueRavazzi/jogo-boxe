@@ -228,7 +228,7 @@ function mapMatchUpgrades(
           mitigationBonusPerTier: g.mitigationBonusPerTier ?? 0.02,
           skillLevelCap: g.skillLevelCap,
           baseActiveRunSkills: g.baseActiveRunSkills,
-          specialSkillCardChance: g.specialSkillCardChance,
+          specialSkillCardChance: g.specialSkillCardChance ?? 0.25,
           maxLuckBonus: g.maxLuckBonus,
           luckPerMinute: g.luckPerMinute,
           luckPerFiveLevels: g.luckPerFiveLevels,

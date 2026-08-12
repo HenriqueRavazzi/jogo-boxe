@@ -104,12 +104,14 @@ export function getEnemyPowerMultiplier(timeAliveSeconds: number): number {
 }
 
 /**
- * Bônus de XP no Endless por ciclo de densidade (30s).
- * Ex.: 0.18 → +18% XP a cada 30s vivos.
+ * Bônus de XP no Endless por ciclo de densidade (30s), após o grace.
+ * Ex.: 0.1 → +10% XP a cada 30s vivos.
  */
-export const ENDLESS_XP_BONUS_PER_CYCLE = 0.18;
+export const ENDLESS_XP_BONUS_PER_CYCLE = 0.1;
 /** Teto do multiplicador de XP por ciclo (antes do marco de tempo). */
-export const ENDLESS_XP_MULTIPLIER_CAP = 12;
+export const ENDLESS_XP_MULTIPLIER_CAP = 4;
+/** Ciclos de 30s ignorados no bônus de XP (2 min de ramp sem extra). */
+const ENDLESS_XP_GRACE_CYCLES = 4;
 
 /**
  * Marco extra de XP no Endless:
@@ -122,9 +124,10 @@ export const ENDLESS_XP_BONUS_INTERVAL_SECONDS = 5 * 60;
 /** Multiplicador só do ramp por ciclo de 30s (1…cap). */
 export function getEndlessXpCycleMultiplier(timeAliveSeconds: number): number {
   const cycles = getScalingCycle(timeAliveSeconds);
+  const xpCycles = Math.max(0, cycles - ENDLESS_XP_GRACE_CYCLES);
   return Math.min(
     ENDLESS_XP_MULTIPLIER_CAP,
-    1 + Math.max(0, cycles) * ENDLESS_XP_BONUS_PER_CYCLE,
+    1 + xpCycles * ENDLESS_XP_BONUS_PER_CYCLE,
   );
 }
 
@@ -500,11 +503,12 @@ function spawnFromConfig(
     0,
     useGameStore.getState().prestigeLevel ?? 0,
   );
-  const rewardScale = Math.pow(1.3, prestigeLevel);
+  const goldScale = Math.pow(1.3, prestigeLevel);
   const rewards = {
     ...baseRewards,
-    xpReward: Math.max(1, Math.round(baseRewards.xpReward * rewardScale)),
-    goldReward: Number((baseRewards.goldReward * rewardScale).toFixed(2)),
+    // XP in-run não escala com prestígio — senão cada kill vira um level.
+    xpReward: Math.max(1, Math.round(baseRewards.xpReward)),
+    goldReward: Number((baseRewards.goldReward * goldScale).toFixed(2)),
   };
   const enemy = Enemy.spawnAtEdge(canvasWidth, canvasHeight, {
     hp: scaled.hp,

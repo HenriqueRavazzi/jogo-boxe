@@ -876,6 +876,21 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.stroke();
       }
 
+      // Linha de alcance de ataque (por cima da horda)
+      const attackRangePx = Math.max(
+        8,
+        useGameStore.getState().getEffectiveStats().attackRange *
+          (useArenaStore.getState().matchBuffs.attackRange ?? 1),
+      );
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(playerX, playerY, attackRangePx, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(251, 146, 60, 0.55)";
+      ctx.lineWidth = 1.75;
+      ctx.setLineDash([7, 6]);
+      ctx.stroke();
+      ctx.restore();
+
       drawBoxer(playerX, playerY, playerRotation, arms, activeAttacks, now);
 
       ctx.textAlign = "center";

@@ -314,6 +314,14 @@ async function seed() {
         .where(eq(gameMatchStatCards.category, row.category));
     }
   }
+  const retiredStatCategories = ["range", "knockback"] as const;
+  const removedStatCards = await db
+    .delete(gameMatchStatCards)
+    .where(inArray(gameMatchStatCards.category, [...retiredStatCategories]))
+    .returning({ category: gameMatchStatCards.category });
+  for (const row of removedStatCards) {
+    console.log(`[seed] game_match_stat_cards: removido legado "${row.category}"`);
+  }
   console.log("[seed] game_match_stat_cards: sincronizado");
 
   for (const row of MATCH_SKILL_CARD_SEEDS) {
@@ -411,6 +419,16 @@ async function seed() {
           ),
         );
     }
+  }
+  const retiredStatCardIds = ["range", "knockback"] as const;
+  const removedTierCards = await db
+    .delete(gameStatCardsConfig)
+    .where(inArray(gameStatCardsConfig.cardId, [...retiredStatCardIds]))
+    .returning({ cardId: gameStatCardsConfig.cardId });
+  if (removedTierCards.length > 0) {
+    console.log(
+      `[seed] game_stat_cards_config: removidos ${removedTierCards.length} legado(s) range/knockback`,
+    );
   }
   console.log("[seed] game_stat_cards_config: sincronizado");
 

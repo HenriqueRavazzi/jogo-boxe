@@ -111,18 +111,4 @@ export const STAT_CARDS_CONFIG_SEEDS: StatCardConfigSeed[] = [
     category: "skillDamage",
     sortOrder: 6,
   }),
-  ...expandCard({
-    cardId: "range",
-    displayName: "Alcance",
-    upgradeType: "attackRange",
-    category: "range",
-    sortOrder: 7,
-  }),
-  ...expandCard({
-    cardId: "knockback",
-    displayName: "Knockback",
-    upgradeType: "knockbackMultiplier",
-    category: "knockback",
-    sortOrder: 8,
-  }),
 ];

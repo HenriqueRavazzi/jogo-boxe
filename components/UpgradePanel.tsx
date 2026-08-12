@@ -146,7 +146,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         }
         subtitle={
           rangeAtMax
-            ? `MÁXIMO meta (${metaRangeCeil}px · 65%)`
+            ? `MÁXIMO (${metaRangeCeil}px)`
             : `Nível ${rangeLevel}/${MAX_UPGRADE_LEVELS.range}`
         }
         plan={planFor("range")}
