@@ -5,7 +5,7 @@
  */
 
 import "dotenv/config";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   difficulties,
@@ -101,6 +101,13 @@ async function seed() {
       .where(eq(gameSettings.id, existingSettings[0]!.id));
     console.log("[seed] game_settings: atualizado");
   }
+
+  await db.execute(sql`
+    SELECT setval(
+      pg_get_serial_sequence('difficulties', 'id'),
+      COALESCE((SELECT MAX(id) FROM difficulties), 1)
+    )
+  `);
 
   for (const row of DIFFICULTY_ROWS) {
     const found = await db

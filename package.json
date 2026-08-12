@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
+    "db:push-balance": "npx tsx scripts/apply-balance-schema.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "npx tsx scripts/seed-game-config.ts"
   },
