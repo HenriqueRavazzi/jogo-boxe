@@ -76,6 +76,8 @@ export type MatchBuffsInput = {
   attackSpeed: number;
   attackRange: number;
   damageMultiplier: number;
+  damageTakenMultiplier?: number;
+  thornsReflectRatio?: number;
   critDamageMultiplier?: number;
   /** Bônus aditivo in-run de chance crítica (0–1). */
   critChanceBonus?: number;
@@ -131,6 +133,7 @@ export type EnemyProjectile = {
   vy: number;
   damage: number;
   radius: number;
+  sourceEnemyId?: string;
 };
 
 export type CombatSystemInput = {
@@ -412,6 +415,10 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const damageTakenMul =
     getSkillDamageTakenMultiplier(gameState.skillTree) *
     teamBuffs.damageTakenMultiplier;
+  const thornsReflectRatio = Math.min(
+    0.3,
+    Math.max(0, matchBuffs.thornsReflectRatio ?? 0),
+  );
   const parryChance = Math.min(
     0.2,
     getMetaParryChance(gameState.metaParryChance) *
@@ -490,6 +497,14 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     }
     if (ricochetWindowActive) {
       milestoneEvents.push({ type: "kill_with_ricochet", amount: 1 });
+    }
+  };
+  const applyThorns = (attacker: Enemy, takenDamage: number) => {
+    if (thornsReflectRatio <= 0 || takenDamage <= 0 || attacker.isDead) return;
+    const reflected = Math.max(1, takenDamage * thornsReflectRatio);
+    damageDealt += reflected;
+    if (attacker.takeDamage(reflected, now)) {
+      pushKill(attacker);
     }
   };
 
@@ -815,7 +830,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
   // Melee: inimigos encostados formam horda e batem periodicamente (não morrem no contato)
   let meleeDamageDealt = 0;
-  let cloneMeleeDamage = new Map<string, number>();
+  const cloneMeleeDamage = new Map<string, number>();
   for (const enemy of enemies) {
     if (enemy.isDead || enemy.type === "ranged") continue; // ranged só dispara projéteis
     if (enemy.hasStatus("freeze", now)) {
@@ -892,6 +907,11 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           parriesThisFrame += 1;
         } else {
           meleeDamageDealt += damage;
+          const takenDamage =
+            damage *
+            damageTakenMul *
+            (matchBuffs.damageTakenMultiplier ?? 1);
+          applyThorns(enemy, takenDamage);
         }
       }
     } else {
@@ -983,7 +1003,14 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       if (Math.random() < parryChance) {
         parriesThisFrame += 1;
       } else {
-        player.takeDamage(p.damage * damageTakenMul);
+        const incoming = p.damage * damageTakenMul;
+        player.takeDamage(incoming);
+        const attacker = p.sourceEnemyId
+          ? enemies.find((e) => e.id === p.sourceEnemyId) ?? null
+          : null;
+        if (attacker) {
+          applyThorns(attacker, incoming * (matchBuffs.damageTakenMultiplier ?? 1));
+        }
       }
       continue;
     }
@@ -1073,6 +1100,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       vy: (dy / len) * RANGED_PROJECTILE_SPEED,
       damage,
       radius: RANGED_PROJECTILE_RADIUS,
+      sourceEnemyId: enemy.id,
     });
   }
 

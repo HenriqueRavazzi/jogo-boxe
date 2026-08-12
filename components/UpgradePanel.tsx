@@ -123,8 +123,8 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
     >
       <UpgradeCard
         icon={<HeartPulse className="h-5 w-5 text-rose-400" />}
-        title={`Max HP: ${formatLevelLabel(maxHpLevel, MAX_UPGRADE_LEVELS.hp)}`}
-        subtitle={`HP atual: ${getMaxHp()} · +${hpBonusPct}% (próx. +${hpNextPct}%)`}
+        title={`Max HP: ${getMaxHp()}`}
+        subtitle={`${formatLevelLabel(maxHpLevel, MAX_UPGRADE_LEVELS.hp)} · +${hpBonusPct}% (próx. +${hpNextPct}%)`}
         plan={planFor("hp")}
         atMax={hpAtMax}
         onUpgrade={() => void buy("hp")}

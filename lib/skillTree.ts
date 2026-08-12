@@ -10,6 +10,8 @@ export type SkillNodeId =
   | "node_fortitude"
   | "node_life_steal_3"
   | "node_second_heart"
+  | "node_hemostasis"
+  | "node_guardian_hide"
   | "node_dmg_1"
   | "node_dmg_2"
   | "node_range_focus"
@@ -83,6 +85,8 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_fortitude: false,
   node_life_steal_3: false,
   node_second_heart: false,
+  node_hemostasis: false,
+  node_guardian_hide: false,
   node_dmg_1: false,
   node_dmg_2: false,
   node_range_focus: false,
@@ -200,6 +204,26 @@ export const SKILL_NODES: SkillNodeDef[] = [
     tier: 8,
     accent: "rose",
   },
+  {
+    id: "node_hemostasis",
+    name: "Hemostasis",
+    description: "+1.5% Life Steal",
+    cost: 700_000,
+    requires: ["node_second_heart"],
+    branch: "vitality",
+    tier: 9,
+    accent: "emerald",
+  },
+  {
+    id: "node_guardian_hide",
+    name: "Guardian Hide",
+    description: "−6% dano recebido",
+    cost: 1_150_000,
+    requires: ["node_hemostasis"],
+    branch: "vitality",
+    tier: 10,
+    accent: "silver",
+  },
 
   // ── Power ─────────────────────────────────────────────────
   {
@@ -287,7 +311,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_spark_ignition",
     name: "Spark Ignition",
-    description: "-50ms Attack Cooldown",
+    description: "+5% APS",
     cost: 60,
     requires: [],
     branch: "spark",
@@ -297,7 +321,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_spark_burst",
     name: "Spark Burst",
-    description: "-75ms Attack Cooldown",
+    description: "+8% APS",
     cost: 250,
     requires: ["node_spark_ignition"],
     branch: "spark",
@@ -307,7 +331,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_spark_fury",
     name: "Spark Fury",
-    description: "-100ms Attack Cooldown",
+    description: "+11% APS",
     cost: 800,
     requires: ["node_spark_burst"],
     branch: "spark",
@@ -336,8 +360,8 @@ export const SKILL_NODES: SkillNodeDef[] = [
   },
   {
     id: "node_loot_magnet",
-    name: "Loot Magnet",
-    description: "+30% raio do ímã",
+    name: "Tempo de Combate",
+    description: "+14 Damage · +12% APS",
     cost: 35_000,
     requires: ["node_extra_arm"],
     branch: "spark",
@@ -347,7 +371,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_spark_overdrive",
     name: "Overdrive",
-    description: "-90ms Attack Cooldown",
+    description: "+10% APS",
     cost: 100_000,
     requires: ["node_loot_magnet"],
     branch: "spark",
@@ -357,7 +381,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_haste",
     name: "Haste",
-    description: "-55ms Attack Cooldown",
+    description: "+6% APS",
     cost: 280_000,
     requires: ["node_spark_overdrive"],
     branch: "spark",
@@ -379,7 +403,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_adrenaline",
     name: "Adrenaline",
-    description: "−70ms CD · +1% Life Steal",
+    description: "+8% APS · +1% Life Steal",
     cost: 60_000,
     requires: ["node_spark_fury", "node_life_steal_1"],
     branch: "synergy",
@@ -540,12 +564,13 @@ export function canUnlockSkill(
   return true;
 }
 
-/** Nível de life steal (0–3 base + sinergias) a partir dos nós desbloqueados. */
+/** Nível de life steal (base + sinergias) a partir dos nós desbloqueados. */
 export function getLifeStealLevel(skillTree: SkillTreeState): number {
   let level = 0;
   if (skillTree.node_life_steal_1) level += 1;
   if (skillTree.node_life_steal_2) level += 1;
   if (skillTree.node_life_steal_3) level += 1;
+  if (skillTree.node_hemostasis) level += 1;
   if (skillTree.node_adrenaline) level += 1;
   if (skillTree.node_immortal_champion) level += 1;
   return level;
@@ -557,6 +582,7 @@ export function getLifeStealRatio(skillTree: SkillTreeState): number {
   if (skillTree.node_life_steal_1) percent += LIFE_STEAL_PERCENT_PER_LEVEL;
   if (skillTree.node_life_steal_2) percent += LIFE_STEAL_PERCENT_PER_LEVEL;
   if (skillTree.node_life_steal_3) percent += 1.5;
+  if (skillTree.node_hemostasis) percent += 1.5;
   if (skillTree.node_adrenaline) percent += 1;
   if (skillTree.node_immortal_champion) percent += 1;
   return percent / 100;
@@ -568,6 +594,7 @@ export function getSkillDamageTakenMultiplier(
 ): number {
   let mul = 1;
   if (skillTree.node_thick_skin) mul *= 0.92;
+  if (skillTree.node_guardian_hide) mul *= 0.94;
   if (skillTree.node_immortal_champion) mul *= 0.95;
   return mul;
 }
@@ -601,9 +628,9 @@ export function getSkillExtraArms(skillTree: SkillTreeState): number {
 }
 
 export function getSkillMagnetRadiusMultiplier(
-  skillTree: SkillTreeState,
+  _skillTree: SkillTreeState,
 ): number {
-  return skillTree.node_loot_magnet ? 1.3 : 1;
+  return 1;
 }
 
 /** Bônus flat de HP vindos da árvore (inclui sinergias). */
@@ -625,6 +652,7 @@ export function getSkillTreeDamageBonus(skillTree: SkillTreeState): number {
   if (skillTree.node_dmg_2) bonus += 12;
   if (skillTree.node_dmg_3) bonus += 22;
   if (skillTree.node_relentless) bonus += 18;
+  if (skillTree.node_loot_magnet) bonus += 14;
   if (skillTree.node_berserker) bonus += 20;
   if (skillTree.node_immortal_champion) bonus += 10;
   return bonus;
@@ -638,18 +666,25 @@ export function getSkillTreeRangeBonus(skillTree: SkillTreeState): number {
   return bonus;
 }
 
-/** Redução de cooldown (ms) vindos da árvore. */
-export function getSkillTreeCooldownReduction(
+/** Multiplicador de ataques por segundo vindo da árvore. */
+export function getSkillTreeAttackSpeedMultiplier(
   skillTree: SkillTreeState,
 ): number {
-  let reduction = 0;
-  if (skillTree.node_spark_ignition) reduction += 50;
-  if (skillTree.node_spark_burst) reduction += 75;
-  if (skillTree.node_spark_fury) reduction += 100;
-  if (skillTree.node_spark_overdrive) reduction += 90;
-  if (skillTree.node_haste) reduction += 55;
-  if (skillTree.node_adrenaline) reduction += 70;
-  return reduction;
+  let mul = 1;
+  if (skillTree.node_spark_ignition) mul *= 1.05;
+  if (skillTree.node_spark_burst) mul *= 1.08;
+  if (skillTree.node_spark_fury) mul *= 1.11;
+  if (skillTree.node_loot_magnet) mul *= 1.12;
+  if (skillTree.node_spark_overdrive) mul *= 1.1;
+  if (skillTree.node_haste) mul *= 1.06;
+  if (skillTree.node_adrenaline) mul *= 1.08;
+  return mul;
+}
+
+/** @deprecated Mantido por compatibilidade; prefira APS em multiplicador. */
+export function getSkillTreeCooldownReduction(skillTree: SkillTreeState): number {
+  const mul = getSkillTreeAttackSpeedMultiplier(skillTree);
+  return Math.round(1000 - 1000 / mul);
 }
 
 /** @deprecated Ricochete só via Skills Roxas (`unlockedSkills.ricochet`). */

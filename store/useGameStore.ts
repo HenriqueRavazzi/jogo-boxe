@@ -109,7 +109,7 @@ import {
   getSkillKnockbackBonus,
   getSkillMagnetRadiusMultiplier,
   getSkillNode,
-  getSkillTreeCooldownReduction,
+  getSkillTreeAttackSpeedMultiplier,
   getSkillTreeDamageBonus,
   getSkillTreeHpBonus,
   getSkillTreeRangeBonus,
@@ -1076,8 +1076,8 @@ function skillRangeBonus(tree: SkillTreeState): number {
   return getSkillTreeRangeBonus(tree);
 }
 
-function skillCooldownReduction(tree: SkillTreeState): number {
-  return getSkillTreeCooldownReduction(tree);
+function skillAttackSpeedMultiplier(tree: SkillTreeState): number {
+  return getSkillTreeAttackSpeedMultiplier(tree);
 }
 
 /**
@@ -2316,7 +2316,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const skillHp = skillHpBonus(tree);
     const skillDmg = skillDamageBonus(tree);
     const skillRange = skillRangeBonus(tree);
-    const skillCd = skillCooldownReduction(tree);
+    const skillAsMul = skillAttackSpeedMultiplier(tree);
     const lifeStealLevel = getLifeStealLevel(tree);
     const metaLifeSteal = getMetaLifeStealRatio(s.metaLifeStealLevel);
     const team = calcEquippedTeamBuffs(
@@ -2340,7 +2340,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const prestigeMul = 1 + Math.max(0, s.prestigeLevel) * 0.15;
     const cooldownBeforeTeam = Math.max(
       MIN_ATTACK_COOLDOWN_MS,
-      Math.round(goldCooldown - skillCd * prestigeMul),
+      Math.round(goldCooldown / Math.max(0.1, skillAsMul * prestigeMul)),
     );
 
     // Stats iniciais (ouro + skill tree): recebem Fundação Primordial.
@@ -2418,7 +2418,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         hp: skillHp,
         damage: skillDmg,
         range: skillRange,
-        cooldownReductionMs: skillCd,
+        cooldownReductionMs: Math.max(0, goldCooldown - cooldownBeforeTeam),
       },
     };
   },

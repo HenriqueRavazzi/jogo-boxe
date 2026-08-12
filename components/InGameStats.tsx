@@ -66,7 +66,11 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
 
   const damage = Math.round(stats.damage * matchBuffs.damageMultiplier);
   const range = Math.round(stats.attackRange * matchBuffs.attackRange);
-  const cooldown = Math.round(stats.attackCooldownMs / matchBuffs.attackSpeed);
+  const cooldown = Math.max(
+    1,
+    Math.round(stats.attackCooldownMs / matchBuffs.attackSpeed),
+  );
+  const attacksPerSecond = 1000 / cooldown;
   const xpPct = Math.round((stats.xpMultiplier - 1) * 100);
   const critDamage =
     stats.critDamageMultiplier * (matchBuffs.critDamageMultiplier ?? 1);
@@ -79,6 +83,10 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const skillDamagePct = Math.round(
     ((matchBuffs.skillDamageMultiplier ?? 1) - 1) * 100,
   );
+  const damageReductionPct = Math.round(
+    (1 - (matchBuffs.damageTakenMultiplier ?? 1)) * 100,
+  );
+  const thornsPct = Math.round((matchBuffs.thornsReflectRatio ?? 0) * 100);
   const incomeDisplay = (
     incomeMultiplier * teamBuffs.goldIncomeMultiplier
   ).toFixed(1);
@@ -139,13 +147,21 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
     { label: "HP", value: `${Math.ceil(currentHp)}/${stats.maxHp}` },
     { label: "Dano", value: String(damage) },
     { label: "Braços", value: String(stats.arms) },
-    { label: "Velocidade", value: `${cooldown}ms` },
+    { label: "APS", value: attacksPerSecond.toFixed(2) },
     { label: "Alcance", value: String(range) },
     { label: "Chance Crít.", value: `${critChancePct}%` },
     { label: "Dano Crít.", value: `${critDamage.toFixed(2)}x` },
     {
       label: "Dano Skill",
       value: skillDamagePct > 0 ? `+${skillDamagePct}%` : "0%",
+    },
+    {
+      label: "Redução Dano",
+      value: damageReductionPct > 0 ? `-${damageReductionPct}%` : "0%",
+    },
+    {
+      label: "Espinhos",
+      value: thornsPct > 0 ? `${thornsPct}%` : "0%",
     },
     { label: "XP", value: xpPct > 0 ? `+${xpPct}%` : "0%" },
     { label: "Nível", value: String(matchLevel) },

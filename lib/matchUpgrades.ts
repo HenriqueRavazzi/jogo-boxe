@@ -23,6 +23,14 @@ import {
 export const MATCH_COOLDOWN_UPGRADE_FLOOR = 300;
 /** Teto de chance crítica efetiva in-run (meta + cartas). */
 export const MATCH_CRIT_CHANCE_CAP = 1;
+/** Cap da redução de dano recebido por cartas in-run (30%). */
+export const MATCH_DAMAGE_TAKEN_REDUCTION_CAP = 0.3;
+/** Espinhos: começa a aparecer no Endless após 15min. */
+export const MATCH_THORNS_UNLOCK_TIME_SEC = 15 * 60;
+/** Espinhos: máximo de 3 upgrades por run. */
+export const MATCH_THORNS_MAX_LEVEL = 3;
+/** Espinhos: no máx. 30% do dano recebido refletido. */
+export const MATCH_THORNS_REFLECT_CAP = 0.3;
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
@@ -40,6 +48,8 @@ export type SpecialSkillKey =
 export type UpgradeCategory =
   | "damage"
   | "speed"
+  | "guard"
+  | "thorns"
   | "critDamage"
   | "critChance"
   | "skillDamage"
@@ -49,6 +59,8 @@ export type UpgradeCategory =
 export type UpgradeType =
   | "attackSpeed"
   | "damageMultiplier"
+  | "damageTakenMultiplier"
+  | "thornsReflectRatio"
   | "critDamageMultiplier"
   | "critChanceBonus"
   | "skillDamageMultiplier"
@@ -410,6 +422,8 @@ const RARITY_BONUS: Record<Rarity, number> = {
 type StatCategory =
   | "damage"
   | "speed"
+  | "guard"
+  | "thorns"
   | "critDamage"
   | "critChance"
   | "skillDamage";
@@ -431,6 +445,18 @@ const STAT_UPGRADE_POOL: {
     category: "damage",
     name: "Damage",
     short: "Dano",
+  },
+  {
+    type: "damageTakenMultiplier",
+    category: "guard",
+    name: "Guard",
+    short: "Dano Recebido",
+  },
+  {
+    type: "thornsReflectRatio",
+    category: "thorns",
+    name: "Espinhos",
+    short: "Dano Refletido",
   },
   {
     type: "critDamageMultiplier",
@@ -584,6 +610,14 @@ export type GenerateUpgradeOptionsContext = {
   effectiveCooldownMs?: number;
   /** Chance crítica efetiva atual (meta + cartas in-run), 0–1. */
   effectiveCritChance?: number;
+  /** Multiplicador de dano recebido atual (1 = normal, 0.7 = -30%). */
+  effectiveDamageTakenMultiplier?: number;
+  /** % de dano refletido atual por Espinhos (0..0.3). */
+  effectiveThornsReflectRatio?: number;
+  /** Nível atual de Espinhos (máx. 3). */
+  thornsLevel?: number;
+  /** Em Endless pode aparecer carta de redução de dano recebido. */
+  isEndlessRun?: boolean;
   /** Segundos vivos na run — escala pity de raridade. */
   timeAlive?: number;
   /** Nível atual da arena — escala pity de raridade. */
@@ -695,6 +729,29 @@ function createStatUpgrade(
     STAT_UPGRADE_POOL[0]!;
   const value = RARITY_BONUS[rarity];
   const pct = Math.round(value * 100);
+
+  if (pool.type === "damageTakenMultiplier") {
+    return {
+      id: crypto.randomUUID(),
+      type: pool.type,
+      category: pool.category,
+      value,
+      rarity,
+      label: `-${pct}% ${pool.name}`,
+      description: `-${pct}% ${pool.short}`,
+    };
+  }
+  if (pool.type === "thornsReflectRatio") {
+    return {
+      id: crypto.randomUUID(),
+      type: pool.type,
+      category: pool.category,
+      value,
+      rarity,
+      label: `+${pct}% ${pool.name}`,
+      description: `Reflete ${pct}% do dano recebido`,
+    };
+  }
 
   return {
     id: crypto.randomUUID(),
@@ -810,6 +867,8 @@ export const SPECIAL_SKILL_CARD_CHANCE = 0.15;
 const ALL_STAT_CATEGORIES: StatCategory[] = [
   "damage",
   "speed",
+  "guard",
+  "thorns",
   "critDamage",
   "critChance",
   "skillDamage",
@@ -820,6 +879,11 @@ export function getEligibleStatCategories(ctx?: {
   effectiveRange?: number;
   effectiveCooldownMs?: number;
   effectiveCritChance?: number;
+  effectiveDamageTakenMultiplier?: number;
+  effectiveThornsReflectRatio?: number;
+  thornsLevel?: number;
+  timeAlive?: number;
+  isEndlessRun?: boolean;
   /** True se o jogador já tem ≥1 skill especial ativa na run. */
   hasActiveSkill?: boolean;
 }): StatCategory[] {
@@ -827,6 +891,17 @@ export function getEligibleStatCategories(ctx?: {
   return ALL_STAT_CATEGORIES.filter((category) => {
     if (category === "skillDamage" && !ctx?.hasActiveSkill) {
       return false;
+    }
+    if (category === "guard") {
+      if (!ctx?.isEndlessRun) return false;
+      const reduction = 1 - (ctx?.effectiveDamageTakenMultiplier ?? 1);
+      if (reduction >= MATCH_DAMAGE_TAKEN_REDUCTION_CAP) return false;
+    }
+    if (category === "thorns") {
+      if (!ctx?.isEndlessRun) return false;
+      if ((ctx?.timeAlive ?? 0) < MATCH_THORNS_UNLOCK_TIME_SEC) return false;
+      if ((ctx?.thornsLevel ?? 0) >= MATCH_THORNS_MAX_LEVEL) return false;
+      if ((ctx?.effectiveThornsReflectRatio ?? 0) >= MATCH_THORNS_REFLECT_CAP) return false;
     }
     if (
       category === "speed" &&

@@ -277,6 +277,12 @@ export function normalizeSaveData(
   if (skillTree.node_life_steal_3) {
     skillTree.node_fortitude = true;
   }
+  if (skillTree.node_hemostasis) {
+    skillTree.node_second_heart = true;
+  }
+  if (skillTree.node_guardian_hide) {
+    skillTree.node_hemostasis = true;
+  }
 
   const unlockedSkills = normalizeUnlocked(data.unlockedSkills);
   // Migração: nós removidos da árvore → preserva desbloqueios em Skills Roxas

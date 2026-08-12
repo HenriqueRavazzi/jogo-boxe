@@ -17,6 +17,9 @@ import {
   applySkillBonusDelta,
   createEmptyMatchSkillBonuses,
   generateUpgradeOptions,
+  MATCH_DAMAGE_TAKEN_REDUCTION_CAP,
+  MATCH_THORNS_MAX_LEVEL,
+  MATCH_THORNS_REFLECT_CAP,
   getMatchSkillMaxLevel,
   getMaxActiveRunSkills,
   isSpecialSkillType,
@@ -122,6 +125,7 @@ export type EnemyProjectile = {
   vy: number;
   damage: number;
   radius: number;
+  sourceEnemyId?: string;
 };
 
 export type ActiveAttack = {
@@ -176,6 +180,10 @@ export type MatchBuffs = {
   attackSpeed: number;
   attackRange: number;
   damageMultiplier: number;
+  /** Multiplicador do dano recebido (1 = normal, 0.7 = -30%). */
+  damageTakenMultiplier: number;
+  /** % do dano recebido refletido no atacante (0..0.3). */
+  thornsReflectRatio: number;
   critDamageMultiplier: number;
   /** Bônus aditivo de chance crítica in-run (0–1); soma com o meta até 100%. */
   critChanceBonus: number;
@@ -194,6 +202,8 @@ const DEFAULT_BUFFS: MatchBuffs = {
   attackSpeed: 1,
   attackRange: 1,
   damageMultiplier: 1,
+  damageTakenMultiplier: 1,
+  thornsReflectRatio: 0,
   critDamageMultiplier: 1,
   critChanceBonus: 0,
   skillDamageMultiplier: 1,
@@ -242,6 +252,8 @@ export type ArenaStoreState = {
   currentXp: number;
   xpToNextLevel: number;
   matchLevel: number;
+  /** Nível da carta Espinhos nesta run (máx. 3). */
+  thornsLevel: number;
   matchBuffs: MatchBuffs;
   /**
    * Níveis de skills especiais ativos nesta run (começa em 0).
@@ -463,6 +475,8 @@ function getQuestEconomyContext(
 function rollLevelUpOptions(
   matchSkills: MatchSkillsData,
   matchBuffs: MatchBuffs,
+  runMode: RunMode,
+  thornsLevel: number,
   activeRunSkills: SpecialSkillKey[],
   timeAlive: number,
   matchLevel: number,
@@ -486,6 +500,10 @@ function rollLevelUpOptions(
       MATCH_CRIT_CHANCE_CAP,
       game.getCritChance() + (matchBuffs.critChanceBonus ?? 0),
     ),
+    effectiveDamageTakenMultiplier: matchBuffs.damageTakenMultiplier,
+    effectiveThornsReflectRatio: matchBuffs.thornsReflectRatio,
+    thornsLevel,
+    isEndlessRun: runMode === "endless",
     timeAlive,
     matchLevel,
     skillMasteryUnlocked: game.skillMasteryUnlocked,
@@ -522,6 +540,8 @@ function enterLevelUp(
     levelUpOptions: rollLevelUpOptions(
       state.matchSkills,
       state.matchBuffs,
+      state.runMode,
+      state.thornsLevel,
       state.activeRunSkills,
       state.timeAlive,
       matchLevel,
@@ -551,6 +571,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   currentXp: 0,
   xpToNextLevel: BASE_XP_TO_LEVEL,
   matchLevel: 1,
+  thornsLevel: 0,
   matchBuffs: { ...DEFAULT_BUFFS },
   matchSkills: { ...DEFAULT_MATCH_SKILLS },
   matchSkillBonuses: createEmptyMatchSkillBonuses(),
@@ -622,6 +643,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
+      thornsLevel: 0,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
@@ -760,6 +782,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
+      thornsLevel: 0,
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
@@ -1124,6 +1147,61 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
             levelUpDeadlineAt: null,
           };
         }
+        if (upgradeType === "damageTakenMultiplier") {
+          const currentReduction = 1 - (s.matchBuffs.damageTakenMultiplier ?? 1);
+          const room = Math.max(
+            0,
+            MATCH_DAMAGE_TAKEN_REDUCTION_CAP - currentReduction,
+          );
+          const added = Math.min(Math.max(0, value), room);
+          return {
+            matchBuffs: {
+              ...s.matchBuffs,
+              damageTakenMultiplier:
+                (s.matchBuffs.damageTakenMultiplier ?? 1) * (1 - added),
+            },
+            gameState: "playing" as const,
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+          };
+        }
+        if (upgradeType === "thornsReflectRatio") {
+          if (s.thornsLevel >= MATCH_THORNS_MAX_LEVEL) {
+            return {
+              gameState: "playing" as const,
+              levelUpOptions: [],
+              isPausedForLevelUp: false,
+              levelUpTimeRemaining: 0,
+              levelUpDeadlineAt: null,
+            };
+          }
+          const current = s.matchBuffs.thornsReflectRatio ?? 0;
+          const room = Math.max(0, MATCH_THORNS_REFLECT_CAP - current);
+          const added = Math.min(Math.max(0, value), room);
+          if (added <= 0) {
+            return {
+              gameState: "playing" as const,
+              levelUpOptions: [],
+              isPausedForLevelUp: false,
+              levelUpTimeRemaining: 0,
+              levelUpDeadlineAt: null,
+            };
+          }
+          return {
+            thornsLevel: Math.min(MATCH_THORNS_MAX_LEVEL, s.thornsLevel + 1),
+            matchBuffs: {
+              ...s.matchBuffs,
+              thornsReflectRatio: current + added,
+            },
+            gameState: "playing" as const,
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+          };
+        }
         return {
           matchBuffs: {
             ...s.matchBuffs,
@@ -1197,7 +1275,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   setCurrentHp: (hp) => set({ currentHp: Math.max(0, hp) }),
 
   takeDamage: (amount) => {
-    const nextHp = Math.max(0, get().currentHp - amount);
+    const reduced = amount * (get().matchBuffs.damageTakenMultiplier ?? 1);
+    const nextHp = Math.max(0, get().currentHp - reduced);
 
     if (nextHp <= 0) {
       set({ currentHp: 0, enemies: [] });
@@ -1438,6 +1517,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       currentXp: 0,
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
+      thornsLevel: 0,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
