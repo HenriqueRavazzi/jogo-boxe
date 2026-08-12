@@ -53,7 +53,10 @@ import {
 } from "@/lib/advancedSkillUnlock";
 import {
   FALLBACK_BALANCE_CONFIG,
+  getArmsUpgradeConfig,
+  getMaxAttackRangePx,
   getUpgradeCostParams,
+  getUpgradeEffectParam,
   setBalanceConfig,
   type BalanceConfigBundle,
 } from "@/lib/balanceConfig";
@@ -546,10 +549,10 @@ const UPGRADE_COST_BASE = 50;
 const COMBAT_UPGRADE_COST_BASE = 40;
 const COMBAT_UPGRADE_COST_GROWTH = 1.05;
 const INCOME_COST_BASE = 75;
-const ARMS_COST_GROWTH = 1.2;
-const ARMS_PRESTIGE_DAMAGE = 1.15;
-const ARMS_MAX = 6;
-const ARMS_MIN = 2;
+
+function readArmsConfig() {
+  return getArmsUpgradeConfig();
+}
 
 /** Crescimento de custo meta (ouro/diamantes) na fase inicial. */
 export const UPGRADE_COST_GROWTH = 1.2;
@@ -1052,13 +1055,14 @@ export function getCritDamageCostAt(level: number, prestigeLevel = 0): number {
   return getUpgradeCost(CRIT_DAMAGE_COST_BASE, level, prestigeLevel);
 }
 
-/** Multiplicador de XP: nível 0 = 1.0, nível 1 = 1.1, … (+10% por nível). */
+/** Multiplicador de XP in-run (diamantes): lê `xp_per_level` do Neon. */
 export function getXpMultiplier(level: number): number {
   const capped = Math.min(
     MAX_UPGRADE_LEVELS.xpBonus,
     Math.max(0, Math.floor(level)),
   );
-  return 1 + capped * 0.1;
+  const perLevel = getUpgradeEffectParam("xp_bonus", "xp_per_level", 0.08);
+  return 1 + capped * perLevel;
 }
 
 export function getXpBonusCostAt(level: number, prestigeLevel = 0): number {
@@ -1098,8 +1102,8 @@ function skillAttackSpeedMultiplier(tree: SkillTreeState): number {
 export const MIN_ATTACK_COOLDOWN_MS = 50;
 /** Referência de design do “chão” de CD para a fatia meta (ouro). */
 export const ATTACK_COOLDOWN_DESIGN_FLOOR_MS = 300;
-/** Teto duro de alcance (px) — hard cap absoluto. */
-export const MAX_ATTACK_RANGE = 650;
+/** @deprecated Prefer getMaxAttackRangePx() após load do balanceamento. */
+export const MAX_ATTACK_RANGE = 450;
 
 /**
  * Teto de meta-progresso (ouro) para CD: só 40% do caminho até o design floor.
@@ -1114,12 +1118,13 @@ export function getMetaMaxCooldownMs(
 
 /**
  * Teto de meta-progresso (ouro) para range: os 10 níveis cobrem até o hard cap.
- * Ex.: base 100 → 650px no Lv.10 (~+55px por nível).
+ * Ex.: base 100 → 450px no Lv.10 (~+35px por nível).
  */
 export function getMetaMaxRangePx(
   baseRange = FALLBACK_GAME_SETTINGS.baseRange,
 ): number {
-  const span = Math.max(0, MAX_ATTACK_RANGE - baseRange);
+  const cap = getMaxAttackRangePx();
+  const span = Math.max(0, cap - baseRange);
   return Math.round(baseRange + span * META_PROGRESS_SHARE);
 }
 
@@ -2198,13 +2203,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       get().prestigeLevel,
     ),
 
-  getRangeUpgradeCost: () =>
-    getUpgradeCost(
-      RANGE_COST_BASE,
+  getRangeUpgradeCost: () => {
+    const range = getUpgradeCostParams("range", RANGE_COST_BASE, RANGE_COST_GROWTH);
+    return getUpgradeCost(
+      range.costBase,
       get().rangeLevel,
       get().prestigeLevel,
-      RANGE_COST_GROWTH,
-    ),
+      range.growthRate,
+    );
+  },
 
   getIncomeUpgradeCost: () => {
     return getUpgradeCost(
@@ -2391,7 +2398,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           (startingStatsMul + metaDmgMul - 1),
       ),
       attackRange: Math.min(
-        MAX_ATTACK_RANGE,
+        getMaxAttackRangePx(),
         Math.round(goldRange + skillRange * prestigeMul),
       ),
       attackCooldownMs: Math.max(
@@ -2403,7 +2410,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ),
       xpMultiplier:
         xpMultiplierAt(s.xpBonusLevel) * (1 + team.xpMultiplierBonus),
-      arms: s.arms + getSkillExtraArms(tree) + getExtraArmsBonus(s.ascensionPassives.extraArms),
+      arms: Math.min(
+        readArmsConfig().maxTotalArms,
+        s.arms +
+          getSkillExtraArms(tree) +
+          getExtraArmsBonus(s.ascensionPassives.extraArms),
+      ),
       lifeStealLevel,
       lifeStealPercent:
         (getLifeStealRatio(tree) + metaLifeSteal) * prestigeMul,
@@ -2474,10 +2486,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const gold = s.gold;
 
     if (kind === "arms") {
+      const cfg = readArmsConfig();
       const wanted = resolveBulkWanted(quantity);
       let count = 0;
       let totalCost = 0;
       let stored = s.armsNextCost;
+      let arms = s.arms;
       const nextCost = Math.max(
         1,
         Math.floor(stored * getPrestigeCostMultiplier(prestige)),
@@ -2489,7 +2503,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         );
         if (totalCost + cost > gold) break;
         totalCost += cost;
-        stored = Math.floor(stored * ARMS_COST_GROWTH);
+        if (arms < cfg.maxGoldArms) {
+          arms += 1;
+          stored = Math.floor(stored * cfg.stepCostGrowth);
+        } else {
+          arms = cfg.minArms;
+          stored = Math.floor(stored * cfg.resetCostMul);
+        }
         count += 1;
       }
       return { count, totalCost, nextCost };
@@ -2529,12 +2549,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     if (kind === "range") {
       const metaCeil = getMetaMaxRangePx(s.baseConfig.baseRange);
+      const rangeCost = getUpgradeCostParams("range", RANGE_COST_BASE, RANGE_COST_GROWTH);
       return planSequentialGoldUpgrades({
         startLevel: s.rangeLevel,
         gold,
         quantity,
         getCostAt: (lv) =>
-          getUpgradeCost(RANGE_COST_BASE, lv, prestige, RANGE_COST_GROWTH),
+          getUpgradeCost(rangeCost.costBase, lv, prestige, rangeCost.growthRate),
         canBuyAt: (lv) => {
           if (lv >= MAX_UPGRADE_LEVELS.range) return false;
           const cur = rangeAtLevel(lv, s.baseConfig.baseRange);
@@ -2609,21 +2630,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ),
       }));
     } else {
-      // arms — simula ciclo braço / prestige de braços
+      // arms — ciclo 2→4 (+20% custo) ou reset (×2 no custo)
       set((s) => {
+        const cfg = readArmsConfig();
         let arms = s.arms;
         let armTier = s.armTier;
         let baseDamage = s.baseDamage;
         let armsNextCost = s.armsNextCost;
         for (let i = 0; i < n; i++) {
-          if (arms < ARMS_MAX) {
+          if (arms < cfg.maxGoldArms) {
             arms += 1;
+            armsNextCost = Math.floor(armsNextCost * cfg.stepCostGrowth);
           } else {
-            arms = ARMS_MIN;
+            arms = cfg.minArms;
             armTier += 1;
-            baseDamage = Math.round(baseDamage * ARMS_PRESTIGE_DAMAGE);
+            baseDamage = Math.round(baseDamage * cfg.prestigeDamageMul);
+            armsNextCost = Math.floor(armsNextCost * cfg.resetCostMul);
           }
-          armsNextCost = Math.floor(armsNextCost * ARMS_COST_GROWTH);
         }
         return {
           gold: s.gold - cost,
@@ -2702,31 +2725,29 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Ciclo de braços (prestige):
-   * - arms < 6 → +1 braço
-   * - arms === 6 → volta a 2 e baseDamage × 1.15 (arredondado)
-   * Em ambos: próximo custo × 1.4
+   * - arms < maxGoldArms → +1 braço, custo × stepCostGrowth (+20%)
+   * - no teto → volta a minArms, dano × prestigeDamageMul, custo × resetCostMul (×2)
    */
   upgradeArms: () => {
+    const cfg = readArmsConfig();
     const baseStored = get().armsNextCost;
     const cost = get().getArmsUpgradeCost();
     if (get().gold < cost) return false;
 
-    const nextCost = Math.floor(baseStored * ARMS_COST_GROWTH);
-
     set((s) => {
-      if (s.arms < ARMS_MAX) {
+      if (s.arms < cfg.maxGoldArms) {
         return {
           gold: s.gold - cost,
           arms: s.arms + 1,
-          armsNextCost: nextCost,
+          armsNextCost: Math.floor(baseStored * cfg.stepCostGrowth),
         };
       }
       return {
         gold: s.gold - cost,
-        arms: ARMS_MIN,
+        arms: cfg.minArms,
         armTier: s.armTier + 1,
-        baseDamage: Math.round(s.baseDamage * ARMS_PRESTIGE_DAMAGE),
-        armsNextCost: nextCost,
+        baseDamage: Math.round(s.baseDamage * cfg.prestigeDamageMul),
+        armsNextCost: Math.floor(baseStored * cfg.resetCostMul),
       };
     });
     return true;

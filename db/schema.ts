@@ -606,6 +606,15 @@ export const gameMatchGlobals = pgTable("game_match_globals", {
   maxLuckBonus: real("max_luck_bonus").notNull().default(0.15),
   luckPerMinute: real("luck_per_minute").notNull().default(0.03),
   luckPerFiveLevels: real("luck_per_five_levels").notNull().default(0.025),
+  matchXpGainMul: real("match_xp_gain_mul").notNull().default(0.65),
+  matchBaseXpToLevel: integer("match_base_xp_to_level").notNull().default(110),
+  matchXpToNextGrowth: real("match_xp_to_next_growth").notNull().default(1.32),
+  matchXpOverflowLevels: integer("match_xp_overflow_levels").notNull().default(1),
+  endlessXpBonusPerCycle: real("endless_xp_bonus_per_cycle")
+    .notNull()
+    .default(0.08),
+  endlessXpMultiplierCap: real("endless_xp_multiplier_cap").notNull().default(3),
+  endlessXpGraceCycles: integer("endless_xp_grace_cycles").notNull().default(4),
 });
 
 /** Pesos e bônus percentual por raridade das cartas in-run. */

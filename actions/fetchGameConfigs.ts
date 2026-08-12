@@ -232,6 +232,13 @@ function mapMatchUpgrades(
           maxLuckBonus: g.maxLuckBonus,
           luckPerMinute: g.luckPerMinute,
           luckPerFiveLevels: g.luckPerFiveLevels,
+          matchXpGainMul: g.matchXpGainMul ?? 0.65,
+          matchBaseXpToLevel: g.matchBaseXpToLevel ?? 110,
+          matchXpToNextGrowth: g.matchXpToNextGrowth ?? 1.32,
+          matchXpOverflowLevels: g.matchXpOverflowLevels ?? 1,
+          endlessXpBonusPerCycle: g.endlessXpBonusPerCycle ?? 0.08,
+          endlessXpMultiplierCap: g.endlessXpMultiplierCap ?? 3,
+          endlessXpGraceCycles: g.endlessXpGraceCycles ?? 4,
         }
       : fallback.globals,
     rarities:

@@ -7,6 +7,7 @@ import {
   rewardsFromConfig,
   type EnemyTypeConfig,
 } from "@/lib/gameConfig";
+import { getMatchGlobals } from "@/lib/balanceConfig";
 import { getStageBossIndex } from "@/lib/stages";
 import {
   Enemy,
@@ -105,13 +106,24 @@ export function getEnemyPowerMultiplier(timeAliveSeconds: number): number {
 
 /**
  * Bônus de XP no Endless por ciclo de densidade (30s), após o grace.
- * Ex.: 0.1 → +10% XP a cada 30s vivos.
+ * Valores vêm de `game_match_globals` (Neon).
  */
-export const ENDLESS_XP_BONUS_PER_CYCLE = 0.1;
-/** Teto do multiplicador de XP por ciclo (antes do marco de tempo). */
-export const ENDLESS_XP_MULTIPLIER_CAP = 4;
-/** Ciclos de 30s ignorados no bônus de XP (2 min de ramp sem extra). */
-const ENDLESS_XP_GRACE_CYCLES = 4;
+export function getEndlessXpBonusPerCycle(): number {
+  return getMatchGlobals().endlessXpBonusPerCycle;
+}
+
+export function getEndlessXpMultiplierCap(): number {
+  return getMatchGlobals().endlessXpMultiplierCap;
+}
+
+function getEndlessXpGraceCycles(): number {
+  return getMatchGlobals().endlessXpGraceCycles;
+}
+
+/** @deprecated Prefer getEndlessXpBonusPerCycle() após load do balanceamento. */
+export const ENDLESS_XP_BONUS_PER_CYCLE = 0.08;
+/** @deprecated Prefer getEndlessXpMultiplierCap(). */
+export const ENDLESS_XP_MULTIPLIER_CAP = 3;
 
 /**
  * Marco extra de XP no Endless:
@@ -124,10 +136,10 @@ export const ENDLESS_XP_BONUS_INTERVAL_SECONDS = 5 * 60;
 /** Multiplicador só do ramp por ciclo de 30s (1…cap). */
 export function getEndlessXpCycleMultiplier(timeAliveSeconds: number): number {
   const cycles = getScalingCycle(timeAliveSeconds);
-  const xpCycles = Math.max(0, cycles - ENDLESS_XP_GRACE_CYCLES);
+  const xpCycles = Math.max(0, cycles - getEndlessXpGraceCycles());
   return Math.min(
-    ENDLESS_XP_MULTIPLIER_CAP,
-    1 + xpCycles * ENDLESS_XP_BONUS_PER_CYCLE,
+    getEndlessXpMultiplierCap(),
+    1 + xpCycles * getEndlessXpBonusPerCycle(),
   );
 }
 

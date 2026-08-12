@@ -57,8 +57,23 @@ export const UPGRADES_CONFIG_SEEDS: UpgradeConfigSeed[] = [
     costBase: 150,
     growthRate: 1.5,
     maxLevel: 10,
-    effectParams: {},
+    effectParams: { max_attack_range_px: 450 },
     sortOrder: 3,
+  },
+  {
+    upgradeKey: "arms",
+    displayName: "Braços",
+    currency: "gold",
+    costBase: 80,
+    growthRate: 1.2,
+    maxLevel: 4,
+    effectParams: {
+      min_arms: 2,
+      max_total_arms: 8,
+      reset_cost_mul: 2,
+      prestige_damage_mul: 1.15,
+    },
+    sortOrder: 14,
   },
   {
     upgradeKey: "crit_chance",
@@ -77,7 +92,7 @@ export const UPGRADES_CONFIG_SEEDS: UpgradeConfigSeed[] = [
     costBase: 40,
     growthRate: 1.3,
     maxLevel: 30,
-    effectParams: { xp_per_level: 0.1 },
+    effectParams: { xp_per_level: 0.08 },
     sortOrder: 5,
   },
   {

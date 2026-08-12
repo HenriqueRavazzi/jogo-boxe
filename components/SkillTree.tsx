@@ -82,7 +82,7 @@ export function SkillTree({ onClose }: SkillTreeProps) {
   const xpCost = getXpBonusUpgradeCost();
   const xpCap = MAX_UPGRADE_LEVELS.xpBonus;
   const xpAtMax = xpBonusLevel >= xpCap;
-  const xpBonusPct = Math.round(Math.min(xpCap, xpBonusLevel) * 10);
+  const xpBonusPct = Math.round(Math.min(xpCap, xpBonusLevel) * 8);
   const canBuyXp = !xpAtMax && Number.isFinite(xpCost) && gems >= xpCost;
 
   const handleUnlock = async (nodeId: SkillNodeDef["id"], cost: number) => {
@@ -177,7 +177,7 @@ export function SkillTree({ onClose }: SkillTreeProps) {
                     )
                   </p>
                   <p className="mt-1 text-xs text-zinc-400">
-                    Cada nível: +10% de ganho de XP na partida (máx. {xpCap})
+                    Cada nível: +8% de ganho de XP na partida (máx. {xpCap})
                   </p>
                 </div>
               </div>

@@ -88,11 +88,25 @@ const STATEMENTS = [
     special_skill_card_chance real NOT NULL DEFAULT 0.25,
     max_luck_bonus real NOT NULL DEFAULT 0.15,
     luck_per_minute real NOT NULL DEFAULT 0.03,
-    luck_per_five_levels real NOT NULL DEFAULT 0.025
+    luck_per_five_levels real NOT NULL DEFAULT 0.025,
+    match_xp_gain_mul real NOT NULL DEFAULT 0.65,
+    match_base_xp_to_level integer NOT NULL DEFAULT 110,
+    match_xp_to_next_growth real NOT NULL DEFAULT 1.32,
+    match_xp_overflow_levels integer NOT NULL DEFAULT 1,
+    endless_xp_bonus_per_cycle real NOT NULL DEFAULT 0.08,
+    endless_xp_multiplier_cap real NOT NULL DEFAULT 3,
+    endless_xp_grace_cycles integer NOT NULL DEFAULT 4
   )`,
 
   `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS guard_max_level integer NOT NULL DEFAULT 3`,
   `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS mitigation_bonus_per_tier real NOT NULL DEFAULT 0.02`,
+  `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS match_xp_gain_mul real NOT NULL DEFAULT 0.65`,
+  `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS match_base_xp_to_level integer NOT NULL DEFAULT 110`,
+  `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS match_xp_to_next_growth real NOT NULL DEFAULT 1.32`,
+  `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS match_xp_overflow_levels integer NOT NULL DEFAULT 1`,
+  `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS endless_xp_bonus_per_cycle real NOT NULL DEFAULT 0.08`,
+  `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS endless_xp_multiplier_cap real NOT NULL DEFAULT 3`,
+  `ALTER TABLE game_match_globals ADD COLUMN IF NOT EXISTS endless_xp_grace_cycles integer NOT NULL DEFAULT 4`,
 
   `CREATE TABLE IF NOT EXISTS game_match_rarities (
     rarity varchar(16) PRIMARY KEY,

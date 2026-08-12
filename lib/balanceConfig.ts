@@ -474,6 +474,35 @@ export function getUpgradeEffectParam(
 ): number {
   return getUpgradeConfigByKey(upgradeKey)?.effectParams[param] ?? fallback;
 }
+
+export type ArmsUpgradeConfig = {
+  costBase: number;
+  stepCostGrowth: number;
+  maxGoldArms: number;
+  minArms: number;
+  maxTotalArms: number;
+  resetCostMul: number;
+  prestigeDamageMul: number;
+};
+
+/** Braços de ouro + teto total (inclui árvore e ascensão). */
+export function getArmsUpgradeConfig(): ArmsUpgradeConfig {
+  const row = getUpgradeConfigByKey("arms");
+  return {
+    costBase: row?.costBase ?? 80,
+    stepCostGrowth: row?.growthRate ?? 1.2,
+    maxGoldArms: row?.maxLevel ?? 4,
+    minArms: getUpgradeEffectParam("arms", "min_arms", 2),
+    maxTotalArms: getUpgradeEffectParam("arms", "max_total_arms", 8),
+    resetCostMul: getUpgradeEffectParam("arms", "reset_cost_mul", 2),
+    prestigeDamageMul: getUpgradeEffectParam("arms", "prestige_damage_mul", 1.15),
+  };
+}
+
+/** Teto de alcance (px) — upgrade de ouro cobre até este valor. */
+export function getMaxAttackRangePx(): number {
+  return getUpgradeEffectParam("range", "max_attack_range_px", 450);
+}
 export function getTeamScaleConstants() {
   const gacha = getUpgradeConfigByKey("team_gacha");
   const params = gacha?.effectParams ?? {};

@@ -409,13 +409,17 @@ const EDGE_MARGIN = 24;
 const DEFAULT_ENEMY_HP = 30;
 const DEFAULT_ENEMY_SPEED = 55;
 const GOLD_PER_KILL = 10;
-const XP_PER_KILL = 25;
-/** Custo do 1º nível in-run. */
-const BASE_XP_TO_LEVEL = 80;
-/** Custo do próximo nível (80, 102, 131…). */
-const XP_TO_NEXT_GROWTH = 1.28;
-/** XP acumulado no máximo ~1 nível extra (evita fila de cartas). */
-const XP_OVERFLOW_LEVELS = 1;
+const XP_PER_KILL = 15;
+
+function matchXpConfig() {
+  const g = getMatchGlobals();
+  return {
+    baseXpToLevel: g.matchBaseXpToLevel,
+    xpToNextGrowth: g.matchXpToNextGrowth,
+    overflowLevels: g.matchXpOverflowLevels,
+    gainMul: g.matchXpGainMul,
+  };
+}
 /** Tempo (s) para o jogador escolher uma carta antes da auto-seleção. */
 const LEVEL_UP_TIMEOUT_SEC = 45;
 
@@ -572,7 +576,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   timeAlive: 0,
   gameClockMs: 0,
   currentXp: 0,
-  xpToNextLevel: BASE_XP_TO_LEVEL,
+  xpToNextLevel: matchXpConfig().baseXpToLevel,
   matchLevel: 1,
   thornsLevel: 0,
   guardLevel: 0,
@@ -645,7 +649,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       timeAlive: 0,
       gameClockMs: 0,
       currentXp: 0,
-      xpToNextLevel: BASE_XP_TO_LEVEL,
+      xpToNextLevel: matchXpConfig().baseXpToLevel,
       matchLevel: 1,
       thornsLevel: 0,
   guardLevel: 0,
@@ -785,7 +789,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       timeAlive: 0,
       gameClockMs: 0,
       currentXp: 0,
-      xpToNextLevel: BASE_XP_TO_LEVEL,
+      xpToNextLevel: matchXpConfig().baseXpToLevel,
       matchLevel: 1,
       thornsLevel: 0,
   guardLevel: 0,
@@ -1018,6 +1022,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       return;
     }
 
+    const xpCfg = matchXpConfig();
     const endlessMul =
       state.runMode === "endless"
         ? getEndlessXpMultiplier(state.timeAlive)
@@ -1026,10 +1031,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     const matchXpMul =
       getXpMultiplier(game.xpBonusLevel) *
       (1 + game.getEquippedTeamBuffs().xpMultiplierBonus);
-    const finalXp = Math.round(baseAmount * matchXpMul * endlessMul);
+    const finalXp = Math.round(
+      baseAmount * matchXpMul * endlessMul * xpCfg.gainMul,
+    );
 
     const overflowCap =
-      state.xpToNextLevel * (1 + XP_OVERFLOW_LEVELS);
+      state.xpToNextLevel * (1 + xpCfg.overflowLevels);
 
     // Durante level_up, só acumula XP sem subir de novo (com teto de overflow)
     if (state.gameState === "level_up") {
@@ -1046,8 +1053,17 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     if (xp >= nextReq) {
       xp -= nextReq;
       level += 1;
-      nextReq = Math.max(nextReq + 1, Math.floor(nextReq * XP_TO_NEXT_GROWTH));
-      enterLevelUp(set, get, Math.min(nextReq * XP_OVERFLOW_LEVELS, xp), nextReq, level);
+      nextReq = Math.max(
+        nextReq + 1,
+        Math.floor(nextReq * xpCfg.xpToNextGrowth),
+      );
+      enterLevelUp(
+        set,
+        get,
+        Math.min(nextReq * xpCfg.overflowLevels, xp),
+        nextReq,
+        level,
+      );
       return;
     }
 
@@ -1243,12 +1259,13 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     // Se ainda houver XP sobrando para outro nível, abre o próximo card pack
     const { currentXp, xpToNextLevel, matchLevel } = get();
     if (currentXp >= xpToNextLevel) {
+      const xpCfg = matchXpConfig();
       const nextReq = Math.max(
         xpToNextLevel + 1,
-        Math.floor(xpToNextLevel * XP_TO_NEXT_GROWTH),
+        Math.floor(xpToNextLevel * xpCfg.xpToNextGrowth),
       );
       const remainder = Math.min(
-        nextReq * XP_OVERFLOW_LEVELS,
+        nextReq * xpCfg.overflowLevels,
         currentXp - xpToNextLevel,
       );
       enterLevelUp(set, get, remainder, nextReq, matchLevel + 1);
@@ -1539,7 +1556,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       timeAlive: 0,
       gameClockMs: 0,
       currentXp: 0,
-      xpToNextLevel: BASE_XP_TO_LEVEL,
+      xpToNextLevel: matchXpConfig().baseXpToLevel,
       matchLevel: 1,
       thornsLevel: 0,
   guardLevel: 0,

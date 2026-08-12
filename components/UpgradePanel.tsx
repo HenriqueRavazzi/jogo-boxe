@@ -9,6 +9,7 @@ import {
   Sparkles,
   Swords,
 } from "lucide-react";
+import { getArmsUpgradeConfig } from "@/lib/balanceConfig";
 import {
   goldDamageMultiplier,
   goldDamagePctGainAt,
@@ -74,6 +75,9 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
     rangeLevel >= MAX_UPGRADE_LEVELS.range ||
     currentRange >= metaRangeCeil ||
     nextRange <= currentRange;
+
+  const armsCfg = getArmsUpgradeConfig();
+  const maxGoldArms = armsCfg.maxGoldArms;
 
   const planFor = (kind: GoldUpgradeKind) =>
     previewGoldUpgradeBulk(kind, quantity);
@@ -175,14 +179,14 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
       />
       <UpgradeCard
         icon={<Hand className="h-5 w-5 text-sky-400" />}
-        title={`Braços: ${arms}`}
+        title={`Braços (ouro): ${arms}`}
         subtitle={
-          arms < 6
-            ? "Próximo: +1 braço"
-            : "Próximo: +15% Dano Base (Reseta Braços)"
+          arms < maxGoldArms
+            ? `Próximo: +1 braço (até ${maxGoldArms}) · teto total ${armsCfg.maxTotalArms}`
+            : `Próximo: reseta para ${armsCfg.minArms} (+15% dano base, custo ×2)`
         }
         subtitleClassName={
-          arms === 6 ? "font-semibold text-amber-300" : undefined
+          arms >= maxGoldArms ? "font-semibold text-amber-300" : undefined
         }
         plan={planFor("arms")}
         atMax={false}

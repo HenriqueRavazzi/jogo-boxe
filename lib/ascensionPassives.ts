@@ -28,8 +28,8 @@ export const DEFAULT_ASCENSION_PASSIVES: AscensionPassivesData = {
 };
 
 export const MAX_ASCENSION_PASSIVE_LEVEL = 20;
-/** Teto menor — cada nível dá +1 braço (bem forte). */
-export const MAX_EXTRA_ARMS_LEVEL = 8;
+/** Teto menor — ouro (4) + árvore (2) + ascensão (2) = 8 braços totais. */
+export const MAX_EXTRA_ARMS_LEVEL = 2;
 /** +0,5% × 20 = +10%. */
 export const MAX_STARTING_STATS_LEVEL = 20;
 

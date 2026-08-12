@@ -16,6 +16,15 @@ export type MatchGlobalsSeed = {
   maxLuckBonus: number;
   luckPerMinute: number;
   luckPerFiveLevels: number;
+  /** XP in-run */
+  matchXpGainMul: number;
+  matchBaseXpToLevel: number;
+  matchXpToNextGrowth: number;
+  matchXpOverflowLevels: number;
+  /** Endless */
+  endlessXpBonusPerCycle: number;
+  endlessXpMultiplierCap: number;
+  endlessXpGraceCycles: number;
 };
 
 export const MATCH_GLOBALS_SEED: MatchGlobalsSeed = {
@@ -33,6 +42,13 @@ export const MATCH_GLOBALS_SEED: MatchGlobalsSeed = {
   maxLuckBonus: 0.15,
   luckPerMinute: 0.03,
   luckPerFiveLevels: 0.025,
+  matchXpGainMul: 0.65,
+  matchBaseXpToLevel: 110,
+  matchXpToNextGrowth: 1.32,
+  matchXpOverflowLevels: 1,
+  endlessXpBonusPerCycle: 0.08,
+  endlessXpMultiplierCap: 3,
+  endlessXpGraceCycles: 4,
 };
 
 export const MATCH_RARITY_SEEDS = [
