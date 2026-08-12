@@ -406,10 +406,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     ricochetBonus.damageMul;
   const teamBuffs = gameState.getEquippedTeamBuffs();
   const knockbackPower =
-    ((knockbackImpulse ??
+    (knockbackImpulse ??
       gameState.getKnockbackPower() ??
-      DEFAULT_KNOCKBACK) +
-      teamBuffs.knockbackBonus) *
+      DEFAULT_KNOCKBACK) *
     (matchBuffs.knockbackMultiplier ?? 1);
   const difficulty = gameState.getDifficultyMultipliers();
   const damageTakenMul =

@@ -2202,13 +2202,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getKnockbackPower: () => {
     const s = get();
     const prestigeMul = s.getPrestigeMultiplier();
+    const team = calcEquippedTeamBuffs(
+      s.teamMembersOwned,
+      s.equippedTeamMemberIds,
+    );
     return (
       getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
       Math.max(0, s.metaKnockbackLevel) *
         META_KNOCKBACK_PER_LEVEL *
         prestigeMul +
       getSkillKnockbackBonus(s.skillTree) * prestigeMul
-    );
+    ) * team.knockbackMultiplier;
   },
 
   getCritChanceUpgradeCost: () =>
@@ -2349,26 +2353,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       (cfg.baseHp + skillHp * prestigeMul) * goldHpMul * startingStatsMul;
     const hpMetaExtra =
       (cfg.baseHp + skillHp * prestigeMul) * goldHpMul * (metaHpMul - 1);
+    const hpBeforeTeam = hpCore + hpMetaExtra;
 
-    const damageCore =
-      (s.baseDamage + skillDmg + team.flatDamage) *
-      prestigeMul *
-      goldDmgMul *
-      startingStatsMul;
-    const damageMetaExtra =
-      (s.baseDamage + skillDmg + team.flatDamage) *
-      prestigeMul *
-      goldDmgMul *
-      (metaDmgMul - 1);
+    const damageBase =
+      (s.baseDamage + skillDmg) * prestigeMul * goldDmgMul;
 
     return {
-      maxHp: Math.round(hpCore + hpMetaExtra + team.maxHpBonus),
-      damage: Math.round(damageCore + damageMetaExtra),
+      maxHp: Math.round(hpBeforeTeam * team.maxHpMultiplier),
+      damage: Math.round(
+        damageBase *
+          team.damageMultiplier *
+          (startingStatsMul + metaDmgMul - 1),
+      ),
       attackRange: Math.min(
         MAX_ATTACK_RANGE,
-        Math.round(
-          (goldRange + skillRange * prestigeMul) * team.attackRangeMultiplier,
-        ),
+        Math.round(goldRange + skillRange * prestigeMul),
       ),
       attackCooldownMs: Math.max(
         MIN_ATTACK_COOLDOWN_MS,
@@ -2408,12 +2407,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       bounceDamagePercent:
         (0.6 + s.skills.ricochet.damage * 0.15) * Math.min(1.5, prestigeMul),
       knockbackPower:
-        getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
-        Math.max(0, s.metaKnockbackLevel) *
-          META_KNOCKBACK_PER_LEVEL *
-          prestigeMul +
-        getSkillKnockbackBonus(tree) * prestigeMul +
-        team.knockbackBonus,
+        (getKnockbackPowerAt(s.baseKnockbackPower, s.knockbackLevel) +
+          Math.max(0, s.metaKnockbackLevel) *
+            META_KNOCKBACK_PER_LEVEL *
+            prestigeMul +
+          getSkillKnockbackBonus(tree) * prestigeMul) *
+        team.knockbackMultiplier,
       skillBonus: {
         hp: skillHp,
         damage: skillDmg,

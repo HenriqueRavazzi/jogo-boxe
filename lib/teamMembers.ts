@@ -161,6 +161,42 @@ function power(tier: TeamTier, level: number): number {
   return TEAM_TIER_POWER[tier] * (1 + (lv - 1) * 0.12);
 }
 
+/** Escalas de buff — % do stat do jogador (não valores fixos). */
+export const TEAM_DAMAGE_PCT_SCALE = 0.01;
+export const TEAM_MAX_HP_PCT_SCALE = 0.001;
+export const TEAM_REGEN_MAX_HP_PCT_SCALE = 0.0001;
+export const TEAM_KNOCKBACK_PCT_SCALE = 0.01;
+
+/** Tetos totais da esquina (soma dos 3 slots equipados). */
+export const TEAM_MAX_HP_REGEN_RATIO_PER_SECOND = 0.03;
+export const TEAM_MAX_DAMAGE_MULTIPLIER = 1.1;
+export const TEAM_MAX_HP_MULTIPLIER = 1.15;
+/** 40% de redução de dano recebido → multiplicador mín. 0.6. */
+export const TEAM_MIN_DAMAGE_TAKEN_MULTIPLIER = 0.6;
+
+function teamBonusPct(
+  coeff: number,
+  tier: TeamTier,
+  level: number,
+  scale: number,
+): number {
+  return coeff * power(tier, level) * scale;
+}
+
+function labelPct(
+  coeff: number,
+  tier: TeamTier,
+  level: number,
+  scale: number,
+  suffix: string,
+  decimals = 1,
+): string {
+  const v = teamBonusPct(coeff, tier, level, scale) * 100;
+  const fmt =
+    v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(decimals);
+  return `+${fmt}% ${suffix}`;
+}
+
 export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
   {
     id: "bandage_boy",
@@ -169,7 +205,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "cutman",
     tagline: "Fita rápida entre os rounds.",
     bonusLabel: (level) =>
-      `+${(0.35 * power("common", level)).toFixed(1)} HP/s`,
+      labelPct(0.35, "common", level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2),
   },
   {
     id: "gym_rat",
@@ -178,7 +214,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Parceiro de saco barato.",
     bonusLabel: (level) =>
-      `+${Math.round(2 * power("common", level))} dano base`,
+      labelPct(2, "common", level, TEAM_DAMAGE_PCT_SCALE, "dano"),
   },
   {
     id: "water_boy",
@@ -187,7 +223,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "vitality",
     tagline: "Hidratação básica.",
     bonusLabel: (level) =>
-      `+${Math.round(18 * power("common", level))} HP máx.`,
+      labelPct(18, "common", level, TEAM_MAX_HP_PCT_SCALE, "HP máx"),
   },
   {
     id: "towel_toss",
@@ -196,7 +232,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "cutman",
     tagline: "Toalha gelada no canto.",
     bonusLabel: (level) =>
-      `+${(0.22 * power("common", level)).toFixed(1)} HP/s · +${(
+      `${labelPct(0.22, "common", level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2)} · +${(
         0.8 * power("common", level)
       ).toFixed(1)}% AS`,
   },
@@ -207,9 +243,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Quilômetros antes do sol.",
     bonusLabel: (level) =>
-      `+${(1.5 * power("common", level)).toFixed(0)}% alcance · +${(
-        1.2 * power("common", level)
-      ).toFixed(0)}% XP`,
+      `+${(1.2 * power("common", level)).toFixed(0)}% XP`,
   },
   {
     id: "stitch_sam",
@@ -218,7 +252,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "cutman",
     tagline: "Costura cortes no canto.",
     bonusLabel: (level) =>
-      `+${(0.55 * power("uncommon", level)).toFixed(1)} HP/s`,
+      labelPct(0.55, "uncommon", level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2),
   },
   {
     id: "pad_holder",
@@ -227,7 +261,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Treino de pads constante.",
     bonusLabel: (level) =>
-      `+${Math.round(3 * power("uncommon", level))} dano · +${(
+      `${labelPct(3, "uncommon", level, TEAM_DAMAGE_PCT_SCALE, "dano")} · +${(
         2 * power("uncommon", level)
       ).toFixed(0)}% XP`,
   },
@@ -238,7 +272,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "vitality",
     tagline: "Cardápio de campeão amador.",
     bonusLabel: (level) =>
-      `+${Math.round(28 * power("uncommon", level))} HP · −${(
+      `${labelPct(28, "uncommon", level, TEAM_MAX_HP_PCT_SCALE, "HP máx")} · −${(
         1.2 * power("uncommon", level)
       ).toFixed(1)}% dano recebido`,
   },
@@ -249,9 +283,13 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "cutman",
     tagline: "Recuperação pós-round.",
     bonusLabel: (level) =>
-      `+${(0.4 * power("uncommon", level)).toFixed(1)} HP/s · +${Math.round(
-        12 * power("uncommon", level),
-      )} HP máx.`,
+      `${labelPct(0.4, "uncommon", level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2)} · ${labelPct(
+        12,
+        "uncommon",
+        level,
+        TEAM_MAX_HP_PCT_SCALE,
+        "HP máx",
+      )}`,
   },
   {
     id: "focus_mitt",
@@ -271,7 +309,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "cutman",
     tagline: "Médico de plantão no ringue.",
     bonusLabel: (level) =>
-      `+${(0.85 * power("rare", level)).toFixed(1)} HP/s`,
+      labelPct(0.85, "rare", level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2),
   },
   {
     id: "sparring_ace",
@@ -280,7 +318,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Pressão real no sparring.",
     bonusLabel: (level) =>
-      `+${Math.round(5 * power("rare", level))} dano · +${(
+      `${labelPct(5, "rare", level, TEAM_DAMAGE_PCT_SCALE, "dano")} · +${(
         3.5 * power("rare", level)
       ).toFixed(0)}% XP`,
   },
@@ -291,7 +329,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "vitality",
     tagline: "Força funcional e core.",
     bonusLabel: (level) =>
-      `+${Math.round(45 * power("rare", level))} HP · −${(
+      `${labelPct(45, "rare", level, TEAM_MAX_HP_PCT_SCALE, "HP máx")} · −${(
         2 * power("rare", level)
       ).toFixed(1)}% dano recebido`,
   },
@@ -313,9 +351,13 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Clinches e empurrões de escola.",
     bonusLabel: (level) =>
-      `+${Math.round(4 * power("rare", level))} empurrão · +${Math.round(
-        3 * power("rare", level),
-      )} dano`,
+      `${labelPct(4, "rare", level, TEAM_KNOCKBACK_PCT_SCALE, "empurrão")} · ${labelPct(
+        3,
+        "rare",
+        level,
+        TEAM_DAMAGE_PCT_SCALE,
+        "dano",
+      )}`,
   },
   {
     id: "skill_scout",
@@ -335,7 +377,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "cutman",
     tagline: "Para sangramento em segundos.",
     bonusLabel: (level) =>
-      `+${(1.35 * power("epic", level)).toFixed(1)} HP/s`,
+      labelPct(1.35, "epic", level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2),
   },
   {
     id: "elite_spar",
@@ -344,7 +386,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Sparring de elite internacional.",
     bonusLabel: (level) =>
-      `+${Math.round(9 * power("epic", level))} dano · +${(
+      `${labelPct(9, "epic", level, TEAM_DAMAGE_PCT_SCALE, "dano")} · +${(
         5.5 * power("epic", level)
       ).toFixed(0)}% XP`,
   },
@@ -377,9 +419,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "coach",
     tagline: "Distância perfeita de jab.",
     bonusLabel: (level) =>
-      `+${(3.5 * power("epic", level)).toFixed(0)}% alcance · +${(
-        2.5 * power("epic", level)
-      ).toFixed(0)}% AS`,
+      `+${(2.5 * power("epic", level)).toFixed(0)}% AS`,
   },
   {
     id: "purple_agent",
@@ -399,7 +439,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "cutman",
     tagline: "Lenda dos cantos sangrentos.",
     bonusLabel: (level) =>
-      `+${(2.1 * power("legendary", level)).toFixed(1)} HP/s`,
+      labelPct(2.1, "legendary", level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2),
   },
   {
     id: "shadow_spar",
@@ -408,7 +448,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Treina como luta — e luta como treina.",
     bonusLabel: (level) =>
-      `+${Math.round(14 * power("legendary", level))} dano · +${(
+      `${labelPct(14, "legendary", level, TEAM_DAMAGE_PCT_SCALE, "dano")} · +${(
         8 * power("legendary", level)
       ).toFixed(0)}% XP`,
   },
@@ -419,7 +459,7 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "vitality",
     tagline: "Corpo de aço, fôlego infinito.",
     bonusLabel: (level) =>
-      `+${Math.round(90 * power("legendary", level))} HP · −${(
+      `${labelPct(90, "legendary", level, TEAM_MAX_HP_PCT_SCALE, "HP máx")} · −${(
         4 * power("legendary", level)
       ).toFixed(1)}% dano recebido`,
   },
@@ -454,9 +494,13 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
     role: "sparring",
     tagline: "Cada golpe ecoa nas skills.",
     bonusLabel: (level) =>
-      `+${(6 * power("legendary", level)).toFixed(0)}% dano de skills · +${Math.round(
-        8 * power("legendary", level),
-      )} empurrão`,
+      `+${(6 * power("legendary", level)).toFixed(0)}% dano de skills · ${labelPct(
+        8,
+        "legendary",
+        level,
+        TEAM_KNOCKBACK_PCT_SCALE,
+        "empurrão",
+      )}`,
   },
   {
     id: "vault_broker",
@@ -667,40 +711,40 @@ export function rollTeamMemberId(pity: TeamPityState): {
 }
 
 export type EquippedTeamBuffs = {
-  flatDamage: number;
-  maxHpBonus: number;
+  /** Multiplicador de dano base (1 = neutro). */
+  damageMultiplier: number;
+  /** Multiplicador de HP máximo (1 = neutro). */
+  maxHpMultiplier: number;
   damageTakenMultiplier: number;
   attackSpeedMultiplier: number;
   critChanceBonus: number;
   critDamageBonus: number;
-  hpRegenPerSecond: number;
+  /** % do HP máximo regenerado por segundo (0.001 = 0.1%/s). */
+  hpRegenMaxHpRatioPerSecond: number;
   goldIncomeMultiplier: number;
   diamondLuckBonus: number;
   xpMultiplierBonus: number;
   /** Multiplicador de dano de skills (1 = neutro). */
   skillDamageMultiplier: number;
-  /** Bônus flat de knockback dos socos. */
-  knockbackBonus: number;
-  /** Multiplicador de alcance de ataque (1 = neutro). */
-  attackRangeMultiplier: number;
+  /** Multiplicador de knockback (1 = neutro). */
+  knockbackMultiplier: number;
   /** Chance extra de diamante roxo (aditivo 0–1). */
   purpleDiamondLuckBonus: number;
 };
 
 export const EMPTY_TEAM_BUFFS: EquippedTeamBuffs = {
-  flatDamage: 0,
-  maxHpBonus: 0,
+  damageMultiplier: 1,
+  maxHpMultiplier: 1,
   damageTakenMultiplier: 1,
   attackSpeedMultiplier: 1,
   critChanceBonus: 0,
   critDamageBonus: 0,
-  hpRegenPerSecond: 0,
+  hpRegenMaxHpRatioPerSecond: 0,
   goldIncomeMultiplier: 1,
   diamondLuckBonus: 0,
   xpMultiplierBonus: 0,
   skillDamageMultiplier: 1,
-  knockbackBonus: 0,
-  attackRangeMultiplier: 1,
+  knockbackMultiplier: 1,
   purpleDiamondLuckBonus: 0,
 };
 
@@ -715,50 +759,49 @@ function applyMemberBuffs(
 
   switch (id) {
     case "bandage_boy":
-      acc.hpRegenPerSecond += 0.35 * p;
+      acc.hpRegenMaxHpRatioPerSecond += 0.35 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
       break;
     case "gym_rat":
-      acc.flatDamage += 2 * p;
+      acc.damageMultiplier *= 1 + 2 * p * TEAM_DAMAGE_PCT_SCALE;
       break;
     case "water_boy":
-      acc.maxHpBonus += 18 * p;
+      acc.maxHpMultiplier *= 1 + 18 * p * TEAM_MAX_HP_PCT_SCALE;
       break;
     case "towel_toss":
-      acc.hpRegenPerSecond += 0.22 * p;
+      acc.hpRegenMaxHpRatioPerSecond += 0.22 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
       acc.attackSpeedMultiplier *= 1 + 0.008 * p;
       break;
     case "roadwork_runner":
-      acc.attackRangeMultiplier *= 1 + 0.015 * p;
       acc.xpMultiplierBonus += 0.012 * p;
       break;
     case "stitch_sam":
-      acc.hpRegenPerSecond += 0.55 * p;
+      acc.hpRegenMaxHpRatioPerSecond += 0.55 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
       break;
     case "pad_holder":
-      acc.flatDamage += 3 * p;
+      acc.damageMultiplier *= 1 + 3 * p * TEAM_DAMAGE_PCT_SCALE;
       acc.xpMultiplierBonus += 0.02 * p;
       break;
     case "meal_prep":
-      acc.maxHpBonus += 28 * p;
+      acc.maxHpMultiplier *= 1 + 28 * p * TEAM_MAX_HP_PCT_SCALE;
       acc.damageTakenMultiplier *= 1 - Math.min(0.25, 0.012 * p);
       break;
     case "ice_bucket":
-      acc.hpRegenPerSecond += 0.4 * p;
-      acc.maxHpBonus += 12 * p;
+      acc.hpRegenMaxHpRatioPerSecond += 0.4 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
+      acc.maxHpMultiplier *= 1 + 12 * p * TEAM_MAX_HP_PCT_SCALE;
       break;
     case "focus_mitt":
       acc.critChanceBonus += 0.011 * p;
       acc.attackSpeedMultiplier *= 1 + 0.02 * p;
       break;
     case "ringside_doc":
-      acc.hpRegenPerSecond += 0.85 * p;
+      acc.hpRegenMaxHpRatioPerSecond += 0.85 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
       break;
     case "sparring_ace":
-      acc.flatDamage += 5 * p;
+      acc.damageMultiplier *= 1 + 5 * p * TEAM_DAMAGE_PCT_SCALE;
       acc.xpMultiplierBonus += 0.035 * p;
       break;
     case "strength_coach":
-      acc.maxHpBonus += 45 * p;
+      acc.maxHpMultiplier *= 1 + 45 * p * TEAM_MAX_HP_PCT_SCALE;
       acc.damageTakenMultiplier *= 1 - Math.min(0.3, 0.02 * p);
       break;
     case "corner_tactician":
@@ -766,18 +809,18 @@ function applyMemberBuffs(
       acc.critDamageBonus += 0.08 * p;
       break;
     case "push_specialist":
-      acc.knockbackBonus += 4 * p;
-      acc.flatDamage += 3 * p;
+      acc.knockbackMultiplier *= 1 + 4 * p * TEAM_KNOCKBACK_PCT_SCALE;
+      acc.damageMultiplier *= 1 + 3 * p * TEAM_DAMAGE_PCT_SCALE;
       break;
     case "skill_scout":
       acc.skillDamageMultiplier *= 1 + 0.04 * p;
       acc.critChanceBonus += 0.012 * p;
       break;
     case "prime_cutman":
-      acc.hpRegenPerSecond += 1.35 * p;
+      acc.hpRegenMaxHpRatioPerSecond += 1.35 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
       break;
     case "elite_spar":
-      acc.flatDamage += 9 * p;
+      acc.damageMultiplier *= 1 + 9 * p * TEAM_DAMAGE_PCT_SCALE;
       acc.xpMultiplierBonus += 0.055 * p;
       break;
     case "head_coach":
@@ -789,7 +832,6 @@ function applyMemberBuffs(
       acc.diamondLuckBonus += 0.0035 * p;
       break;
     case "range_finder":
-      acc.attackRangeMultiplier *= 1 + 0.035 * p;
       acc.attackSpeedMultiplier *= 1 + 0.025 * p;
       break;
     case "purple_agent":
@@ -797,14 +839,14 @@ function applyMemberBuffs(
       acc.goldIncomeMultiplier *= 1 + 0.03 * p;
       break;
     case "iron_doc":
-      acc.hpRegenPerSecond += 2.1 * p;
+      acc.hpRegenMaxHpRatioPerSecond += 2.1 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
       break;
     case "shadow_spar":
-      acc.flatDamage += 14 * p;
+      acc.damageMultiplier *= 1 + 14 * p * TEAM_DAMAGE_PCT_SCALE;
       acc.xpMultiplierBonus += 0.08 * p;
       break;
     case "titan_prep":
-      acc.maxHpBonus += 90 * p;
+      acc.maxHpMultiplier *= 1 + 90 * p * TEAM_MAX_HP_PCT_SCALE;
       acc.damageTakenMultiplier *= 1 - Math.min(0.35, 0.04 * p);
       break;
     case "master_coach":
@@ -818,7 +860,7 @@ function applyMemberBuffs(
       break;
     case "echo_striker":
       acc.skillDamageMultiplier *= 1 + 0.06 * p;
-      acc.knockbackBonus += 8 * p;
+      acc.knockbackMultiplier *= 1 + 8 * p * TEAM_KNOCKBACK_PCT_SCALE;
       break;
     case "vault_broker":
       acc.goldIncomeMultiplier *= 1 + 0.06 * p;
@@ -838,10 +880,19 @@ export function getEquippedTeamBuffs(
   for (const id of equippedIds) {
     applyMemberBuffs(acc, id, owned[id] ?? 0);
   }
-  acc.flatDamage = Math.round(acc.flatDamage);
-  acc.maxHpBonus = Math.round(acc.maxHpBonus);
-  acc.knockbackBonus = Math.round(acc.knockbackBonus);
-  acc.damageTakenMultiplier = Math.max(0.5, acc.damageTakenMultiplier);
+  acc.hpRegenMaxHpRatioPerSecond = Math.min(
+    TEAM_MAX_HP_REGEN_RATIO_PER_SECOND,
+    acc.hpRegenMaxHpRatioPerSecond,
+  );
+  acc.damageMultiplier = Math.min(
+    TEAM_MAX_DAMAGE_MULTIPLIER,
+    acc.damageMultiplier,
+  );
+  acc.maxHpMultiplier = Math.min(TEAM_MAX_HP_MULTIPLIER, acc.maxHpMultiplier);
+  acc.damageTakenMultiplier = Math.max(
+    TEAM_MIN_DAMAGE_TAKEN_MULTIPLIER,
+    acc.damageTakenMultiplier,
+  );
   return acc;
 }
 

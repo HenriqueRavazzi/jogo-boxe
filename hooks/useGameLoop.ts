@@ -492,14 +492,18 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       spawnAccumulator = spawn.spawnAccumulatorMs;
 
       let nextHp = combat.player.hp;
-      const teamRegen = game.getEquippedTeamBuffs().hpRegenPerSecond;
+      const teamBuffs = game.getEquippedTeamBuffs();
+      const teamRegenRatio = teamBuffs.hpRegenMaxHpRatioPerSecond;
       if (
-        teamRegen > 0 &&
+        teamRegenRatio > 0 &&
         nextHp > 0 &&
         nextHp < stats.maxHp &&
         !combat.player.isDead
       ) {
-        nextHp = Math.min(stats.maxHp, nextHp + teamRegen * dt);
+        nextHp = Math.min(
+          stats.maxHp,
+          nextHp + stats.maxHp * teamRegenRatio * dt,
+        );
       }
 
       const nextCommonsSpawned =
