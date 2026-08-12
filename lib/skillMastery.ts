@@ -2,6 +2,7 @@
 
 import type {
   SkillsData,
+  SkillTierStatMultipliers,
   SkillUpgradeType,
   UnlockedSkillsData,
 } from "@/db/schema";
@@ -11,6 +12,7 @@ import {
   SKILL_STAT_KEYS,
 } from "@/db/schema";
 import type { SpecialSkillKey } from "@/lib/matchUpgrades";
+import { getSkillTierScaling, getSkillTierStat } from "@/lib/balanceConfig";
 
 /**
  * Custo em Diamantes Roxos para liberar a Maestria de uma skill.
@@ -206,6 +208,28 @@ export const MASTERY_SHADOW_CLONE_COUNT = 2;
 export const MASTERY_AURA_RADIUS_MULT = 2;
 export const MASTERY_AURA_SECONDARY_POWER = 1;
 export const MASTERY_RICOCHET_MAX_TARGETS = 40;
+
+export function getMasteryCardInfo(key: SpecialSkillKey): SkillMasteryCardInfo {
+  const fallback = SKILL_MASTERY_CARD_INFO[key];
+  const row = getSkillTierScaling(key, "master");
+  if (!row) return fallback;
+  return {
+    key,
+    label: row.cardLabel || fallback.label,
+    title: row.cardTitle || fallback.title,
+    description: row.cardDescription || fallback.description,
+    effectLines:
+      row.effectLines.length > 0 ? row.effectLines : fallback.effectLines,
+  };
+}
+
+export function masteryStat(
+  skillKey: SpecialSkillKey,
+  field: keyof SkillTierStatMultipliers,
+  fallback: number,
+): number {
+  return getSkillTierStat(skillKey, "master", field, fallback);
+}
 
 /** Zona de chão criada por Maestria (Tesla / fissura). */
 export type MasteryGroundZone = {

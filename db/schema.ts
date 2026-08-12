@@ -3,6 +3,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   serial,
   timestamp,
@@ -407,6 +408,8 @@ export const stages = pgTable("stages", {
   /** Fração 0–1 da cota para spawn do chefe (obrigatório em toda fase). */
   bossSpawnProgress: real("boss_spawn_progress").notNull().default(0.65),
   difficultyMul: real("difficulty_mul").notNull().default(1),
+  /** Multiplicador extra só no chefe (early game mais fraco). */
+  bossStatMul: real("boss_stat_mul").notNull().default(1),
 });
 
 /**
@@ -436,3 +439,259 @@ export const enemyTypes = pgTable("enemy_types", {
   /** Chance 0–1 de dropar diamante roxo (não-boss). */
   purpleDiamondChance: real("purple_diamond_chance").notNull().default(0),
 });
+
+/** Buff aplicado por membro da equipe (JSONB em `game_team_members_config`). */
+export type TeamMemberBuffConfig = {
+  type:
+    | "hp_regen_pct_max"
+    | "damage_mul_pct"
+    | "max_hp_mul_pct"
+    | "damage_taken_reduce"
+    | "attack_speed_mul"
+    | "xp_bonus"
+    | "crit_chance"
+    | "crit_damage"
+    | "knockback_mul_pct"
+    | "skill_damage_mul"
+    | "gold_income_mul"
+    | "diamond_luck"
+    | "purple_diamond_luck";
+  coefficient: number;
+  /** Teto por membro (ex.: redução de dano recebido). */
+  cap?: number;
+};
+
+/**
+ * Catálogo de membros da equipe (gacha / esquina).
+ * Buffs em JSONB — editável no Neon sem deploy.
+ */
+export const gameTeamMembersConfig = pgTable("game_team_members_config", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  tier: varchar("tier", { length: 16 }).notNull(),
+  role: varchar("role", { length: 16 }).notNull(),
+  tagline: varchar("tagline", { length: 256 }).notNull(),
+  buffs: jsonb("buffs").$type<TeamMemberBuffConfig[]>().notNull().default([]),
+  /** Multiplicador de poder por tier (referência; pity usa tabela global). */
+  tierPower: real("tier_power").notNull().default(1),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/** Stats de scaling por skill avançada + custos de desbloqueio. */
+export const gameSkillsConfig = pgTable("game_skills_config", {
+  skillKey: varchar("skill_key", { length: 32 }).primaryKey(),
+  displayName: varchar("display_name", { length: 64 }).notNull(),
+  unlockGoldCost: integer("unlock_gold_cost").notNull().default(0),
+  unlockDiamondCost: integer("unlock_diamond_cost").notNull().default(0),
+  unlockMobsRequired: integer("unlock_mobs_required").notNull().default(0),
+  unlockBossesRequired: integer("unlock_bosses_required").notNull().default(0),
+  masteryPurpleCost: integer("mastery_purple_cost").notNull().default(0),
+  masteryShardCost: integer("mastery_shard_cost").notNull().default(0),
+  /** Stats base por atributo (damage, cooldown, hits, …). */
+  defaultStats: jsonb("default_stats")
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
+  /** Incremento por nível de atributo roxo (opcional). */
+  scalingPerLevel: jsonb("scaling_per_level")
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/**
+ * Catálogo de inimigos para spawn/combate (autoritativo no Neon).
+ * Espelha `enemy_types` com `behavior_kind` explícito.
+ */
+export const gameEnemiesConfig = pgTable("game_enemies_config", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 64 }).notNull().unique(),
+  behaviorKind: varchar("behavior_kind", { length: 16 })
+    .notNull()
+    .default("normal"),
+  isBoss: boolean("is_boss").notNull().default(false),
+  hpBase: integer("hp_base").notNull(),
+  speed: real("speed").notNull(),
+  damage: real("damage").notNull(),
+  attackSpeed: integer("attack_speed").notNull(),
+  color: varchar("color", { length: 32 }).notNull().default("#ff0000"),
+  scale: real("scale").notNull().default(1),
+  unlockTime: integer("unlock_time").notNull().default(0),
+  xpReward: integer("xp_reward").notNull().default(5),
+  goldReward: real("gold_reward").notNull().default(1),
+  normalDiamondChance: real("normal_diamond_chance").notNull().default(0.02),
+  purpleDiamondChance: real("purple_diamond_chance").notNull().default(0),
+});
+
+/** Upgrades de meta-progresso (ouro, diamantes, ascensão, talents). */
+export const gameUpgradesConfig = pgTable("game_upgrades_config", {
+  upgradeKey: varchar("upgrade_key", { length: 64 }).primaryKey(),
+  displayName: varchar("display_name", { length: 64 }).notNull(),
+  currency: varchar("currency", { length: 16 }).notNull(),
+  costBase: real("cost_base").notNull(),
+  growthRate: real("growth_rate").notNull(),
+  maxLevel: integer("max_level"),
+  /** Parâmetros de efeito (%, caps, fórmulas auxiliares). */
+  effectParams: jsonb("effect_params")
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/** Delta de carta de skill especial in-run (raridade comum–lendária). */
+export type MatchSkillEffectDelta = {
+  damageMul?: number;
+  cooldownMul?: number;
+  durationMul?: number;
+  radiusMul?: number;
+  extraHits?: number;
+  extraProjectiles?: number;
+};
+
+/** Multiplicadores e parâmetros de combate por skill × tier (inclui Supremo). */
+export type SkillTierStatMultipliers = MatchSkillEffectDelta & {
+  cloneCount?: number;
+  cloneStatRatio?: number;
+  auraSecondaryPower?: number;
+  fireShareRatio?: number;
+  fireShareRadius?: number;
+  iceShatterRadius?: number;
+  iceShatterDamageRatio?: number;
+  iceShatterFreezeMs?: number;
+  teslaDurationMs?: number;
+  teslaRadius?: number;
+  teslaDpsRatio?: number;
+  fissureRadius?: number;
+  fissureSlow?: number;
+  fissureVuln?: number;
+  vendavalImplosionRadius?: number;
+  vendavalImplosionDamageRatio?: number;
+  vendavalStunMs?: number;
+  vendavalKnockback?: number;
+  ricochetMaxTargets?: number;
+};
+
+export type SkillScalingTier =
+  | "common"
+  | "uncommon"
+  | "rare"
+  | "epic"
+  | "legendary"
+  | "master";
+
+/** Constantes globais da roleta in-run (linha única). */
+export const gameMatchGlobals = pgTable("game_match_globals", {
+  id: serial("id").primaryKey(),
+  cooldownUpgradeFloor: integer("cooldown_upgrade_floor").notNull().default(300),
+  critChanceCap: real("crit_chance_cap").notNull().default(1),
+  damageTakenReductionCap: real("damage_taken_reduction_cap")
+    .notNull()
+    .default(0.3),
+  thornsUnlockTimeSec: integer("thorns_unlock_time_sec").notNull().default(900),
+  thornsMaxLevel: integer("thorns_max_level").notNull().default(3),
+  thornsReflectCap: real("thorns_reflect_cap").notNull().default(0.3),
+  /** Máx. de cartas Guard por run (mesmo teto dos Espinhos). */
+  guardMaxLevel: integer("guard_max_level").notNull().default(3),
+  /** +2% por degrau de raridade em Guard/Espinhos (lendário = 10%). */
+  mitigationBonusPerTier: real("mitigation_bonus_per_tier")
+    .notNull()
+    .default(0.02),
+  skillLevelCap: integer("skill_level_cap").notNull().default(8),
+  baseActiveRunSkills: integer("base_active_run_skills").notNull().default(2),
+  specialSkillCardChance: real("special_skill_card_chance")
+    .notNull()
+    .default(0.15),
+  maxLuckBonus: real("max_luck_bonus").notNull().default(0.15),
+  luckPerMinute: real("luck_per_minute").notNull().default(0.03),
+  luckPerFiveLevels: real("luck_per_five_levels").notNull().default(0.025),
+});
+
+/** Pesos e bônus percentual por raridade das cartas in-run. */
+export const gameMatchRarities = pgTable("game_match_rarities", {
+  rarity: varchar("rarity", { length: 16 }).primaryKey(),
+  weight: real("weight").notNull(),
+  bonusValue: real("bonus_value").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/** Parâmetros do bônus de uma carta de status × raridade. */
+export type StatCardValues = {
+  /** Magnitude do bônus. Se `isPercentage`, em pontos percentuais (15 = +15%). */
+  value: number;
+  isPercentage?: boolean;
+  is_percentage?: boolean;
+};
+
+/** Cartas de status da roleta de level-up. */
+export const gameMatchStatCards = pgTable("game_match_stat_cards", {
+  category: varchar("category", { length: 32 }).primaryKey(),
+  upgradeType: varchar("upgrade_type", { length: 64 }).notNull(),
+  name: varchar("name", { length: 64 }).notNull(),
+  short: varchar("short", { length: 64 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/**
+ * Bônus e peso de cada carta de status por raridade.
+ * Fonte autoritativa dos valores da roleta (Dano, APS, Crítico, …).
+ */
+export const gameStatCardsConfig = pgTable(
+  "game_stat_cards_config",
+  {
+    cardId: varchar("card_id", { length: 32 }).notNull(),
+    tier: varchar("tier", { length: 16 }).notNull(),
+    displayName: varchar("display_name", { length: 64 }).notNull(),
+    upgradeType: varchar("upgrade_type", { length: 64 }).notNull(),
+    category: varchar("category", { length: 32 }).notNull(),
+    statValues: jsonb("stat_values")
+      .$type<StatCardValues>()
+      .notNull()
+      .default({ value: 5, isPercentage: true }),
+    weight: integer("weight").notNull().default(10),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.cardId, t.tier] })],
+);
+
+/** Skills especiais oferecidas como carta in-run. */
+export const gameMatchSkillCards = pgTable("game_match_skill_cards", {
+  skillKey: varchar("skill_key", { length: 32 }).primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  short: varchar("short", { length: 256 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/** Efeitos por skill × raridade (legado; a fonte autoritativa é `game_skill_tier_scaling`). */
+export const gameMatchSkillEffects = pgTable(
+  "game_match_skill_effects",
+  {
+    skillKey: varchar("skill_key", { length: 32 }).notNull(),
+    rarity: varchar("rarity", { length: 16 }).notNull(),
+    delta: jsonb("delta").$type<MatchSkillEffectDelta>().notNull().default({}),
+    effectLines: jsonb("effect_lines").$type<string[]>().notNull().default([]),
+  },
+  (t) => [primaryKey({ columns: [t.skillKey, t.rarity] })],
+);
+
+/**
+ * Escalonamento de status por skill × tier (comum…lendário + Supremo).
+ * `stat_multipliers` aceita chaves camelCase ou snake_case no JSONB.
+ */
+export const gameSkillTierScaling = pgTable(
+  "game_skill_tier_scaling",
+  {
+    skillKey: varchar("skill_key", { length: 32 }).notNull(),
+    tier: varchar("tier", { length: 16 }).notNull(),
+    statMultipliers: jsonb("stat_multipliers")
+      .$type<SkillTierStatMultipliers>()
+      .notNull()
+      .default({}),
+    effectLines: jsonb("effect_lines").$type<string[]>().notNull().default([]),
+    cardLabel: varchar("card_label", { length: 64 }),
+    cardTitle: varchar("card_title", { length: 128 }),
+    cardDescription: varchar("card_description", { length: 512 }),
+  },
+  (t) => [primaryKey({ columns: [t.skillKey, t.tier] })],
+);

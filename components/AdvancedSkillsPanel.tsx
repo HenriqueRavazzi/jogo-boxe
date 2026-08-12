@@ -37,7 +37,7 @@ import {
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
 import {
   areAllSkillStatsMaxed,
-  SKILL_MASTERY_CARD_INFO,
+  getMasteryCardInfo,
 } from "@/lib/skillMastery";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
@@ -498,7 +498,7 @@ function MasteryUnlockFooter({ skillType }: { skillType: SkillUpgradeType }) {
   const allMaxed = areAllSkillStatsMaxed(skills, skillType);
   const unlocked = skillMasteryUnlocked[skillType];
   const canBuy = canUnlockSkillMastery(skillType);
-  const info = SKILL_MASTERY_CARD_INFO[skillType];
+  const info = getMasteryCardInfo(skillType);
 
   if (!allMaxed && !unlocked) return null;
 

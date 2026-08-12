@@ -1,0 +1,173 @@
+export type UpgradeConfigSeed = {
+  upgradeKey: string;
+  displayName: string;
+  currency: "gold" | "gems" | "purple" | "system";
+  costBase: number;
+  growthRate: number;
+  maxLevel: number | null;
+  effectParams: Record<string, number>;
+  sortOrder: number;
+};
+
+/** Valores espelham `useGameStore.ts` e `lib/teamMembers.ts` no momento da migração. */
+export const UPGRADES_CONFIG_SEEDS: UpgradeConfigSeed[] = [
+  {
+    upgradeKey: "hp",
+    displayName: "Max HP",
+    currency: "gold",
+    costBase: 40,
+    growthRate: 1.05,
+    maxLevel: null,
+    effectParams: {
+      pct_per_level: 0.1,
+      pct_scale_per_level: 0.01,
+    },
+    sortOrder: 0,
+  },
+  {
+    upgradeKey: "damage",
+    displayName: "Dano",
+    currency: "gold",
+    costBase: 40,
+    growthRate: 1.05,
+    maxLevel: null,
+    effectParams: {
+      pct_per_level: 0.1,
+      pct_scale_per_level: 0.01,
+    },
+    sortOrder: 1,
+  },
+  {
+    upgradeKey: "income",
+    displayName: "Renda",
+    currency: "gold",
+    costBase: 75,
+    growthRate: 1.2,
+    maxLevel: null,
+    effectParams: {
+      income_step: 0.1,
+      income_step_scale: 0.005,
+    },
+    sortOrder: 2,
+  },
+  {
+    upgradeKey: "range",
+    displayName: "Alcance",
+    currency: "gold",
+    costBase: 60,
+    growthRate: 1.2,
+    maxLevel: 10,
+    effectParams: {},
+    sortOrder: 3,
+  },
+  {
+    upgradeKey: "crit_chance",
+    displayName: "Chance Crítica",
+    currency: "gold",
+    costBase: 65,
+    growthRate: 1.2,
+    maxLevel: 23,
+    effectParams: { crit_base: 0.05, crit_per_level: 0.02 },
+    sortOrder: 4,
+  },
+  {
+    upgradeKey: "xp_bonus",
+    displayName: "Bônus XP",
+    currency: "gems",
+    costBase: 40,
+    growthRate: 1.3,
+    maxLevel: 30,
+    effectParams: { xp_per_level: 0.1 },
+    sortOrder: 5,
+  },
+  {
+    upgradeKey: "meta_damage",
+    displayName: "Meta Dano",
+    currency: "gems",
+    costBase: 18,
+    growthRate: 1.28,
+    maxLevel: 40,
+    effectParams: { pct_per_level: 0.025 },
+    sortOrder: 6,
+  },
+  {
+    upgradeKey: "meta_hp",
+    displayName: "Meta HP",
+    currency: "gems",
+    costBase: 18,
+    growthRate: 1.28,
+    maxLevel: 40,
+    effectParams: { pct_per_level: 0.03 },
+    sortOrder: 7,
+  },
+  {
+    upgradeKey: "meta_life_steal",
+    displayName: "Meta Life Steal",
+    currency: "gems",
+    costBase: 28,
+    growthRate: 1.38,
+    maxLevel: 10,
+    effectParams: { pct_per_level: 0.01, max_ratio: 0.1 },
+    sortOrder: 8,
+  },
+  {
+    upgradeKey: "meta_parry",
+    displayName: "Meta Parry",
+    currency: "gems",
+    costBase: 40,
+    growthRate: 1.34,
+    maxLevel: 50,
+    effectParams: {},
+    sortOrder: 9,
+  },
+  {
+    upgradeKey: "purple_skill_stat",
+    displayName: "Atributo Skill Roxa",
+    currency: "purple",
+    costBase: 3,
+    growthRate: 1.2,
+    maxLevel: 20,
+    effectParams: {},
+    sortOrder: 10,
+  },
+  {
+    upgradeKey: "prestige_cost",
+    displayName: "Multiplicador Prestígio",
+    currency: "system",
+    costBase: 0,
+    growthRate: 1.12,
+    maxLevel: null,
+    effectParams: {},
+    sortOrder: 11,
+  },
+  {
+    upgradeKey: "upgrade_soft_tail",
+    displayName: "Soft-tail de custo",
+    currency: "system",
+    costBase: 0,
+    growthRate: 1.2,
+    maxLevel: null,
+    effectParams: {
+      soft_tail_start: 25,
+      soft_tail_factor: 0.3,
+    },
+    sortOrder: 12,
+  },
+  {
+    upgradeKey: "team_gacha",
+    displayName: "Gacha da Equipe",
+    currency: "system",
+    costBase: 220,
+    growthRate: 1.022,
+    maxLevel: null,
+    effectParams: {
+      recruit_gems_base: 8,
+      recruit_gems_growth: 1.016,
+      max_hp_regen_cap: 0.03,
+      max_damage_mul: 1.1,
+      max_hp_mul: 1.15,
+      min_damage_taken_mul: 0.6,
+    },
+    sortOrder: 13,
+  },
+];

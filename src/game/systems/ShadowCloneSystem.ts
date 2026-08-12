@@ -12,6 +12,7 @@ import {
 import {
   MASTERY_SHADOW_CLONE_COUNT,
   MASTERY_SHADOW_STAT_RATIO,
+  masteryStat,
 } from "@/lib/skillMastery";
 import type { ArmSide } from "@/src/game/entities/Player";
 import type { Enemy } from "@/src/game/entities/Enemy";
@@ -322,10 +323,10 @@ export function runShadowCloneSystem(
     }
     if (now >= nextPulse.shadowNextSpawnAt) {
       const count = input.masteryMirroredArmy
-        ? MASTERY_SHADOW_CLONE_COUNT
+        ? masteryStat("shadow", "cloneCount", MASTERY_SHADOW_CLONE_COUNT)
         : 1;
       const baseRatio = input.masteryMirroredArmy
-        ? MASTERY_SHADOW_STAT_RATIO
+        ? masteryStat("shadow", "cloneStatRatio", MASTERY_SHADOW_STAT_RATIO)
         : SHADOW_CLONE_STAT_RATIO;
       const spawned: ShadowCloneState[] = [];
       for (let i = 0; i < count; i++) {

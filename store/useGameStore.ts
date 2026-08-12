@@ -52,6 +52,12 @@ import {
   type AdvancedSkillUnlockRequirements,
 } from "@/lib/advancedSkillUnlock";
 import {
+  FALLBACK_BALANCE_CONFIG,
+  getUpgradeCostParams,
+  setBalanceConfig,
+  type BalanceConfigBundle,
+} from "@/lib/balanceConfig";
+import {
   applyMilestoneProgress,
   canClaimMilestone,
   listNewlyClaimableMilestones,
@@ -287,6 +293,8 @@ export type GameStoreState = {
   /** Id da dificuldade selecionada no menu. */
   selectedDifficultyId: number | null;
   configsLoaded: boolean;
+  /** Bundle de balanceamento (equipe, skills, inimigos, upgrades) do Neon. */
+  balanceConfig: BalanceConfigBundle;
   /** Multiplicador de velocidade da simulação (1–5). */
   gameSpeedMultiplier: number;
   setGameSpeedMultiplier: (speed: number) => void;
@@ -303,6 +311,7 @@ export type GameStoreState = {
     settings: GameBaseSettings,
     difficulties: DifficultyConfig[],
     enemyTypes?: EnemyTypeConfig[],
+    balance?: BalanceConfigBundle,
   ) => void;
   setSelectedDifficulty: (id: number) => void;
   getSelectedDifficulty: () => DifficultyConfig | null;
@@ -699,8 +708,8 @@ export const MAX_UPGRADE_LEVELS = {
   /** Só via cartas in-run (`matchBuffs.attackSpeed`). */
   attackSpeed: 0,
   range: 10,
-  /** Bônus de XP com diamantes (+10%/nível), até Lv.50. */
-  xpBonus: 50,
+  /** Bônus de XP com diamantes (+10%/nível), até Lv.30. */
+  xpBonus: 30,
 } as const;
 
 /** Árvore de atributos permanentes (Diamantes Normais). */
@@ -1232,6 +1241,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
   selectedDifficultyId: pickDefaultDifficultyId(FALLBACK_DIFFICULTIES),
   configsLoaded: false,
+  balanceConfig: { ...FALLBACK_BALANCE_CONFIG },
   gameSpeedMultiplier: 1,
 
   setGameSpeedMultiplier: (speed) =>
@@ -1436,7 +1446,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     };
   },
 
-  setGameConfigs: (settings, difficultiesList, enemyTypesList) => {
+  setGameConfigs: (settings, difficultiesList, enemyTypesList, balance) => {
     const list =
       difficultiesList.length > 0
         ? difficultiesList
@@ -1445,12 +1455,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       enemyTypesList && enemyTypesList.length > 0
         ? enemyTypesList
         : [...FALLBACK_ENEMY_TYPES];
+    const balanceBundle = balance ?? { ...FALLBACK_BALANCE_CONFIG };
+    setBalanceConfig(balanceBundle);
     const currentId = get().selectedDifficultyId;
     const stillValid = list.some((d) => d.id === currentId);
     set({
       baseConfig: { ...settings },
       difficulties: list,
       enemyTypes: types,
+      balanceConfig: balanceBundle,
       selectedDifficultyId: stillValid
         ? currentId
         : pickDefaultDifficultyId(list),
@@ -2154,21 +2167,29 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return refund;
   },
 
-  getHpUpgradeCost: () =>
-    getUpgradeCost(
-      COMBAT_UPGRADE_COST_BASE,
+  getHpUpgradeCost: () => {
+    const hp = getUpgradeCostParams("hp", COMBAT_UPGRADE_COST_BASE, COMBAT_UPGRADE_COST_GROWTH);
+    return getUpgradeCost(
+      hp.costBase,
       get().maxHpLevel,
       get().prestigeLevel,
-      COMBAT_UPGRADE_COST_GROWTH,
-    ),
+      hp.growthRate,
+    );
+  },
 
-  getDamageUpgradeCost: () =>
-    getUpgradeCost(
+  getDamageUpgradeCost: () => {
+    const dmg = getUpgradeCostParams(
+      "damage",
       COMBAT_UPGRADE_COST_BASE,
+      COMBAT_UPGRADE_COST_GROWTH,
+    );
+    return getUpgradeCost(
+      dmg.costBase,
       get().baseDamageLevel,
       get().prestigeLevel,
-      COMBAT_UPGRADE_COST_GROWTH,
-    ),
+      dmg.growthRate,
+    );
+  },
 
   getAttackSpeedUpgradeCost: () =>
     getUpgradeCost(

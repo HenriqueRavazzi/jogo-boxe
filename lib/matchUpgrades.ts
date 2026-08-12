@@ -17,6 +17,18 @@ import {
   type SkillMasteryUnlockedData,
   type SkillMasteryUpgradeType,
 } from "@/lib/skillMastery";
+import {
+  getMatchGlobals,
+  getMatchRarityBonus,
+  getMatchRarityWeights,
+  getMatchSkillCards,
+  getMatchSkillEffect,
+  getMatchStatCards,
+  getSkillTierScaling,
+  getStatCardTierConfig,
+  getStatCardsConfig,
+  resolveStatCardValue,
+} from "@/lib/balanceConfig";
 
 /** Para de oferecer cartas de velocidade abaixo deste cooldown efetivo (ms).
  * O CD real pode ir abaixo via meta/equipe; só as cartas in-run param aqui. */
@@ -31,8 +43,27 @@ export const MATCH_THORNS_UNLOCK_TIME_SEC = 15 * 60;
 export const MATCH_THORNS_MAX_LEVEL = 3;
 /** Espinhos: no máx. 30% do dano recebido refletido. */
 export const MATCH_THORNS_REFLECT_CAP = 0.3;
+/** Guard: máximo de 3 upgrades por run. */
+export const MATCH_GUARD_MAX_LEVEL = 3;
+/** Guard/Espinhos: +2% por degrau de raridade (lendário = 10%). */
+export const MATCH_MITIGATION_BONUS_PER_TIER = 0.02;
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
+
+const MITIGATION_RARITY_TIER: Record<Rarity, number> = {
+  common: 1,
+  uncommon: 2,
+  rare: 3,
+  epic: 4,
+  legendary: 5,
+};
+
+/** Bônus de Guard/Espinhos: comum 2% … lendário 10%. */
+export function getMitigationRarityBonus(rarity: Rarity): number {
+  const perTier =
+    getMatchGlobals().mitigationBonusPerTier ?? MATCH_MITIGATION_BONUS_PER_TIER;
+  return MITIGATION_RARITY_TIER[rarity] * perTier;
+}
 
 export type SpecialSkillKey =
   | "ice"
@@ -53,6 +84,8 @@ export type UpgradeCategory =
   | "critDamage"
   | "critChance"
   | "skillDamage"
+  | "range"
+  | "knockback"
   | SpecialSkillKey
   | SkillMasteryUpgradeType;
 
@@ -64,6 +97,8 @@ export type UpgradeType =
   | "critDamageMultiplier"
   | "critChanceBonus"
   | "skillDamageMultiplier"
+  | "attackRange"
+  | "knockbackMultiplier"
   | SpecialSkillKey
   | SkillMasteryUpgradeType;
 
@@ -88,8 +123,10 @@ export type MatchSkillBonusDelta = {
   damageMul?: number;
   /** Multiplica o cooldown (ex.: 0.8 = −20% CD). */
   cooldownMul?: number;
-  /** Multiplica duração (burn/gelo). */
+  /** Multiplica duração (burn/gelo/clone/debuff). */
   durationMul?: number;
+  /** Multiplica raio (Aura / Vendaval). */
+  radiusMul?: number;
   /** Hits/bounces/stacks extras. */
   extraHits?: number;
   /** Projéteis extras (Raio). */
@@ -101,6 +138,7 @@ export type MatchSkillBonusState = {
   damageMul: number;
   cooldownMul: number;
   durationMul: number;
+  radiusMul: number;
   extraHits: number;
   extraProjectiles: number;
 };
@@ -111,6 +149,7 @@ export const DEFAULT_MATCH_SKILL_BONUS: MatchSkillBonusState = {
   damageMul: 1,
   cooldownMul: 1,
   durationMul: 1,
+  radiusMul: 1,
   extraHits: 0,
   extraProjectiles: 0,
 };
@@ -148,6 +187,7 @@ export function applySkillBonusDelta(
     damageMul: current.damageMul * (delta.damageMul ?? 1),
     cooldownMul: current.cooldownMul * (delta.cooldownMul ?? 1),
     durationMul: current.durationMul * (delta.durationMul ?? 1),
+    radiusMul: (current.radiusMul ?? 1) * (delta.radiusMul ?? 1),
     extraHits: current.extraHits + (delta.extraHits ?? 0),
     extraProjectiles: current.extraProjectiles + (delta.extraProjectiles ?? 0),
   };
@@ -163,226 +203,24 @@ function buildSpecialSkillEffect(
   nextLevel: number,
 ): { delta: MatchSkillBonusDelta; description: string; effectLines: string[] } {
   const isFirst = nextLevel <= 1;
-  const pool = SPECIAL_SKILL_POOL.find((p) => p.type === key)!;
-
-  type Pkg = {
-    delta: MatchSkillBonusDelta;
-    lines: string[];
-  };
-
-  const packages: Record<SpecialSkillKey, Record<Rarity, Pkg>> = {
-    lightning: {
-      common: {
-        delta: { damageMul: 1.12 },
-        lines: ["+12% dano do raio"],
-      },
-      uncommon: {
-        delta: { cooldownMul: 0.88 },
-        lines: ["−12% cooldown"],
-      },
-      rare: {
-        delta: { damageMul: 1.2, extraHits: 1 },
-        lines: ["+20% dano", "+1 burst"],
-      },
-      epic: {
-        delta: { damageMul: 1.28, cooldownMul: 0.82 },
-        lines: ["+28% dano", "−18% cooldown"],
-      },
-      legendary: {
-        delta: {
-          damageMul: 1.4,
-          cooldownMul: 0.75,
-          extraProjectiles: 1,
-          extraHits: 1,
-        },
-        lines: ["+40% dano", "−25% cooldown", "+1 raio extra", "+1 burst"],
-      },
-    },
-    fire: {
-      common: {
-        delta: { damageMul: 1.12 },
-        lines: ["+12% dano de burn"],
-      },
-      uncommon: {
-        delta: { durationMul: 1.18 },
-        lines: ["+18% duração do burn"],
-      },
-      rare: {
-        delta: { damageMul: 1.18, extraHits: 1 },
-        lines: ["+18% burn", "+1 stack máx."],
-      },
-      epic: {
-        delta: { damageMul: 1.28, durationMul: 1.22 },
-        lines: ["+28% burn", "+22% duração"],
-      },
-      legendary: {
-        delta: { damageMul: 1.4, durationMul: 1.35, extraHits: 2 },
-        lines: ["+40% burn", "+35% duração", "+2 stacks máx."],
-      },
-    },
-    ice: {
-      common: {
-        delta: { durationMul: 1.12 },
-        lines: ["+12% duração do gelo"],
-      },
-      uncommon: {
-        delta: { cooldownMul: 0.88 },
-        lines: ["−12% cooldown"],
-      },
-      rare: {
-        delta: { durationMul: 1.22, cooldownMul: 0.9 },
-        lines: ["+22% duração", "−10% cooldown"],
-      },
-      epic: {
-        delta: { durationMul: 1.3, cooldownMul: 0.82 },
-        lines: ["+30% duração", "−18% cooldown"],
-      },
-      legendary: {
-        delta: { durationMul: 1.45, cooldownMul: 0.72 },
-        lines: ["+45% duração", "−28% cooldown"],
-      },
-    },
-    ricochet: {
-      common: {
-        delta: { damageMul: 1.12 },
-        lines: ["+12% dano dos saltos"],
-      },
-      uncommon: {
-        delta: { cooldownMul: 0.88 },
-        lines: ["−12% cooldown"],
-      },
-      rare: {
-        delta: { damageMul: 1.15, extraHits: 1 },
-        lines: ["+15% dano", "+1 salto"],
-      },
-      epic: {
-        delta: { damageMul: 1.25, cooldownMul: 0.82 },
-        lines: ["+25% dano", "−18% cooldown"],
-      },
-      legendary: {
-        delta: { damageMul: 1.35, cooldownMul: 0.75, extraHits: 2 },
-        lines: ["+35% dano", "−25% cooldown", "+2 saltos"],
-      },
-    },
-    aura: {
-      common: {
-        delta: { damageMul: 1.12 },
-        lines: ["+12% poder da aura"],
-      },
-      uncommon: {
-        delta: { durationMul: 1.15 },
-        lines: ["+15% raio da aura"],
-      },
-      rare: {
-        delta: { damageMul: 1.2, durationMul: 1.12 },
-        lines: ["+20% poder", "+12% raio"],
-      },
-      epic: {
-        delta: { damageMul: 1.28, cooldownMul: 0.85, durationMul: 1.18 },
-        lines: ["+28% poder", "−15% intervalo stun", "+18% raio"],
-      },
-      legendary: {
-        delta: {
-          damageMul: 1.4,
-          cooldownMul: 0.75,
-          durationMul: 1.3,
-        },
-        lines: ["+40% poder", "−25% intervalo stun", "+30% raio"],
-      },
-    },
-    shadow: {
-      common: {
-        delta: { damageMul: 1.12 },
-        lines: ["+12% poder do clone"],
-      },
-      uncommon: {
-        delta: { durationMul: 1.15 },
-        lines: ["+15% duração do clone"],
-      },
-      rare: {
-        delta: { damageMul: 1.2, cooldownMul: 0.9 },
-        lines: ["+20% poder", "−10% cooldown"],
-      },
-      epic: {
-        delta: { damageMul: 1.28, cooldownMul: 0.82, durationMul: 1.2 },
-        lines: ["+28% poder", "−18% cooldown", "+20% duração"],
-      },
-      legendary: {
-        delta: {
-          damageMul: 1.4,
-          cooldownMul: 0.72,
-          durationMul: 1.35,
-        },
-        lines: ["+40% poder", "−28% cooldown", "+35% duração"],
-      },
-    },
-    stone: {
-      common: {
-        delta: { damageMul: 1.12 },
-        lines: ["+12% dano do terremoto"],
-      },
-      uncommon: {
-        delta: { durationMul: 1.15 },
-        lines: ["+15% duração do debuff"],
-      },
-      rare: {
-        delta: { damageMul: 1.2, cooldownMul: 0.9 },
-        lines: ["+20% dano", "−10% cooldown"],
-      },
-      epic: {
-        delta: { damageMul: 1.28, cooldownMul: 0.82, durationMul: 1.2 },
-        lines: ["+28% dano", "−18% cooldown", "+20% duração"],
-      },
-      legendary: {
-        delta: {
-          damageMul: 1.4,
-          cooldownMul: 0.72,
-          durationMul: 1.35,
-        },
-        lines: ["+40% dano", "−28% cooldown", "+35% duração"],
-      },
-    },
-    vendaval: {
-      common: {
-        delta: { damageMul: 1.12 },
-        lines: ["+12% dano do vácuo"],
-      },
-      uncommon: {
-        delta: { durationMul: 1.15 },
-        lines: ["+15% raio do vácuo"],
-      },
-      rare: {
-        delta: { damageMul: 1.2, cooldownMul: 0.9 },
-        lines: ["+20% dano", "−10% cooldown"],
-      },
-      epic: {
-        delta: { damageMul: 1.28, cooldownMul: 0.82, durationMul: 1.2 },
-        lines: ["+28% dano", "−18% cooldown", "+20% raio"],
-      },
-      legendary: {
-        delta: {
-          damageMul: 1.4,
-          cooldownMul: 0.72,
-          durationMul: 1.35,
-        },
-        lines: ["+40% dano", "−28% cooldown", "+35% raio"],
-      },
-    },
-  };
-
-  const pkg = packages[key][rarity];
-  const lines = [...pkg.lines];
+  const pool = getSpecialSkillPool().find((p) => p.type === key);
+  const effect = getMatchSkillEffect(key, rarity);
+  const delta = effect?.delta ?? {};
+  const lines = effect?.effectLines?.length
+    ? [...effect.effectLines]
+    : ["+efeito"];
+  const short = pool?.short ?? key;
 
   if (isFirst) {
     return {
-      delta: pkg.delta,
+      delta,
       effectLines: lines,
-      description: `Ativa: ${pool.short}. ${lines.join(" · ")}`,
+      description: `Ativa: ${short}. ${lines.join(" · ")}`,
     };
   }
 
   return {
-    delta: pkg.delta,
+    delta,
     effectLines: lines,
     description: `+1 nível · ${lines.join(" · ")}`,
   };
@@ -400,25 +238,6 @@ const BASE_RARITY_TABLE: { rarity: Rarity; weight: number }[] = [
   { rarity: "legendary", weight: 2.5 },
 ];
 
-/** Teto do bônus de sorte (15 pontos percentuais redistribuídos). */
-const MAX_LUCK_BONUS = 0.15;
-/** +3% de luckBonus por minuto sobrevivido. */
-const LUCK_PER_MINUTE = 0.03;
-/** +2.5% de luckBonus a cada 5 níveis de arena. */
-const LUCK_PER_FIVE_LEVELS = 0.025;
-
-/**
- * Magnitude do buff por raridade (diferença de poder clara).
- * Ex.: Attack Speed comum +5%, épico +15%, lendário +25%.
- */
-const RARITY_BONUS: Record<Rarity, number> = {
-  common: 0.05,
-  uncommon: 0.08,
-  rare: 0.12,
-  epic: 0.15,
-  legendary: 0.25,
-};
-
 type StatCategory =
   | "damage"
   | "speed"
@@ -426,7 +245,9 @@ type StatCategory =
   | "thorns"
   | "critDamage"
   | "critChance"
-  | "skillDamage";
+  | "skillDamage"
+  | "range"
+  | "knockback";
 
 const STAT_UPGRADE_POOL: {
   type: UpgradeType;
@@ -475,6 +296,18 @@ const STAT_UPGRADE_POOL: {
     category: "skillDamage",
     name: "Skill Damage",
     short: "Dano das Skills",
+  },
+  {
+    type: "attackRange",
+    category: "range",
+    name: "Range",
+    short: "Alcance",
+  },
+  {
+    type: "knockbackMultiplier",
+    category: "knockback",
+    name: "Knockback",
+    short: "Knockback",
   },
 ];
 
@@ -534,6 +367,46 @@ const SPECIAL_SKILL_POOL: {
   },
 ];
 
+function getStatUpgradePool() {
+  const tierRows = getStatCardsConfig();
+  if (tierRows.length > 0) {
+    const byCategory = new Map<
+      string,
+      { type: UpgradeType; category: StatCategory; name: string; short: string }
+    >();
+    const sorted = [...tierRows].sort((a, b) => a.sortOrder - b.sortOrder);
+    for (const row of sorted) {
+      if (byCategory.has(row.category)) continue;
+      byCategory.set(row.category, {
+        type: row.upgradeType as UpgradeType,
+        category: row.category as StatCategory,
+        name: row.displayName,
+        short: row.displayName,
+      });
+    }
+    if (byCategory.size > 0) return [...byCategory.values()];
+  }
+  const cards = getMatchStatCards();
+  if (cards.length === 0) return STAT_UPGRADE_POOL;
+  return cards.map((c) => ({
+    type: c.upgradeType as UpgradeType,
+    category: c.category as StatCategory,
+    name: c.name,
+    short: c.short,
+  }));
+}
+
+function getSpecialSkillPool() {
+  const cards = getMatchSkillCards();
+  if (cards.length === 0) return SPECIAL_SKILL_POOL;
+  return cards.map((c) => ({
+    type: c.skillKey as SpecialSkillKey,
+    category: c.skillKey as SpecialSkillKey,
+    name: c.name,
+    short: c.short,
+  }));
+}
+
 export const SPECIAL_SKILL_KEYS: SpecialSkillKey[] = [
   "fire",
   "ice",
@@ -561,7 +434,7 @@ export const MATCH_SKILL_LEVEL_CAP = 8;
  */
 export function getMatchSkillMaxLevel(metaSkillLevel: number): number {
   return Math.min(
-    MATCH_SKILL_LEVEL_CAP,
+    getMatchGlobals().skillLevelCap,
     1 + Math.max(0, Math.floor(metaSkillLevel)),
   );
 }
@@ -616,6 +489,8 @@ export type GenerateUpgradeOptionsContext = {
   effectiveThornsReflectRatio?: number;
   /** Nível atual de Espinhos (máx. 3). */
   thornsLevel?: number;
+  /** Nível atual de Guard (máx. 3). */
+  guardLevel?: number;
   /** Em Endless pode aparecer carta de redução de dano recebido. */
   isEndlessRun?: boolean;
   /** Segundos vivos na run — escala pity de raridade. */
@@ -639,7 +514,7 @@ export const BASE_ACTIVE_RUN_SKILLS = 2;
 export const MAX_ACTIVE_RUN_SKILLS = BASE_ACTIVE_RUN_SKILLS;
 
 export function getMaxActiveRunSkills(extraSlots = 0): number {
-  return BASE_ACTIVE_RUN_SKILLS + Math.max(0, Math.floor(extraSlots));
+  return getMatchGlobals().baseActiveRunSkills + Math.max(0, Math.floor(extraSlots));
 }
 
 /**
@@ -650,10 +525,11 @@ export function computeRarityLuckBonus(
   timeAliveSec = 0,
   matchLevel = 1,
 ): number {
-  const fromTime = (Math.max(0, timeAliveSec) / 60) * LUCK_PER_MINUTE;
+  const g = getMatchGlobals();
+  const fromTime = (Math.max(0, timeAliveSec) / 60) * g.luckPerMinute;
   const fromLevel =
-    (Math.max(0, matchLevel - 1) / 5) * LUCK_PER_FIVE_LEVELS;
-  return Math.min(MAX_LUCK_BONUS, fromTime + fromLevel);
+    (Math.max(0, matchLevel - 1) / 5) * g.luckPerFiveLevels;
+  return Math.min(g.maxLuckBonus, fromTime + fromLevel);
 }
 
 /**
@@ -663,12 +539,17 @@ export function computeRarityLuckBonus(
 export function getRarityWeights(
   luckBonus = 0,
 ): { rarity: Rarity; weight: number }[] {
-  const table = BASE_RARITY_TABLE.map((e) => ({ ...e }));
+  const source = getMatchRarityWeights();
+  const table = (source.length > 0 ? source : BASE_RARITY_TABLE).map((e) => ({
+    rarity: e.rarity as Rarity,
+    weight: e.weight,
+  }));
   const byRarity = Object.fromEntries(
     table.map((e) => [e.rarity, e]),
   ) as Record<Rarity, { rarity: Rarity; weight: number }>;
 
-  const points = Math.max(0, Math.min(MAX_LUCK_BONUS, luckBonus)) * 100;
+  const maxLuck = getMatchGlobals().maxLuckBonus;
+  const points = Math.max(0, Math.min(maxLuck, luckBonus)) * 100;
   if (points <= 0) return table;
 
   const commonFloor = 20;
@@ -720,14 +601,44 @@ function rollRarity(luckBonus = 0, avoid?: Rarity): Rarity {
   return picked;
 }
 
+function pickWeightedStatCategory(
+  available: StatCategory[],
+  rarity: Rarity,
+): StatCategory | null {
+  if (available.length === 0) return null;
+  const weights = available.map((category) => {
+    const row = getStatCardTierConfig(category, rarity);
+    return Math.max(0, row?.weight ?? 10);
+  });
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  if (total <= 0) {
+    return available[Math.floor(Math.random() * available.length)] ?? null;
+  }
+  let roll = Math.random() * total;
+  for (let i = 0; i < available.length; i++) {
+    roll -= weights[i]!;
+    if (roll < 0) return available[i]!;
+  }
+  return available[available.length - 1] ?? null;
+}
+
 function createStatUpgrade(
   category: StatCategory,
   rarity: Rarity,
 ): MatchUpgrade {
   const pool =
-    STAT_UPGRADE_POOL.find((p) => p.category === category) ??
-    STAT_UPGRADE_POOL[0]!;
-  const value = RARITY_BONUS[rarity];
+    getStatUpgradePool().find((p) => p.category === category) ??
+    getStatUpgradePool()[0]!;
+  const row = getStatCardTierConfig(category, rarity);
+  const fallback =
+    pool.type === "damageTakenMultiplier" || pool.type === "thornsReflectRatio"
+      ? getMitigationRarityBonus(rarity)
+      : getMatchRarityBonus(rarity);
+  const value = row
+    ? resolveStatCardValue(row.statValues, fallback)
+    : fallback;
+  const name = row?.displayName ?? pool.name;
+  const short = row?.displayName ?? pool.short;
   const pct = Math.round(value * 100);
 
   if (pool.type === "damageTakenMultiplier") {
@@ -737,8 +648,8 @@ function createStatUpgrade(
       category: pool.category,
       value,
       rarity,
-      label: `-${pct}% ${pool.name}`,
-      description: `-${pct}% ${pool.short}`,
+      label: `-${pct}% ${name}`,
+      description: `-${pct}% ${short}`,
     };
   }
   if (pool.type === "thornsReflectRatio") {
@@ -748,7 +659,7 @@ function createStatUpgrade(
       category: pool.category,
       value,
       rarity,
-      label: `+${pct}% ${pool.name}`,
+      label: `+${pct}% ${name}`,
       description: `Reflete ${pct}% do dano recebido`,
     };
   }
@@ -759,8 +670,8 @@ function createStatUpgrade(
     category: pool.category,
     value,
     rarity,
-    label: `+${pct}% ${pool.name}`,
-    description: `+${pct}% ${pool.short}`,
+    label: `+${pct}% ${name}`,
+    description: `+${pct}% ${short}`,
   };
 }
 
@@ -769,7 +680,7 @@ function createSpecialUpgrade(
   rarity: Rarity,
   nextLevel: number,
 ): MatchUpgrade {
-  const pool = SPECIAL_SKILL_POOL.find((p) => p.type === key)!;
+  const pool = getSpecialSkillPool().find((p) => p.type === key)!;
   const isFirst = nextLevel <= 1;
   const effect = buildSpecialSkillEffect(key, rarity, nextLevel);
 
@@ -787,17 +698,25 @@ function createSpecialUpgrade(
 }
 
 function createMasteryUpgrade(key: SpecialSkillKey): MatchUpgrade {
-  const info = SKILL_MASTERY_CARD_INFO[key];
+  const fallback = SKILL_MASTERY_CARD_INFO[key];
+  const row = getSkillTierScaling(key, "master");
   const type = toSkillMasteryUpgradeType(key);
+  const label = row?.cardLabel || fallback.label;
+  const title = row?.cardTitle || fallback.title;
+  const description = row?.cardDescription || fallback.description;
+  const effectLines =
+    row?.effectLines && row.effectLines.length > 0
+      ? row.effectLines
+      : fallback.effectLines;
   return {
     id: crypto.randomUUID(),
     type,
     category: type,
     value: 1,
     rarity: "legendary",
-    label: info.label,
-    description: `${info.title} — ${info.description}`,
-    effectLines: info.effectLines,
+    label,
+    description: `${title} — ${description}`,
+    effectLines,
   };
 }
 
@@ -864,16 +783,6 @@ export const RARITY_STYLES: Record<
  */
 export const SPECIAL_SKILL_CARD_CHANCE = 0.15;
 
-const ALL_STAT_CATEGORIES: StatCategory[] = [
-  "damage",
-  "speed",
-  "guard",
-  "thorns",
-  "critDamage",
-  "critChance",
-  "skillDamage",
-];
-
 /** Quais categorias de status ainda podem aparecer na roleta. */
 export function getEligibleStatCategories(ctx?: {
   effectiveRange?: number;
@@ -882,38 +791,46 @@ export function getEligibleStatCategories(ctx?: {
   effectiveDamageTakenMultiplier?: number;
   effectiveThornsReflectRatio?: number;
   thornsLevel?: number;
+  guardLevel?: number;
   timeAlive?: number;
   isEndlessRun?: boolean;
   /** True se o jogador já tem ≥1 skill especial ativa na run. */
   hasActiveSkill?: boolean;
 }): StatCategory[] {
   void ctx?.effectiveRange;
-  return ALL_STAT_CATEGORIES.filter((category) => {
+  return getStatUpgradePool().map((p) => p.category).filter((category) => {
     if (category === "skillDamage" && !ctx?.hasActiveSkill) {
       return false;
     }
     if (category === "guard") {
       if (!ctx?.isEndlessRun) return false;
+      const g = getMatchGlobals();
       const reduction = 1 - (ctx?.effectiveDamageTakenMultiplier ?? 1);
-      if (reduction >= MATCH_DAMAGE_TAKEN_REDUCTION_CAP) return false;
+      if (reduction + 1e-9 >= g.damageTakenReductionCap) return false;
+      if ((ctx?.guardLevel ?? 0) >= (g.guardMaxLevel ?? MATCH_GUARD_MAX_LEVEL)) {
+        return false;
+      }
     }
     if (category === "thorns") {
       if (!ctx?.isEndlessRun) return false;
-      if ((ctx?.timeAlive ?? 0) < MATCH_THORNS_UNLOCK_TIME_SEC) return false;
-      if ((ctx?.thornsLevel ?? 0) >= MATCH_THORNS_MAX_LEVEL) return false;
-      if ((ctx?.effectiveThornsReflectRatio ?? 0) >= MATCH_THORNS_REFLECT_CAP) return false;
+      const g = getMatchGlobals();
+      if ((ctx?.timeAlive ?? 0) < g.thornsUnlockTimeSec) return false;
+      if ((ctx?.thornsLevel ?? 0) >= g.thornsMaxLevel) return false;
+      if ((ctx?.effectiveThornsReflectRatio ?? 0) + 1e-9 >= g.thornsReflectCap) {
+        return false;
+      }
     }
     if (
       category === "speed" &&
       ctx?.effectiveCooldownMs != null &&
-      ctx.effectiveCooldownMs <= MATCH_COOLDOWN_UPGRADE_FLOOR
+      ctx.effectiveCooldownMs <= getMatchGlobals().cooldownUpgradeFloor
     ) {
       return false;
     }
     if (
       category === "critChance" &&
       ctx?.effectiveCritChance != null &&
-      ctx.effectiveCritChance >= MATCH_CRIT_CHANCE_CAP
+      ctx.effectiveCritChance >= getMatchGlobals().critChanceCap
     ) {
       return false;
     }
@@ -992,7 +909,7 @@ export function generateUpgradeOptions(
   let specialPool = [...eligibleSpecials];
   let masteryPool = getEligibleSkillMasteries(ctx);
   const skillCardChance =
-    ctx?.specialSkillCardChance ?? SPECIAL_SKILL_CARD_CHANCE;
+    ctx?.specialSkillCardChance ?? getMatchGlobals().specialSkillCardChance;
   // Skills masterizadas ainda liberam cartas de "dano de skill"
   const baseStatPool = getEligibleStatCategories({
     ...ctx,
@@ -1044,9 +961,10 @@ export function generateUpgradeOptions(
       picked = createSpecialUpgrade(key, rarity, nextLevel);
       specialPool = specialPool.filter((k) => k !== key);
     } else if (availableStats.length > 0) {
-      const idx = Math.floor(Math.random() * availableStats.length);
-      const category = availableStats[idx]!;
-      picked = createStatUpgrade(category, rarity);
+      const category = pickWeightedStatCategory(availableStats, rarity);
+      if (category) {
+        picked = createStatUpgrade(category, rarity);
+      }
     } else if (availableMasteries.length > 0) {
       const idx = Math.floor(Math.random() * availableMasteries.length);
       const key = availableMasteries[idx]!;

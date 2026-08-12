@@ -43,9 +43,9 @@ import {
 } from "@/src/game/systems/ShadowCloneSystem";
 import type { MatchSkillsData } from "@/db/schema";
 import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
+import { getMatchGlobals } from "@/lib/balanceConfig";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
-  MATCH_CRIT_CHANCE_CAP,
   type MatchSkillBonuses,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
@@ -67,6 +67,7 @@ import {
   MASTERY_VENDAVAL_IMPLOSION_RADIUS,
   MASTERY_VENDAVAL_KNOCKBACK,
   MASTERY_VENDAVAL_STUN_MS,
+  masteryStat,
   type MasteryGroundZone,
   type MatchSkillMasteryData,
 } from "@/lib/skillMastery";
@@ -389,11 +390,11 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   const metaSkillRegenLevel = gameState.metaSkillRegenLevel;
   // Ricochete: hits granulares até teto rígido; dano cai por salto (exceto Maestria)
   const ricochetCap = mastery.ricochet
-    ? MASTERY_RICOCHET_MAX_TARGETS
+    ? masteryStat("ricochet", "ricochetMaxTargets", MASTERY_RICOCHET_MAX_TARGETS)
     : RICOCHET_MAX_TARGETS;
   const ricochetFalloff = mastery.ricochet ? 1 : RICOCHET_BOUNCE_FALLOFF;
   const maxBounces = mastery.ricochet
-    ? MASTERY_RICOCHET_MAX_TARGETS
+    ? masteryStat("ricochet", "ricochetMaxTargets", MASTERY_RICOCHET_MAX_TARGETS)
     : Math.min(
         ricochetCap + Math.max(0, ricochetBonus.extraHits),
         2 +
@@ -478,13 +479,13 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         const shatterDmg =
           baseDamage *
           matchBuffs.damageMultiplier *
-          MASTERY_ICE_SHATTER_DAMAGE_RATIO;
+          masteryStat("ice", "iceShatterDamageRatio", MASTERY_ICE_SHATTER_DAMAGE_RATIO);
         for (const other of enemies) {
           if (other.isDead || other.id === enemy.id) continue;
           const dist = Math.hypot(other.x - enemy.x, other.y - enemy.y);
-          if (dist > MASTERY_ICE_SHATTER_RADIUS + other.radius) continue;
+          if (dist > masteryStat("ice", "iceShatterRadius", MASTERY_ICE_SHATTER_RADIUS) + other.radius) continue;
           other.takeDamage(shatterDmg, now);
-          other.applyStatus("freeze", now + MASTERY_ICE_SHATTER_FREEZE_MS, {
+          other.applyStatus("freeze", now + masteryStat("ice", "iceShatterFreezeMs", MASTERY_ICE_SHATTER_FREEZE_MS), {
             vulnerable: true,
             damageTakenMultiplier: 1.3,
           });
@@ -549,7 +550,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       kind: "fissure",
       x: player.x,
       y: player.y,
-      radius: MASTERY_FISSURE_RADIUS,
+      radius: masteryStat("stone", "fissureRadius", MASTERY_FISSURE_RADIUS),
       expiresAt: Number.POSITIVE_INFINITY,
     });
   }
@@ -563,17 +564,17 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         baseDamage *
         matchBuffs.damageMultiplier *
         skillDamageMult *
-        MASTERY_VENDAVAL_IMPLOSION_DAMAGE_RATIO;
+        masteryStat("vendaval", "vendavalImplosionDamageRatio", MASTERY_VENDAVAL_IMPLOSION_DAMAGE_RATIO);
       for (const enemy of enemies) {
         if (enemy.isDead) continue;
         const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
-        if (dist > MASTERY_VENDAVAL_IMPLOSION_RADIUS + enemy.radius) continue;
+        if (dist > masteryStat("vendaval", "vendavalImplosionRadius", MASTERY_VENDAVAL_IMPLOSION_RADIUS) + enemy.radius) continue;
         enemy.takeDamage(implosionDmg, now);
-        enemy.applyStun(now, MASTERY_VENDAVAL_STUN_MS);
+        enemy.applyStun(now, masteryStat("vendaval", "vendavalStunMs", MASTERY_VENDAVAL_STUN_MS));
         enemy.applyKnockback(
           enemy.x - player.x,
           enemy.y - player.y,
-          MASTERY_VENDAVAL_KNOCKBACK,
+          masteryStat("vendaval", "vendavalKnockback", MASTERY_VENDAVAL_KNOCKBACK),
         );
       }
     }
@@ -730,13 +731,13 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         kind: "tesla",
         x: blastX,
         y: blastY,
-        radius: MASTERY_TESLA_RADIUS,
-        expiresAt: now + MASTERY_TESLA_DURATION_MS,
+        radius: masteryStat("lightning", "teslaRadius", MASTERY_TESLA_RADIUS),
+        expiresAt: now + masteryStat("lightning", "teslaDurationMs", MASTERY_TESLA_DURATION_MS),
         dps:
           baseDamage *
           matchBuffs.damageMultiplier *
           skillDamageMult *
-          MASTERY_TESLA_DPS_RATIO,
+          masteryStat("lightning", "teslaDpsRatio", MASTERY_TESLA_DPS_RATIO),
       });
     }
 
@@ -1172,7 +1173,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       const punchBase = baseDamage * matchBuffs.damageMultiplier;
       const skillPunchBase = punchBase * skillDamageMult;
       const critChance = Math.min(
-        MATCH_CRIT_CHANCE_CAP,
+        getMatchGlobals().critChanceCap,
         useGameStore.getState().getCritChance() +
           (matchBuffs.critChanceBonus ?? 0),
       );
@@ -1442,12 +1443,12 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   if (mastery.fire && dt > 0) {
     for (const e of living) {
       if (!e.isBurning || e.burnDamage <= 0) continue;
-      const share = e.burnDamage * dt * MASTERY_FIRE_SHARE_RATIO;
+      const share = e.burnDamage * dt * masteryStat("fire", "fireShareRatio", MASTERY_FIRE_SHARE_RATIO);
       if (share <= 0) continue;
       for (const other of living) {
         if (other.id === e.id || other.isDead) continue;
         const dist = Math.hypot(other.x - e.x, other.y - e.y);
-        if (dist > MASTERY_FIRE_SHARE_RADIUS + other.radius) continue;
+        if (dist > masteryStat("fire", "fireShareRadius", MASTERY_FIRE_SHARE_RADIUS) + other.radius) continue;
         other.hp -= share * other.getDamageTakenMultiplier(now);
       }
     }
@@ -1464,8 +1465,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           enemy.hp -= zone.dps * dt * enemy.getDamageTakenMultiplier(now);
         } else if (zone.kind === "fissure") {
           enemy.applyStatus("quake", now + 400, {
-            slowAmount: MASTERY_FISSURE_SLOW,
-            damageTakenMultiplier: MASTERY_FISSURE_VULN,
+            slowAmount: masteryStat("stone", "fissureSlow", MASTERY_FISSURE_SLOW),
+            damageTakenMultiplier: masteryStat("stone", "fissureVuln", MASTERY_FISSURE_VULN),
             attackDamageMul: 0.7,
             attackSpeedMul: 0.7,
           });

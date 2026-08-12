@@ -1,8 +1,15 @@
 /** Campanha de 50 fases + desbloqueio do Endless (após fase 15). */
 
-export const TOTAL_STAGES = 50;
+import { getStageConfigByNumber, getStagesConfig } from "@/lib/balanceConfig";
+import {
+  ENDLESS_UNLOCK_STAGE_SEED,
+  STAGES_CONFIG_SEEDS,
+  TOTAL_STAGES_SEED,
+} from "@/db/seeds/stagesConfig";
+
+export const TOTAL_STAGES = TOTAL_STAGES_SEED;
 /** Endless libera ao limpar esta fase (inclusive). */
-export const ENDLESS_UNLOCK_STAGE = 15;
+export const ENDLESS_UNLOCK_STAGE = ENDLESS_UNLOCK_STAGE_SEED;
 
 export type StageDef = {
   stageNumber: number;
@@ -33,94 +40,16 @@ export type StageDef = {
   bossStatMul: number;
 };
 
-const STAGE_NAMES: string[] = [
-  "Bairro Industrial",
-  "Becos do Porto",
-  "Arena Subterrânea",
-  "Ginásio Abandonado",
-  "Mercado Noturno",
-  "Doca dos Mercenários",
-  "Túneis do Metrô",
-  "Favela dos Anéis",
-  "Estádio Ruído",
-  "Pátio da Sucata",
-  "Templo Queimado",
-  "Laboratório Ciborgue",
-  "Cemitério Úmido",
-  "Arena de Ferro",
-  "Catedral Rachada",
-  "Deserto dos Ossos",
-  "Mina de Magma",
-  "Palácio Congelado",
-  "Coliseu Digital",
-  "Pântano Tóxico",
-  "Torre dos Ventos",
-  "Cripta Neon",
-  "Fortaleza de Aço",
-  "Vale dos Espectros",
-  "Ringue Flutuante",
-  "Usina Abandonada",
-  "Jardim Corrompido",
-  "Catacumbas Vivas",
-  "Hangar Orbital",
-  "Pico do Titã",
-  "Bairro Fantasma",
-  "Arena de Cristal",
-  "Fenda Temporal",
-  "Covil do Xamã",
-  "Estaleiro Fantasma",
-  "Basílica de Sangue",
-  "Núcleo Cibernético",
-  "Campo de Cinzas",
-  "Salão dos Guardiões",
-  "Abismo de Magma",
-  "Cidade Submersa",
-  "Trono de Ossos",
-  "Observatório Caído",
-  "Labirinto de Espelhos",
-  "Front de Guerra",
-  "Santuário Proibido",
-  "Cúpula do Vácuo",
-  "Coração da Forja",
-  "Portal do Caos",
-  "Ascensão Final",
-];
-
-function buildStage(n: number): StageDef {
-  // Cota cresce de forma clara: fase 1 ≈ 14, fase 15 ≈ 70, fase 50 ≈ 210
-  const enemyCount = 10 + n * 4;
-  const enemyTierCap = Math.min(23, 2 + Math.floor((n - 1) * 0.45));
-  // Todas as fases têm chefe (surge após ~65% da cota)
-  const bossSpawnProgress = 0.65;
-  // Dificuldade sobe ~9% por fase (fase 15 ≈ 2.26×, fase 50 ≈ 5.4×)
-  const difficultyMul = 1 + (n - 1) * 0.09;
-  // Chefe early bem mais fraco: fase 1 ≈ 0.38×, fase 10 ≈ 0.83×, fase 15+ ≈ 1×
-  const bossStatMul = Math.min(1, 0.38 + (n - 1) * 0.05);
-  // Estimativa de tempo só para UI (não define vitória)
-  const durationSeconds = Math.max(
-    40,
-    Math.round(enemyCount * (1.8 - Math.min(0.6, n * 0.008))),
-  );
-
-  return {
-    stageNumber: n,
-    name: STAGE_NAMES[n - 1] ?? `Fase ${n}`,
-    durationSeconds,
-    enemyCount,
-    enemyTierCap,
-    bossSpawnProgress,
-    difficultyMul,
-    bossStatMul,
-  };
-}
-
-export const STAGE_DEFS: StageDef[] = Array.from({ length: TOTAL_STAGES }, (_, i) =>
-  buildStage(i + 1),
-);
+export const STAGE_DEFS: StageDef[] = STAGES_CONFIG_SEEDS.map((row) => ({
+  ...row,
+}));
 
 export function getStageDef(stageNumber: number): StageDef {
-  const n = Math.max(1, Math.min(TOTAL_STAGES, Math.floor(stageNumber)));
-  return STAGE_DEFS[n - 1] ?? buildStage(n);
+  const total = Math.max(1, getStagesConfig().length || TOTAL_STAGES);
+  const n = Math.max(1, Math.min(total, Math.floor(stageNumber)));
+  const fromConfig = getStageConfigByNumber(n);
+  if (fromConfig) return fromConfig;
+  return STAGE_DEFS[n - 1] ?? STAGE_DEFS[0]!;
 }
 
 export function isEndlessUnlocked(maxStageCleared: number): boolean {
@@ -129,7 +58,8 @@ export function isEndlessUnlocked(maxStageCleared: number): boolean {
 
 /** Fases jogáveis: 1 .. min(50, maxCleared+1). */
 export function getMaxSelectableStage(maxStageCleared: number): number {
-  return Math.min(TOTAL_STAGES, Math.max(1, Math.floor(maxStageCleared) + 1));
+  const total = getStagesConfig().length || TOTAL_STAGES;
+  return Math.min(total, Math.max(1, Math.floor(maxStageCleared) + 1));
 }
 
 export type RunMode = "stage" | "endless";

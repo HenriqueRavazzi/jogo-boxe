@@ -19,6 +19,7 @@ import type { SkillVfxEffect } from "@/src/game/systems/ActiveSkillsSystem";
 import {
   MASTERY_AURA_RADIUS_MULT,
   MASTERY_AURA_SECONDARY_POWER,
+  masteryStat,
 } from "@/lib/skillMastery";
 import { LIGHTNING_STUN_MS } from "@/src/game/entities/Enemy";
 
@@ -237,7 +238,7 @@ export function getAuraRadius(
     AURA_BASE_RADIUS +
     Math.max(0, matchLevel) * AURA_RADIUS_PER_MATCH_LEVEL +
     Math.max(0, metaRadius) * AURA_RADIUS_PER_META * prestigeMul;
-  return Math.max(40, base * bonus.durationMul);
+  return Math.max(40, base * bonus.radiusMul);
 }
 
 export function getAuraFireDps(
@@ -368,7 +369,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
 
   const runElements = listRunAuraElements(activeRunSkills, matchSkills);
   const secondaryPower = masteryAbsoluteDomain
-    ? MASTERY_AURA_SECONDARY_POWER
+    ? masteryStat("aura", "auraSecondaryPower", MASTERY_AURA_SECONDARY_POWER)
     : AURA_SECONDARY_POWER;
   const {
     powers: elementPowers,
@@ -412,7 +413,9 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   const bonus = matchSkillBonuses?.aura ?? DEFAULT_MATCH_SKILL_BONUS;
   const radius =
     getAuraRadius(auraLevel, skills.aura.radius, bonus, prestigeMul) *
-    (masteryAbsoluteDomain ? MASTERY_AURA_RADIUS_MULT : 1);
+    (masteryAbsoluteDomain
+      ? masteryStat("aura", "radiusMul", MASTERY_AURA_RADIUS_MULT)
+      : 1);
 
   const inAura: Enemy[] = [];
   for (const enemy of enemies) {

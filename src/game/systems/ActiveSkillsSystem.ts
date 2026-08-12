@@ -604,7 +604,7 @@ export function runActiveSkills(
           (VENDAVAL_BASE_RADIUS +
             matchLevel * VENDAVAL_RADIUS_PER_MATCH +
             skills.vendaval.radius * VENDAVAL_RADIUS_PER_META * prestigeMul) *
-            vendavalBonus.durationMul,
+            vendavalBonus.radiusMul,
         );
 
       const inRange = enemies.filter((e) => {

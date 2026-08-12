@@ -1,5 +1,14 @@
 /** Equipe de apoio (gacha) — tiers, pity, funções e buffs passivos. */
 
+import type { TeamMemberBuffConfig } from "@/db/schema";
+import {
+  applyTeamMemberBuffs,
+  capEquippedTeamBuffs,
+  getTeamMemberConfigById,
+  getTeamMembersConfig,
+  getTeamScaleConstants,
+} from "@/lib/balanceConfig";
+
 export type TeamTier =
   | "common"
   | "uncommon"
@@ -518,11 +527,75 @@ export const TEAM_MEMBER_DEFS: TeamMemberDef[] = [
 ];
 
 export function getTeamMemberDef(id: TeamMemberId): TeamMemberDef {
+  const fromConfig = getTeamMemberConfigById(id);
+  if (fromConfig) {
+    return {
+      id: id,
+      name: fromConfig.name,
+      tier: fromConfig.tier as TeamTier,
+      role: fromConfig.role as TeamRole,
+      tagline: fromConfig.tagline,
+      bonusLabel: (level) => formatMemberBonusLabel(fromConfig.buffs, fromConfig.tier as TeamTier, level),
+    };
+  }
+  return TEAM_MEMBER_DEFS.find((m) => m.id === id)!;
+}
+
+function formatMemberBonusLabel(
+  buffs: TeamMemberBuffConfig[],
+  tier: TeamTier,
+  level: number,
+): string {
+  const parts = buffs.map((buff) => {
+    switch (buff.type) {
+      case "hp_regen_pct_max":
+        return labelPct(buff.coefficient, tier, level, TEAM_REGEN_MAX_HP_PCT_SCALE, "HP máx/s", 2);
+      case "damage_mul_pct":
+        return labelPct(buff.coefficient, tier, level, TEAM_DAMAGE_PCT_SCALE, "dano");
+      case "max_hp_mul_pct":
+        return labelPct(buff.coefficient, tier, level, TEAM_MAX_HP_PCT_SCALE, "HP máx");
+      case "knockback_mul_pct":
+        return labelPct(buff.coefficient, tier, level, TEAM_KNOCKBACK_PCT_SCALE, "empurrão");
+      case "damage_taken_reduce":
+        return `−${(buff.coefficient * power(tier, level)).toFixed(1)}% dano recebido`;
+      case "attack_speed_mul":
+        return `+${(buff.coefficient * power(tier, level)).toFixed(1)}% AS`;
+      case "xp_bonus":
+        return `+${(buff.coefficient * power(tier, level) * 100).toFixed(0)}% XP`;
+      case "crit_chance":
+        return `+${(buff.coefficient * power(tier, level) * 100).toFixed(1)}% crit`;
+      case "crit_damage":
+        return `+${(buff.coefficient * power(tier, level) * 100).toFixed(0)}% dano crít.`;
+      case "skill_damage_mul":
+        return `+${(buff.coefficient * power(tier, level) * 100).toFixed(0)}% dano de skills`;
+      case "gold_income_mul":
+        return `+${(buff.coefficient * power(tier, level) * 100).toFixed(0)}% ouro`;
+      case "diamond_luck":
+        return `+${(buff.coefficient * power(tier, level) * 100).toFixed(1)}% diamantes`;
+      case "purple_diamond_luck":
+        return `+${(buff.coefficient * power(tier, level) * 100).toFixed(1)}% diam. roxos`;
+      default:
+        return "";
+    }
+  });
+  return parts.filter(Boolean).join(" · ");
+}
+
+/** @deprecated Prefer `getTeamMembersConfig()` — mantido para compatibilidade de UI. */
+export function getTeamMembersByTierFromConfig(tier: TeamTier): TeamMemberDef[] {
+  return getTeamMembersConfig()
+    .filter((m) => m.tier === tier)
+    .map((m) => getTeamMemberDef(m.id as TeamMemberId));
+}
+
+export function getTeamMemberDefLegacy(id: TeamMemberId): TeamMemberDef {
   return TEAM_MEMBER_DEFS.find((m) => m.id === id)!;
 }
 
 export function getTeamMembersByTier(tier: TeamTier): TeamMemberDef[] {
-  return TEAM_MEMBER_DEFS.filter((m) => m.tier === tier);
+  return getTeamMembersConfig()
+    .filter((m) => m.tier === tier)
+    .map((m) => getTeamMemberDef(m.id as TeamMemberId));
 }
 
 export function clampTeamMemberLevel(value: unknown): number {
@@ -565,18 +638,21 @@ export function getTeamRecruitCost(totalPulls: number): {
   gold: number;
   gems: number;
 } {
+  const scales = getTeamScaleConstants();
   const pulls = Math.max(0, Math.floor(totalPulls));
   return {
     gold: Math.max(
       1,
       Math.floor(
-        TEAM_RECRUIT_GOLD_BASE * Math.pow(TEAM_RECRUIT_GOLD_GROWTH, pulls),
+        scales.recruitGoldBase *
+          Math.pow(scales.recruitGoldGrowth, pulls),
       ),
     ),
     gems: Math.max(
       1,
       Math.floor(
-        TEAM_RECRUIT_GEMS_BASE * Math.pow(TEAM_RECRUIT_GEMS_GROWTH, pulls),
+        scales.recruitGemsBase *
+          Math.pow(scales.recruitGemsGrowth, pulls),
       ),
     ),
   };
@@ -754,122 +830,9 @@ function applyMemberBuffs(
   level: number,
 ): void {
   if (level <= 0) return;
-  const def = getTeamMemberDef(id);
-  const p = power(def.tier, level);
-
-  switch (id) {
-    case "bandage_boy":
-      acc.hpRegenMaxHpRatioPerSecond += 0.35 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
-      break;
-    case "gym_rat":
-      acc.damageMultiplier *= 1 + 2 * p * TEAM_DAMAGE_PCT_SCALE;
-      break;
-    case "water_boy":
-      acc.maxHpMultiplier *= 1 + 18 * p * TEAM_MAX_HP_PCT_SCALE;
-      break;
-    case "towel_toss":
-      acc.hpRegenMaxHpRatioPerSecond += 0.22 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
-      acc.attackSpeedMultiplier *= 1 + 0.008 * p;
-      break;
-    case "roadwork_runner":
-      acc.xpMultiplierBonus += 0.012 * p;
-      break;
-    case "stitch_sam":
-      acc.hpRegenMaxHpRatioPerSecond += 0.55 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
-      break;
-    case "pad_holder":
-      acc.damageMultiplier *= 1 + 3 * p * TEAM_DAMAGE_PCT_SCALE;
-      acc.xpMultiplierBonus += 0.02 * p;
-      break;
-    case "meal_prep":
-      acc.maxHpMultiplier *= 1 + 28 * p * TEAM_MAX_HP_PCT_SCALE;
-      acc.damageTakenMultiplier *= 1 - Math.min(0.25, 0.012 * p);
-      break;
-    case "ice_bucket":
-      acc.hpRegenMaxHpRatioPerSecond += 0.4 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
-      acc.maxHpMultiplier *= 1 + 12 * p * TEAM_MAX_HP_PCT_SCALE;
-      break;
-    case "focus_mitt":
-      acc.critChanceBonus += 0.011 * p;
-      acc.attackSpeedMultiplier *= 1 + 0.02 * p;
-      break;
-    case "ringside_doc":
-      acc.hpRegenMaxHpRatioPerSecond += 0.85 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
-      break;
-    case "sparring_ace":
-      acc.damageMultiplier *= 1 + 5 * p * TEAM_DAMAGE_PCT_SCALE;
-      acc.xpMultiplierBonus += 0.035 * p;
-      break;
-    case "strength_coach":
-      acc.maxHpMultiplier *= 1 + 45 * p * TEAM_MAX_HP_PCT_SCALE;
-      acc.damageTakenMultiplier *= 1 - Math.min(0.3, 0.02 * p);
-      break;
-    case "corner_tactician":
-      acc.critChanceBonus += 0.015 * p;
-      acc.critDamageBonus += 0.08 * p;
-      break;
-    case "push_specialist":
-      acc.knockbackMultiplier *= 1 + 4 * p * TEAM_KNOCKBACK_PCT_SCALE;
-      acc.damageMultiplier *= 1 + 3 * p * TEAM_DAMAGE_PCT_SCALE;
-      break;
-    case "skill_scout":
-      acc.skillDamageMultiplier *= 1 + 0.04 * p;
-      acc.critChanceBonus += 0.012 * p;
-      break;
-    case "prime_cutman":
-      acc.hpRegenMaxHpRatioPerSecond += 1.35 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
-      break;
-    case "elite_spar":
-      acc.damageMultiplier *= 1 + 9 * p * TEAM_DAMAGE_PCT_SCALE;
-      acc.xpMultiplierBonus += 0.055 * p;
-      break;
-    case "head_coach":
-      acc.critChanceBonus += 0.022 * p;
-      acc.attackSpeedMultiplier *= 1 + 0.03 * p;
-      break;
-    case "money_manager":
-      acc.goldIncomeMultiplier *= 1 + 0.05 * p;
-      acc.diamondLuckBonus += 0.0035 * p;
-      break;
-    case "range_finder":
-      acc.attackSpeedMultiplier *= 1 + 0.025 * p;
-      break;
-    case "purple_agent":
-      acc.purpleDiamondLuckBonus += 0.0045 * p;
-      acc.goldIncomeMultiplier *= 1 + 0.03 * p;
-      break;
-    case "iron_doc":
-      acc.hpRegenMaxHpRatioPerSecond += 2.1 * p * TEAM_REGEN_MAX_HP_PCT_SCALE;
-      break;
-    case "shadow_spar":
-      acc.damageMultiplier *= 1 + 14 * p * TEAM_DAMAGE_PCT_SCALE;
-      acc.xpMultiplierBonus += 0.08 * p;
-      break;
-    case "titan_prep":
-      acc.maxHpMultiplier *= 1 + 90 * p * TEAM_MAX_HP_PCT_SCALE;
-      acc.damageTakenMultiplier *= 1 - Math.min(0.35, 0.04 * p);
-      break;
-    case "master_coach":
-      acc.critChanceBonus += 0.035 * p;
-      acc.attackSpeedMultiplier *= 1 + 0.05 * p;
-      acc.critDamageBonus += 0.12 * p;
-      break;
-    case "golden_manager":
-      acc.goldIncomeMultiplier *= 1 + 0.08 * p;
-      acc.diamondLuckBonus += 0.0055 * p;
-      break;
-    case "echo_striker":
-      acc.skillDamageMultiplier *= 1 + 0.06 * p;
-      acc.knockbackMultiplier *= 1 + 8 * p * TEAM_KNOCKBACK_PCT_SCALE;
-      break;
-    case "vault_broker":
-      acc.goldIncomeMultiplier *= 1 + 0.06 * p;
-      acc.diamondLuckBonus += 0.004 * p;
-      acc.purpleDiamondLuckBonus += 0.005 * p;
-      break;
-    default:
-      break;
-  }
+  const config = getTeamMemberConfigById(id);
+  if (!config) return;
+  applyTeamMemberBuffs(acc, config.buffs, config.tierPower, level);
 }
 
 export function getEquippedTeamBuffs(
@@ -880,19 +843,7 @@ export function getEquippedTeamBuffs(
   for (const id of equippedIds) {
     applyMemberBuffs(acc, id, owned[id] ?? 0);
   }
-  acc.hpRegenMaxHpRatioPerSecond = Math.min(
-    TEAM_MAX_HP_REGEN_RATIO_PER_SECOND,
-    acc.hpRegenMaxHpRatioPerSecond,
-  );
-  acc.damageMultiplier = Math.min(
-    TEAM_MAX_DAMAGE_MULTIPLIER,
-    acc.damageMultiplier,
-  );
-  acc.maxHpMultiplier = Math.min(TEAM_MAX_HP_MULTIPLIER, acc.maxHpMultiplier);
-  acc.damageTakenMultiplier = Math.max(
-    TEAM_MIN_DAMAGE_TAKEN_MULTIPLIER,
-    acc.damageTakenMultiplier,
-  );
+  capEquippedTeamBuffs(acc);
   return acc;
 }
 

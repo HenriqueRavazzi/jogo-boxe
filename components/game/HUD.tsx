@@ -21,7 +21,7 @@ import {
   type MatchSkillBonusState,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
-import { SKILL_MASTERY_CARD_INFO } from "@/lib/skillMastery";
+import { getMasteryCardInfo } from "@/lib/skillMastery";
 import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
 import {
   AURA_ELEMENT_LABELS,
@@ -222,9 +222,11 @@ function buildRunBonusNote(bonus: MatchSkillBonusState): string | null {
   const dmg = formatBonusPct(bonus.damageMul);
   const cd = formatBonusPct(bonus.cooldownMul, true);
   const dur = formatBonusPct(bonus.durationMul);
+  const rad = formatBonusPct(bonus.radiusMul ?? 1);
   if (dmg) parts.push(`${dmg} dano`);
   if (cd) parts.push(`${cd} CD`);
   if (dur) parts.push(`${dur} duração`);
+  if (rad) parts.push(`${rad} raio`);
   if (bonus.extraHits > 0) parts.push(`+${bonus.extraHits} hits/stacks`);
   if (bonus.extraProjectiles > 0) {
     parts.push(`+${bonus.extraProjectiles} projétil(is)`);
@@ -620,7 +622,7 @@ function buildSkillStatRows(
       (VENDAVAL_BASE_RADIUS +
         level * VENDAVAL_RADIUS_PER_MATCH +
         skills.vendaval.radius * VENDAVAL_RADIUS_PER_META * prestigeMul) *
-        bonus.durationMul,
+        bonus.radiusMul,
     );
     const impact =
       skillPunchBase *
@@ -714,7 +716,7 @@ function SkillDetailPanel({
   const ui = SKILL_UI[skillKey];
   const level = matchSkills[skillKey] ?? 0;
   const mastered = Boolean(matchSkillMastery[skillKey]);
-  const masteryInfo = SKILL_MASTERY_CARD_INFO[skillKey];
+  const masteryInfo = getMasteryCardInfo(skillKey);
   const bonus = matchSkillBonuses[skillKey] ?? DEFAULT_MATCH_SKILL_BONUS;
   const skillDmgMul = matchBuffs.skillDamageMultiplier ?? 1;
   const info = getSkillCooldownInfo(

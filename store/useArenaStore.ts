@@ -17,20 +17,16 @@ import {
   applySkillBonusDelta,
   createEmptyMatchSkillBonuses,
   generateUpgradeOptions,
-  MATCH_DAMAGE_TAKEN_REDUCTION_CAP,
-  MATCH_THORNS_MAX_LEVEL,
-  MATCH_THORNS_REFLECT_CAP,
   getMatchSkillMaxLevel,
   getMaxActiveRunSkills,
   isSpecialSkillType,
-  MATCH_CRIT_CHANCE_CAP,
-  SPECIAL_SKILL_CARD_CHANCE,
   type MatchSkillBonusDelta,
   type MatchSkillBonuses,
   type MatchUpgrade,
   type SpecialSkillKey,
   type UpgradeType,
 } from "@/lib/matchUpgrades";
+import { getMatchGlobals } from "@/lib/balanceConfig";
 import {
   DEFAULT_MATCH_SKILL_MASTERY,
   isSkillMasteryUpgradeType,
@@ -254,6 +250,8 @@ export type ArenaStoreState = {
   matchLevel: number;
   /** Nível da carta Espinhos nesta run (máx. 3). */
   thornsLevel: number;
+  /** Nível da carta Guard nesta run (máx. 3). */
+  guardLevel: number;
   matchBuffs: MatchBuffs;
   /**
    * Níveis de skills especiais ativos nesta run (começa em 0).
@@ -477,6 +475,7 @@ function rollLevelUpOptions(
   matchBuffs: MatchBuffs,
   runMode: RunMode,
   thornsLevel: number,
+  guardLevel: number,
   activeRunSkills: SpecialSkillKey[],
   timeAlive: number,
   matchLevel: number,
@@ -497,12 +496,13 @@ function rollLevelUpOptions(
     effectiveRange: stats.attackRange * matchBuffs.attackRange,
     effectiveCooldownMs: stats.attackCooldownMs / matchBuffs.attackSpeed,
     effectiveCritChance: Math.min(
-      MATCH_CRIT_CHANCE_CAP,
+      getMatchGlobals().critChanceCap,
       game.getCritChance() + (matchBuffs.critChanceBonus ?? 0),
     ),
     effectiveDamageTakenMultiplier: matchBuffs.damageTakenMultiplier,
     effectiveThornsReflectRatio: matchBuffs.thornsReflectRatio,
     thornsLevel,
+    guardLevel,
     isEndlessRun: runMode === "endless",
     timeAlive,
     matchLevel,
@@ -510,7 +510,7 @@ function rollLevelUpOptions(
     matchSkillMastery,
     specialSkillCardChance: getSpecialSkillCardChance(
       game.skillTree,
-      SPECIAL_SKILL_CARD_CHANCE,
+      getMatchGlobals().specialSkillCardChance,
     ),
   });
 }
@@ -542,6 +542,7 @@ function enterLevelUp(
       state.matchBuffs,
       state.runMode,
       state.thornsLevel,
+      state.guardLevel,
       state.activeRunSkills,
       state.timeAlive,
       matchLevel,
@@ -572,6 +573,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   xpToNextLevel: BASE_XP_TO_LEVEL,
   matchLevel: 1,
   thornsLevel: 0,
+  guardLevel: 0,
   matchBuffs: { ...DEFAULT_BUFFS },
   matchSkills: { ...DEFAULT_MATCH_SKILLS },
   matchSkillBonuses: createEmptyMatchSkillBonuses(),
@@ -644,6 +646,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
       thornsLevel: 0,
+  guardLevel: 0,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
@@ -783,6 +786,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
       thornsLevel: 0,
+  guardLevel: 0,
       bossesSpawned: 0,
       bossesKilled: 0,
       invasionBossCooldownMs: 0,
@@ -1132,7 +1136,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
           const baseCrit = useGameStore.getState().getCritChance();
           const room = Math.max(
             0,
-            MATCH_CRIT_CHANCE_CAP - baseCrit - (s.matchBuffs.critChanceBonus ?? 0),
+            getMatchGlobals().critChanceCap - baseCrit - (s.matchBuffs.critChanceBonus ?? 0),
           );
           const added = Math.min(Math.max(0, value), room);
           return {
@@ -1148,27 +1152,9 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
           };
         }
         if (upgradeType === "damageTakenMultiplier") {
-          const currentReduction = 1 - (s.matchBuffs.damageTakenMultiplier ?? 1);
-          const room = Math.max(
-            0,
-            MATCH_DAMAGE_TAKEN_REDUCTION_CAP - currentReduction,
-          );
-          const added = Math.min(Math.max(0, value), room);
-          return {
-            matchBuffs: {
-              ...s.matchBuffs,
-              damageTakenMultiplier:
-                (s.matchBuffs.damageTakenMultiplier ?? 1) * (1 - added),
-            },
-            gameState: "playing" as const,
-            levelUpOptions: [],
-            isPausedForLevelUp: false,
-            levelUpTimeRemaining: 0,
-            levelUpDeadlineAt: null,
-          };
-        }
-        if (upgradeType === "thornsReflectRatio") {
-          if (s.thornsLevel >= MATCH_THORNS_MAX_LEVEL) {
+          const g = getMatchGlobals();
+          const maxLevel = g.guardMaxLevel ?? 3;
+          if (s.guardLevel >= maxLevel) {
             return {
               gameState: "playing" as const,
               levelUpOptions: [],
@@ -1177,8 +1163,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
               levelUpDeadlineAt: null,
             };
           }
-          const current = s.matchBuffs.thornsReflectRatio ?? 0;
-          const room = Math.max(0, MATCH_THORNS_REFLECT_CAP - current);
+          const currentReduction = 1 - (s.matchBuffs.damageTakenMultiplier ?? 1);
+          const room = Math.max(0, g.damageTakenReductionCap - currentReduction);
           const added = Math.min(Math.max(0, value), room);
           if (added <= 0) {
             return {
@@ -1190,7 +1176,42 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
             };
           }
           return {
-            thornsLevel: Math.min(MATCH_THORNS_MAX_LEVEL, s.thornsLevel + 1),
+            guardLevel: Math.min(maxLevel, s.guardLevel + 1),
+            matchBuffs: {
+              ...s.matchBuffs,
+              damageTakenMultiplier: 1 - (currentReduction + added),
+            },
+            gameState: "playing" as const,
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+          };
+        }
+        if (upgradeType === "thornsReflectRatio") {
+          if (s.thornsLevel >= getMatchGlobals().thornsMaxLevel) {
+            return {
+              gameState: "playing" as const,
+              levelUpOptions: [],
+              isPausedForLevelUp: false,
+              levelUpTimeRemaining: 0,
+              levelUpDeadlineAt: null,
+            };
+          }
+          const current = s.matchBuffs.thornsReflectRatio ?? 0;
+          const room = Math.max(0, getMatchGlobals().thornsReflectCap - current);
+          const added = Math.min(Math.max(0, value), room);
+          if (added <= 0) {
+            return {
+              gameState: "playing" as const,
+              levelUpOptions: [],
+              isPausedForLevelUp: false,
+              levelUpTimeRemaining: 0,
+              levelUpDeadlineAt: null,
+            };
+          }
+          return {
+            thornsLevel: Math.min(getMatchGlobals().thornsMaxLevel, s.thornsLevel + 1),
             matchBuffs: {
               ...s.matchBuffs,
               thornsReflectRatio: current + added,
@@ -1518,6 +1539,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       xpToNextLevel: BASE_XP_TO_LEVEL,
       matchLevel: 1,
       thornsLevel: 0,
+  guardLevel: 0,
       matchBuffs: { ...DEFAULT_BUFFS },
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),

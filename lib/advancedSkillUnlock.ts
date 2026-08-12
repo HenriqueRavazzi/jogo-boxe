@@ -1,6 +1,7 @@
 /** Requisitos e custos mistos para desbloquear skills avançadas. */
 
 import type { SkillUpgradeType } from "@/db/schema";
+import { getSkillConfigByKey } from "@/lib/balanceConfig";
 
 export type AdvancedSkillUnlockRequirements = {
   /** Ouro necessário. */
@@ -94,6 +95,15 @@ export const ADVANCED_SKILL_ORDER: readonly SkillUpgradeType[] = [
 export function getAdvancedSkillUnlockRequirements(
   skillType: SkillUpgradeType,
 ): AdvancedSkillUnlockRequirements {
+  const fromConfig = getSkillConfigByKey(skillType);
+  if (fromConfig) {
+    return {
+      goldCost: fromConfig.unlockGoldCost,
+      diamondCost: fromConfig.unlockDiamondCost,
+      requiredMobs: fromConfig.unlockMobsRequired,
+      requiredBosses: fromConfig.unlockBossesRequired,
+    };
+  }
   return ADVANCED_SKILL_UNLOCK[skillType];
 }
 
