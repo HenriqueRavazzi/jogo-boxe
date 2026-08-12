@@ -28,7 +28,7 @@ export type SkillNodeId =
   | "node_loot_magnet"
   | "node_spark_overdrive"
   | "node_haste"
-  | "node_extra_arm_2"
+  | "node_war_discipline"
   | "node_ring_master"
   | "node_adrenaline"
   | "node_berserker"
@@ -103,7 +103,7 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_loot_magnet: false,
   node_spark_overdrive: false,
   node_haste: false,
-  node_extra_arm_2: false,
+  node_war_discipline: false,
   node_ring_master: false,
   node_adrenaline: false,
   node_berserker: false,
@@ -157,7 +157,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_thick_skin",
     name: "Thick Skin",
-    description: "−8% dano recebido",
+    description: "−12% dano recebido",
     cost: 8_000,
     requires: ["node_life_steal_1"],
     branch: "vitality",
@@ -217,7 +217,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_guardian_hide",
     name: "Guardian Hide",
-    description: "−6% dano recebido",
+    description: "−10% dano recebido",
     cost: 1_150_000,
     requires: ["node_hemostasis"],
     branch: "vitality",
@@ -259,7 +259,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_crit_chance",
     name: "Precision",
-    description: "+5% chance de crítico",
+    description: "+8% chance de crítico",
     cost: 2_500,
     requires: ["node_range_focus"],
     branch: "power",
@@ -269,7 +269,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_crit_power",
     name: "Haymaker",
-    description: "+25% dano crítico",
+    description: "+40% dano crítico",
     cost: 8_000,
     requires: ["node_crit_chance"],
     branch: "power",
@@ -411,14 +411,15 @@ export const SKILL_NODES: SkillNodeDef[] = [
     accent: "emerald",
   },
   {
-    id: "node_extra_arm_2",
-    name: "Twin Arms",
-    description: "+1 braço de ataque",
+    id: "node_war_discipline",
+    name: "War Discipline",
+    description:
+      "+6% chance crítica · +25% dano crítico · −8% dano recebido",
     cost: 180_000,
-    requires: ["node_extra_arm", "node_crit_power"],
+    requires: ["node_crit_power", "node_thick_skin"],
     branch: "synergy",
     tier: 2,
-    accent: "cyan",
+    accent: "yellow",
   },
   {
     id: "node_berserker",
@@ -433,7 +434,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_immortal_champion",
     name: "Immortal Champion",
-    description: "−5% dano recebido · +10 Damage · +1% Life Steal",
+    description: "−8% dano recebido · +10 Damage · +1% Life Steal",
     cost: 750_000,
     requires: ["node_life_steal_3", "node_dmg_3", "node_spark_overdrive"],
     branch: "synergy",
@@ -593,18 +594,25 @@ export function getSkillDamageTakenMultiplier(
   skillTree: SkillTreeState,
 ): number {
   let mul = 1;
-  if (skillTree.node_thick_skin) mul *= 0.92;
-  if (skillTree.node_guardian_hide) mul *= 0.94;
-  if (skillTree.node_immortal_champion) mul *= 0.95;
+  if (skillTree.node_thick_skin) mul *= 0.88;
+  if (skillTree.node_guardian_hide) mul *= 0.9;
+  if (skillTree.node_war_discipline) mul *= 0.92;
+  if (skillTree.node_immortal_champion) mul *= 0.92;
   return mul;
 }
 
 export function getSkillCritChanceBonus(skillTree: SkillTreeState): number {
-  return skillTree.node_crit_chance ? 0.05 : 0;
+  let bonus = 0;
+  if (skillTree.node_crit_chance) bonus += 0.08;
+  if (skillTree.node_war_discipline) bonus += 0.06;
+  return bonus;
 }
 
 export function getSkillCritDamageBonus(skillTree: SkillTreeState): number {
-  return skillTree.node_crit_power ? 0.25 : 0;
+  let bonus = 0;
+  if (skillTree.node_crit_power) bonus += 0.4;
+  if (skillTree.node_war_discipline) bonus += 0.25;
+  return bonus;
 }
 
 export function getSkillKnockbackBonus(skillTree: SkillTreeState): number {
@@ -621,10 +629,7 @@ export function getSkillGoldIncomeMultiplier(
 }
 
 export function getSkillExtraArms(skillTree: SkillTreeState): number {
-  let arms = 0;
-  if (skillTree.node_extra_arm) arms += 1;
-  if (skillTree.node_extra_arm_2) arms += 1;
-  return arms;
+  return skillTree.node_extra_arm ? 1 : 0;
 }
 
 export function getSkillMagnetRadiusMultiplier(

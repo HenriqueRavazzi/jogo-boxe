@@ -5,10 +5,9 @@
  */
 
 import { useEffect, useState } from "react";
-import { Award, Coins, Gem, Sparkles, X } from "lucide-react";
+import { Award, Coins, Gem, X } from "lucide-react";
 import type { MilestoneQuestRewards } from "@/lib/milestoneQuests";
 import type { MilestoneToastItem } from "@/lib/milestoneToasts";
-import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
 export type { MilestoneToastItem };
@@ -21,7 +20,6 @@ function formatRewards(r: MilestoneQuestRewards): string {
   if (r.gold > 0) parts.push(`+${r.gold.toLocaleString("pt-BR")} ouro`);
   if (r.gems > 0) parts.push(`+${r.gems} diam.`);
   if (r.purpleDiamonds > 0) parts.push(`+${r.purpleDiamonds} roxos`);
-  if (r.ascensionShards > 0) parts.push(`+${r.ascensionShards} shards`);
   return parts.join(" · ");
 }
 
@@ -117,10 +115,6 @@ function ToastCard({
           <Gem className="h-3 w-3 text-violet-300" aria-hidden />
           {item.rewards.purpleDiamonds}
         </span>
-        <span className="inline-flex items-center gap-1">
-          <Sparkles className="h-3 w-3 text-fuchsia-300" aria-hidden />
-          {item.rewards.ascensionShards}
-        </span>
       </div>
     </div>
   );
@@ -145,18 +139,7 @@ export function MilestoneToastStack() {
           item={item}
           onDismiss={() => dismissMilestoneToast(item.uid)}
           onClaim={() => {
-            const rewards = claimMilestoneQuest(item.questId);
-            if (rewards?.ascensionShards) {
-              const arena = useArenaStore.getState();
-              if (
-                arena.gameState === "playing" ||
-                arena.gameState === "level_up" ||
-                arena.gameState === "gameover" ||
-                arena.gameState === "victory"
-              ) {
-                arena.recordAscensionShardsGained(rewards.ascensionShards);
-              }
-            }
+            claimMilestoneQuest(item.questId);
             dismissMilestoneToast(item.uid);
           }}
         />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Coins, Gem, ScrollText, Sparkles, Trophy } from "lucide-react";
+import { Coins, Gem, ScrollText, Trophy } from "lucide-react";
 import {
   MILESTONE_QUESTS,
   canClaimMilestone,
@@ -208,12 +208,6 @@ export function MilestoneQuestsPanel({
                     <Gem className="h-3 w-3" aria-hidden />
                     {rewards.purpleDiamonds}
                   </span>
-                  {rewards.ascensionShards > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-fuchsia-300">
-                      <Sparkles className="h-3 w-3" aria-hidden />
-                      {rewards.ascensionShards}
-                    </span>
-                  )}
                 </div>
               </div>
 

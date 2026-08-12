@@ -1779,11 +1779,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   /**
    * Ascensão: +1 prestige + Ascension Shards; reseta ouro, diamantes (normais e
-   * roxos), upgrades de base (ouro) e atributos granulares das skills (voltam
-   * ao Nv.1). Desbloqueios de skills avançadas permanecem; Maestrias Supremas
-   * resetam e precisam ser liberadas de novo. Mantém upgrades de diamante
-   * (meta tree, XP, skill tree) e passivas de Ascensão. Equipe: membros
-   * obtidos voltam ao Nv.1 e o custo de recrutamento (pity) zera.
+   * roxos), upgrades de base (ouro), bônus de XP e atributos granulares das
+   * skills (voltam ao Nv.1). Desbloqueios de skills avançadas permanecem;
+   * Maestrias Supremas resetam e precisam ser liberadas de novo. Mantém
+   * skill tree / meta tree e passivas de Ascensão. Equipe: membros obtidos
+   * voltam ao Nv.1 e o custo de recrutamento (pity) zera.
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -1797,8 +1797,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       maxHpLevel: current.maxHpLevel,
       baseDamageLevel: current.baseDamageLevel,
       armTier: current.armTier,
-      // XP de diamante não reseta — não conta como progresso sacrificado
-      xpBonusLevel: 0,
+      xpBonusLevel: current.xpBonusLevel,
       gold: current.gold,
       prestigeLevel: current.prestigeLevel,
     });
@@ -1829,8 +1828,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       baseKnockbackPower: fresh.baseKnockbackPower,
       critChanceLevel: fresh.critChanceLevel,
       critDamageLevel: fresh.critDamageLevel,
-      // Upgrades de diamante (normais) permanentes — não resetam
-      // xpBonusLevel, skillTree e meta tree são preservados
+      // Bônus de XP (painel da árvore) reseta na Ascensão
+      xpBonusLevel: fresh.xpBonusLevel,
+      // skillTree e meta tree são preservados
       // Skills avançadas: desbloqueio permanente; attrs → Nv.1
       unlockedSkills,
       // Maestrias Supremas: resetam na Ascensão (recomprar após maxar attrs)
@@ -1910,7 +1910,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         gold: s.gold + rewards.gold,
         gems: s.gems + rewards.gems,
         purpleDiamonds: s.purpleDiamonds + rewards.purpleDiamonds,
-        ascensionShards: s.ascensionShards + rewards.ascensionShards,
         milestoneToasts: s.milestoneToasts.filter((t) => t.questId !== id),
       };
     });
