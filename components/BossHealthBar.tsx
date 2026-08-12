@@ -4,9 +4,10 @@ import { useArenaStore } from "@/store/useArenaStore";
 
 /** Barras de vida no topo — uma por boss vivo. */
 export function BossHealthBar() {
-  const bosses = useArenaStore((s) =>
-    s.enemies.filter((e) => e.type === "boss" && e.hp > 0),
-  );
+  // Selecionar `enemies` (ref estável); filtrar no render.
+  // `.filter()` no seletor cria array novo a cada getSnapshot → React #185.
+  const enemies = useArenaStore((s) => s.enemies);
+  const bosses = enemies.filter((e) => e.type === "boss" && e.hp > 0);
 
   if (bosses.length === 0) return null;
 
