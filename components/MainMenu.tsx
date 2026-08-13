@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Coins, Gem, Settings, Sparkles } from "lucide-react";
+import { Coins, Gem, Lock, Settings, Sparkles } from "lucide-react";
 import { AdvancedSkillsPanel } from "@/components/AdvancedSkillsPanel";
 import { AscensionPanel } from "@/components/AscensionPanel";
 import { MetaTreePanel } from "@/components/MetaTreePanel";
@@ -10,6 +10,10 @@ import { SaveMenu } from "@/components/SaveMenu";
 import { SettingsModal } from "@/components/SettingsModal";
 import { TeamPanel } from "@/components/TeamPanel";
 import { UpgradePanel } from "@/components/UpgradePanel";
+import {
+  getDifficultyUnlockHint,
+  isDifficultyUnlocked,
+} from "@/lib/difficultyProgress";
 import {
   ENDLESS_UNLOCK_STAGE,
   TOTAL_STAGES,
@@ -98,6 +102,7 @@ export function MainMenu({
   const difficulties = useGameStore((s) => s.difficulties);
   const selectedDifficultyId = useGameStore((s) => s.selectedDifficultyId);
   const setSelectedDifficulty = useGameStore((s) => s.setSelectedDifficulty);
+  const unlockedDifficulties = useGameStore((s) => s.unlockedDifficulties);
   const configsLoaded = useGameStore((s) => s.configsLoaded);
   const maxStageCleared = useGameStore((s) => s.maxStageCleared);
   const endlessUnlocked = useGameStore((s) => s.endlessUnlocked);
@@ -111,6 +116,10 @@ export function MainMenu({
   const [showSettings, setShowSettings] = useState(false);
 
   const selected = difficulties.find((d) => d.id === selectedDifficultyId);
+  const selectedUnlocked = selected
+    ? isDifficultyUnlocked(unlockedDifficulties, selected.name)
+    : false;
+  const canStart = canPlay && selectedUnlocked;
   const prestigeReady = canTriggerPrestige();
   const prestigeMul = getPrestigeMultiplier();
   const nextShape = prestigeShapeLabel(prestigeLevel + 1);
@@ -205,17 +214,39 @@ export function MainMenu({
               }}
               className="w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-2.5 text-sm font-semibold text-zinc-100 outline-none transition focus:border-sky-400/60"
             >
-              {difficulties.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.enemyHpMultiplier.toFixed(1)}×)
-                </option>
-              ))}
+              {difficulties.map((d) => {
+                const unlocked = isDifficultyUnlocked(
+                  unlockedDifficulties,
+                  d.name,
+                );
+                return (
+                  <option key={d.id} value={d.id} disabled={!unlocked}>
+                    {unlocked ? "" : "🔒 "}
+                    {d.name} ({d.enemyHpMultiplier.toFixed(1)}× HP ·{" "}
+                    {d.enemySpeedMultiplier.toFixed(2)}× vel)
+                  </option>
+                );
+              })}
             </select>
-            {selected && (
+            {selected && selectedUnlocked && (
               <p className="mt-2 text-[11px] leading-snug text-zinc-400">
-                Inimigos {selected.enemyHpMultiplier.toFixed(1)}× HP · Ouro{" "}
+                Inimigos {selected.enemyHpMultiplier.toFixed(1)}× HP ·{" "}
+                {selected.enemyDamageMultiplier.toFixed(1)}× dano ·{" "}
+                {selected.enemySpeedMultiplier.toFixed(2)}× vel · Ouro{" "}
                 {selected.goldDropMultiplier.toFixed(1)}×
                 {!configsLoaded ? " · defaults locais" : null}
+                {" · vale para Fases e Endless"}
+              </p>
+            )}
+            {selected && !selectedUnlocked && (
+              <p className="mt-2 inline-flex items-start gap-1.5 text-[11px] leading-snug text-amber-300/90">
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                {getDifficultyUnlockHint(selected.name)}
+              </p>
+            )}
+            {!selectedUnlocked && selected && (
+              <p className="mt-1 text-[10px] text-zinc-500">
+                Selecione uma dificuldade liberada para jogar.
               </p>
             )}
 
@@ -313,7 +344,7 @@ export function MainMenu({
           <div className="pointer-events-auto flex shrink-0 gap-2 sm:hidden">
             <button
               type="button"
-              disabled={!canPlay}
+              disabled={!canStart}
               onClick={onStart}
               className="flex-1 rounded-xl bg-sky-500 py-3.5 text-base font-black uppercase tracking-wider text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-zinc-700"
             >
@@ -462,7 +493,7 @@ export function MainMenu({
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
-                disabled={!canPlay}
+                disabled={!canStart}
                 onClick={onStart}
                 className="rounded-2xl bg-sky-500 px-12 py-3.5 text-lg font-black uppercase tracking-wider text-white shadow-lg shadow-sky-900/40 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:shadow-none"
               >

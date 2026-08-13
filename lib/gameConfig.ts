@@ -24,22 +24,103 @@ export type DifficultyMultipliers = {
 };
 
 /**
- * Escala de HP/dano por dificuldade (Easy/Medium/Hard/Insane).
- * Aplicada no spawn: floor(hpBase × hp) e damage × dmg.
+ * Escala canônica por nome (fallback se a linha do Neon não trouxer muls).
+ * Preferência em runtime: valores da tabela `difficulties`.
  */
 export const DIFFICULTY_STAT_SCALE: Record<
   string,
-  { hp: number; damage: number }
+  { hp: number; damage: number; speed: number; gold: number }
 > = {
-  Easy: { hp: 1.0, damage: 1.0 },
-  Medium: { hp: 1.3, damage: 1.2 },
-  Hard: { hp: 1.8, damage: 1.5 },
-  Insane: { hp: 2.5, damage: 2.0 },
-  Fácil: { hp: 1.0, damage: 1.0 },
-  Médio: { hp: 1.3, damage: 1.2 },
-  Difícil: { hp: 1.8, damage: 1.5 },
-  Infernal: { hp: 2.5, damage: 2.0 },
+  Easy: { hp: 1.0, damage: 1.0, speed: 1.0, gold: 1.0 },
+  Medium: { hp: 1.35, damage: 1.25, speed: 1.15, gold: 1.35 },
+  Hard: { hp: 1.9, damage: 1.6, speed: 1.3, gold: 1.55 },
+  Insane: { hp: 4.5, damage: 3.5, speed: 2.0, gold: 2.2 },
+  Fácil: { hp: 1.0, damage: 1.0, speed: 1.0, gold: 1.0 },
+  Médio: { hp: 1.35, damage: 1.25, speed: 1.15, gold: 1.35 },
+  Difícil: { hp: 1.9, damage: 1.6, speed: 1.3, gold: 1.55 },
+  "Muito Difícil": { hp: 2.6, damage: 2.1, speed: 1.5, gold: 1.75 },
+  Extremo: { hp: 3.5, damage: 2.8, speed: 1.75, gold: 2.0 },
+  Inferno: { hp: 4.5, damage: 3.5, speed: 2.0, gold: 2.2 },
+  /** Legado */
+  Infernal: { hp: 4.5, damage: 3.5, speed: 2.0, gold: 2.2 },
 };
+
+/** Fallback local se o Neon estiver offline. */
+export const FALLBACK_GAME_SETTINGS: GameBaseSettings = {
+  baseAttackSpeed: 1500,
+  baseDamage: 10,
+  baseHp: 100,
+  baseRange: 100,
+};
+
+export const FALLBACK_DIFFICULTIES: DifficultyConfig[] = [
+  {
+    id: 1,
+    name: "Fácil",
+    enemyHpMultiplier: 1.0,
+    enemyDamageMultiplier: 1.0,
+    enemySpeedMultiplier: 1.0,
+    goldDropMultiplier: 1.0,
+  },
+  {
+    id: 2,
+    name: "Médio",
+    enemyHpMultiplier: 1.35,
+    enemyDamageMultiplier: 1.25,
+    enemySpeedMultiplier: 1.15,
+    goldDropMultiplier: 1.35,
+  },
+  {
+    id: 3,
+    name: "Difícil",
+    enemyHpMultiplier: 1.9,
+    enemyDamageMultiplier: 1.6,
+    enemySpeedMultiplier: 1.3,
+    goldDropMultiplier: 1.55,
+  },
+  {
+    id: 4,
+    name: "Muito Difícil",
+    enemyHpMultiplier: 2.6,
+    enemyDamageMultiplier: 2.1,
+    enemySpeedMultiplier: 1.5,
+    goldDropMultiplier: 1.75,
+  },
+  {
+    id: 5,
+    name: "Extremo",
+    enemyHpMultiplier: 3.5,
+    enemyDamageMultiplier: 2.8,
+    enemySpeedMultiplier: 1.75,
+    goldDropMultiplier: 2.0,
+  },
+  {
+    id: 6,
+    name: "Inferno",
+    enemyHpMultiplier: 4.5,
+    enemyDamageMultiplier: 3.5,
+    enemySpeedMultiplier: 2.0,
+    goldDropMultiplier: 2.2,
+  },
+];
+
+export const NEUTRAL_DIFFICULTY: DifficultyMultipliers = {
+  enemyHpMultiplier: 1,
+  enemyDamageMultiplier: 1,
+  enemySpeedMultiplier: 1,
+  goldDropMultiplier: 1,
+};
+
+/** Resolve multiplicadores a partir do nome da dificuldade selecionada. */
+export function resolveDifficultyStatScale(
+  name: string | null | undefined,
+): { hp: number; damage: number } {
+  if (!name) return { hp: 1, damage: 1 };
+  const scale = DIFFICULTY_STAT_SCALE[name];
+  return scale
+    ? { hp: scale.hp, damage: scale.damage }
+    : { hp: 1, damage: 1 };
+}
 
 /** Comportamento de IA / combate derivado do nome + isBoss. */
 export type EnemyBehaviorKind = "normal" | "dasher" | "ranged" | "boss";
@@ -77,64 +158,6 @@ export type EnemyTypeConfig = {
 export const ENEMY_SPEED_UNIT = 27.5;
 /** Raio base × scale do tipo. */
 export const ENEMY_BASE_RADIUS = 12;
-
-/** Fallback local se o Neon estiver offline. */
-export const FALLBACK_GAME_SETTINGS: GameBaseSettings = {
-  baseAttackSpeed: 1500,
-  baseDamage: 10,
-  baseHp: 100,
-  baseRange: 100,
-};
-
-export const FALLBACK_DIFFICULTIES: DifficultyConfig[] = [
-  {
-    id: 1,
-    name: "Fácil",
-    enemyHpMultiplier: 1.0,
-    enemyDamageMultiplier: 1.0,
-    enemySpeedMultiplier: 1.0,
-    goldDropMultiplier: 1.0,
-  },
-  {
-    id: 2,
-    name: "Médio",
-    enemyHpMultiplier: 1.3,
-    enemyDamageMultiplier: 1.2,
-    enemySpeedMultiplier: 1.1,
-    goldDropMultiplier: 1.35,
-  },
-  {
-    id: 3,
-    name: "Difícil",
-    enemyHpMultiplier: 1.8,
-    enemyDamageMultiplier: 1.5,
-    enemySpeedMultiplier: 1.25,
-    goldDropMultiplier: 1.55,
-  },
-  {
-    id: 4,
-    name: "Infernal",
-    enemyHpMultiplier: 2.5,
-    enemyDamageMultiplier: 2.0,
-    enemySpeedMultiplier: 1.4,
-    goldDropMultiplier: 1.6,
-  },
-];
-
-export const NEUTRAL_DIFFICULTY: DifficultyMultipliers = {
-  enemyHpMultiplier: 1,
-  enemyDamageMultiplier: 1,
-  enemySpeedMultiplier: 1,
-  goldDropMultiplier: 1,
-};
-
-/** Resolve multiplicadores a partir do nome da dificuldade selecionada. */
-export function resolveDifficultyStatScale(
-  name: string | null | undefined,
-): { hp: number; damage: number } {
-  if (!name) return { hp: 1, damage: 1 };
-  return DIFFICULTY_STAT_SCALE[name] ?? { hp: 1, damage: 1 };
-}
 
 export function resolveEnemyBehaviorKind(
   name: string,

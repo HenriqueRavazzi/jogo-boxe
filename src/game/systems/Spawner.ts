@@ -445,7 +445,7 @@ function scaleFromType(
   const overflowDmg = Math.pow(BOSS_OVERFLOW_DAMAGE_GROWTH, overflow);
 
   // HP: floor(hp_base × difficulty.hp × powerMul)
-  // Ex. Infernal: 40 × 2.5 × 1 = 100 (antes do prestige/overflow)
+  // Extremo/Inferno: speed_mul 1.75–2.0 — força controle de grupo cedo
   const scaledHp = Math.floor(config.hpBase * hpMul * powerMul);
 
   // Dano: damage × difficulty.damage × powerMul (proporcional ao HP)

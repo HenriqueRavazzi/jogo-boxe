@@ -1,4 +1,8 @@
 import {
+  createDefaultUnlockedDifficulties,
+  normalizeUnlockedDifficulties,
+} from "@/lib/difficultyProgress";
+import {
   DEFAULT_ASCENSION_PASSIVES,
   normalizeAscensionPassives,
 } from "@/lib/ascensionPassives";
@@ -242,6 +246,7 @@ export function createDefaultSaveData(): SaveData {
     equippedTeamMemberIds: [],
     maxStageCleared: 0,
     endlessUnlocked: false,
+    unlockedDifficulties: createDefaultUnlockedDifficulties(),
     selectedStage: 1,
     selectedRunMode: "stage",
     visualSettings: { ...DEFAULT_GAME_VISUAL_SETTINGS },
@@ -390,6 +395,13 @@ export function normalizeSaveData(
       );
       return Boolean(data.endlessUnlocked) || isEndlessUnlocked(cleared);
     })(),
+    unlockedDifficulties: normalizeUnlockedDifficulties(
+      (data as SaveData).unlockedDifficulties,
+      Math.min(
+        TOTAL_STAGES,
+        Math.max(0, Math.floor(Number(data.maxStageCleared) || 0)),
+      ),
+    ),
     selectedStage: Math.min(
       TOTAL_STAGES,
       Math.max(1, Math.floor(Number(data.selectedStage) || 1)),

@@ -64,24 +64,38 @@ const DIFFICULTY_ROWS = [
   },
   {
     name: "Médio",
-    enemyHpMultiplier: 1.3,
-    enemyDamageMultiplier: 1.2,
-    enemySpeedMultiplier: 1.1,
+    enemyHpMultiplier: 1.35,
+    enemyDamageMultiplier: 1.25,
+    enemySpeedMultiplier: 1.15,
     goldDropMultiplier: 1.35,
   },
   {
     name: "Difícil",
-    enemyHpMultiplier: 1.8,
-    enemyDamageMultiplier: 1.5,
-    enemySpeedMultiplier: 1.25,
+    enemyHpMultiplier: 1.9,
+    enemyDamageMultiplier: 1.6,
+    enemySpeedMultiplier: 1.3,
     goldDropMultiplier: 1.55,
   },
   {
-    name: "Infernal",
-    enemyHpMultiplier: 2.5,
-    enemyDamageMultiplier: 2.0,
-    enemySpeedMultiplier: 1.4,
-    goldDropMultiplier: 1.6,
+    name: "Muito Difícil",
+    enemyHpMultiplier: 2.6,
+    enemyDamageMultiplier: 2.1,
+    enemySpeedMultiplier: 1.5,
+    goldDropMultiplier: 1.75,
+  },
+  {
+    name: "Extremo",
+    enemyHpMultiplier: 3.5,
+    enemyDamageMultiplier: 2.8,
+    enemySpeedMultiplier: 1.75,
+    goldDropMultiplier: 2.0,
+  },
+  {
+    name: "Inferno",
+    enemyHpMultiplier: 4.5,
+    enemyDamageMultiplier: 3.5,
+    enemySpeedMultiplier: 2.0,
+    goldDropMultiplier: 2.2,
   },
 ] as const;
 
@@ -107,6 +121,11 @@ async function seed() {
       pg_get_serial_sequence('difficulties', 'id'),
       COALESCE((SELECT MAX(id) FROM difficulties), 1)
     )
+  `);
+
+  // Renomeia legado "Infernal" → "Inferno" (mesmo id / progresso).
+  await db.execute(sql`
+    UPDATE difficulties SET name = 'Inferno' WHERE name = 'Infernal'
   `);
 
   for (const row of DIFFICULTY_ROWS) {

@@ -346,7 +346,7 @@ export const MILESTONE_QUESTS: MilestoneQuestDef[] = [
   {
     id: "implacable_survivor",
     title: "Sobrevivente Implacável",
-    description: "Sobreviva em Difícil ou Infernal.",
+    description: "Sobreviva em Difícil ou superior (Extremo/Inferno contam).",
     category: "milestone",
     target: 600,
     rewards: {
@@ -625,6 +625,9 @@ export function advanceMilestonePhase(
 export const HARD_DIFFICULTY_NAMES = new Set([
   "Difícil",
   "Hard",
+  "Muito Difícil",
+  "Extremo",
+  "Inferno",
   "Infernal",
   "Insane",
 ]);

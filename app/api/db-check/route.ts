@@ -123,6 +123,7 @@ export async function GET() {
       "equippedTeamMemberIds",
       "maxStageCleared",
       "endlessUnlocked",
+      "unlockedDifficulties",
       "selectedStage",
       "selectedRunMode",
     ];

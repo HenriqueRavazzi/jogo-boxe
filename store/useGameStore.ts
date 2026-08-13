@@ -76,7 +76,14 @@ import {
 } from "@/lib/milestoneQuests";
 import { buildMilestoneToastItems, type MilestoneToastItem } from "@/lib/milestoneToasts";
 import {
-  DIFFICULTY_STAT_SCALE,
+  createDefaultUnlockedDifficulties,
+  isDifficultyUnlocked,
+  normalizeUnlockedDifficulties,
+  pickDefaultUnlockedDifficultyId,
+  unlockNextDifficultyAfterClear,
+  type UnlockedDifficulties,
+} from "@/lib/difficultyProgress";
+import {
   FALLBACK_DIFFICULTIES,
   FALLBACK_ENEMY_TYPES,
   FALLBACK_GAME_SETTINGS,
@@ -283,6 +290,8 @@ export type GameStoreState = {
   /** Progresso da campanha (fases 1–50). */
   maxStageCleared: number;
   endlessUnlocked: boolean;
+  /** Dificuldades liberadas (persistido no save). */
+  unlockedDifficulties: UnlockedDifficulties;
   selectedStage: number;
   selectedRunMode: "stage" | "endless";
   /** Preferências de desempenho / visual (persistidas no save). */
@@ -317,6 +326,7 @@ export type GameStoreState = {
     balance?: BalanceConfigBundle,
   ) => void;
   setSelectedDifficulty: (id: number) => void;
+  isDifficultyUnlockedById: (id: number) => boolean;
   getSelectedDifficulty: () => DifficultyConfig | null;
   getDifficultyMultipliers: () => DifficultyMultipliers;
   addGold: (baseAmount: number, options?: { applyIncome?: boolean }) => void;
@@ -1183,9 +1193,11 @@ export const BASE_RANGE = FALLBACK_GAME_SETTINGS.baseRange;
 
 const defaults = createDefaultSaveData();
 
-function pickDefaultDifficultyId(list: DifficultyConfig[]): number | null {
-  const medium = list.find((d) => d.name === "Médio");
-  return medium?.id ?? list[0]?.id ?? null;
+function pickDefaultDifficultyId(
+  list: DifficultyConfig[],
+  unlocked: UnlockedDifficulties = createDefaultUnlockedDifficulties(),
+): number | null {
+  return pickDefaultUnlockedDifficultyId(list, unlocked);
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
@@ -1238,13 +1250,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   endlessUnlocked:
     defaults.endlessUnlocked ||
     isEndlessUnlocked(defaults.maxStageCleared ?? 0),
+  unlockedDifficulties: normalizeUnlockedDifficulties(
+    defaults.unlockedDifficulties,
+    defaults.maxStageCleared ?? 0,
+  ),
   selectedStage: defaults.selectedStage ?? 1,
   selectedRunMode: defaults.selectedRunMode ?? "stage",
   visualSettings: normalizeGameVisualSettings(defaults.visualSettings),
   baseConfig: { ...FALLBACK_GAME_SETTINGS },
   difficulties: [...FALLBACK_DIFFICULTIES],
   enemyTypes: [...FALLBACK_ENEMY_TYPES],
-  selectedDifficultyId: pickDefaultDifficultyId(FALLBACK_DIFFICULTIES),
+  selectedDifficultyId: pickDefaultDifficultyId(
+    FALLBACK_DIFFICULTIES,
+    normalizeUnlockedDifficulties(
+      defaults.unlockedDifficulties,
+      defaults.maxStageCleared ?? 0,
+    ),
+  ),
   configsLoaded: false,
   balanceConfig: { ...FALLBACK_BALANCE_CONFIG },
   gameSpeedMultiplier: 1,
@@ -1354,6 +1376,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       endlessUnlocked:
         Boolean(n.endlessUnlocked) ||
         isEndlessUnlocked(n.maxStageCleared ?? 0),
+      unlockedDifficulties: normalizeUnlockedDifficulties(
+        n.unlockedDifficulties,
+        n.maxStageCleared ?? 0,
+      ),
       selectedStage: Math.min(
         TOTAL_STAGES,
         Math.max(1, Math.floor(n.selectedStage ?? 1)),
@@ -1445,6 +1471,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ),
       maxStageCleared: s.maxStageCleared,
       endlessUnlocked: s.endlessUnlocked || isEndlessUnlocked(s.maxStageCleared),
+      unlockedDifficulties: normalizeUnlockedDifficulties(
+        s.unlockedDifficulties,
+        s.maxStageCleared,
+      ),
       selectedStage: s.selectedStage,
       selectedRunMode: s.selectedRunMode,
       visualSettings: normalizeGameVisualSettings(s.visualSettings),
@@ -1462,24 +1492,38 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         : [...FALLBACK_ENEMY_TYPES];
     const balanceBundle = balance ?? { ...FALLBACK_BALANCE_CONFIG };
     setBalanceConfig(balanceBundle);
+    const unlocked = normalizeUnlockedDifficulties(
+      get().unlockedDifficulties,
+      get().maxStageCleared,
+    );
     const currentId = get().selectedDifficultyId;
-    const stillValid = list.some((d) => d.id === currentId);
+    const current = list.find((d) => d.id === currentId);
+    const currentOk =
+      current != null && isDifficultyUnlocked(unlocked, current.name);
     set({
       baseConfig: { ...settings },
       difficulties: list,
       enemyTypes: types,
       balanceConfig: balanceBundle,
-      selectedDifficultyId: stillValid
+      unlockedDifficulties: unlocked,
+      selectedDifficultyId: currentOk
         ? currentId
-        : pickDefaultDifficultyId(list),
+        : pickDefaultDifficultyId(list, unlocked),
       configsLoaded: true,
     });
   },
 
   setSelectedDifficulty: (id) => {
-    const exists = get().difficulties.some((d) => d.id === id);
-    if (!exists) return;
+    const row = get().difficulties.find((d) => d.id === id);
+    if (!row) return;
+    if (!isDifficultyUnlocked(get().unlockedDifficulties, row.name)) return;
     set({ selectedDifficultyId: id });
+  },
+
+  isDifficultyUnlockedById: (id) => {
+    const row = get().difficulties.find((d) => d.id === id);
+    if (!row) return false;
+    return isDifficultyUnlocked(get().unlockedDifficulties, row.name);
   },
 
   getSelectedDifficulty: () => {
@@ -1490,11 +1534,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   getDifficultyMultipliers: () => {
     const selected = get().getSelectedDifficulty();
     if (!selected) return { ...NEUTRAL_DIFFICULTY };
-    const scale = DIFFICULTY_STAT_SCALE[selected.name];
+    // Valores da tabela `difficulties` (Neon) — impacto direto no spawn/loot.
     return {
-      // HP/dano: tabela canônica (Easy→Insane); speed/gold do DB/config
-      enemyHpMultiplier: scale?.hp ?? selected.enemyHpMultiplier,
-      enemyDamageMultiplier: scale?.damage ?? selected.enemyDamageMultiplier,
+      enemyHpMultiplier: selected.enemyHpMultiplier,
+      enemyDamageMultiplier: selected.enemyDamageMultiplier,
       enemySpeedMultiplier: selected.enemySpeedMultiplier,
       goldDropMultiplier: selected.goldDropMultiplier,
     };
@@ -1730,12 +1773,25 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ? getStageClearRewards(stage)
       : { gold: Math.floor(getStageClearRewards(stage).gold * 0.25), gems: 0 };
 
+    const clearedDifficultyName = get().getSelectedDifficulty()?.name ?? null;
+
     set((s) => {
       const nextCleared = Math.max(s.maxStageCleared, stage);
+      let unlockedDifficulties = normalizeUnlockedDifficulties(
+        s.unlockedDifficulties,
+        nextCleared,
+      );
+      if (stage >= TOTAL_STAGES) {
+        unlockedDifficulties = unlockNextDifficultyAfterClear(
+          unlockedDifficulties,
+          clearedDifficultyName,
+        ).unlocked;
+      }
       return {
         maxStageCleared: nextCleared,
         endlessUnlocked:
           s.endlessUnlocked || nextCleared >= ENDLESS_UNLOCK_STAGE,
+        unlockedDifficulties,
         gold: s.gold + rewards.gold,
         gems: s.gems + rewards.gems,
         // Só avança a seleção na 1ª clear — replay de fase antiga não deve
@@ -1745,6 +1801,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           : s.selectedStage,
       };
     });
+
+    if (stage >= TOTAL_STAGES) {
+      void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+        void syncWithDB();
+      });
+    }
 
     return { firstClear, ...rewards };
   },

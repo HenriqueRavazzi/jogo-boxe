@@ -31,7 +31,7 @@ function phaseDescription(
   switch (id) {
     case "implacable_survivor": {
       const min = Math.max(1, Math.floor(target / 60));
-      return `Sobreviva ${min} min em Difícil ou Infernal.`;
+      return `Sobreviva ${min} min em Difícil ou superior.`;
     }
     case "ascended":
       return `Alcance o Nível ${target} de Prestígio.`;

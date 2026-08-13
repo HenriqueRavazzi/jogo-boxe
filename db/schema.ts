@@ -339,6 +339,11 @@ export type SaveData = {
   maxStageCleared: number;
   /** Endless liberado após limpar a fase 15. */
   endlessUnlocked: boolean;
+  /**
+   * Dificuldades liberadas (nome → true).
+   * Fácil/Médio/Difícil começam liberados; demais após zerar a anterior.
+   */
+  unlockedDifficulties: Record<string, boolean>;
   /** Última fase selecionada no menu (1–50). */
   selectedStage: number;
   /** Modo de run selecionado. */
