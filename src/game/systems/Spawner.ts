@@ -432,6 +432,7 @@ function scaleFromType(
   overflow = 0,
 ) {
   // Preferência: multiplicadores injetados; senão, dificuldade selecionada na store
+  // (já inclui escalamento de Aura via getDifficultyMultipliers).
   const fromStore = useGameStore.getState().getDifficultyMultipliers();
   const hpMul =
     difficulty?.enemyHpMultiplier ?? fromStore.enemyHpMultiplier ?? 1;
@@ -444,7 +445,7 @@ function scaleFromType(
   const overflowHp = Math.pow(BOSS_OVERFLOW_HP_GROWTH, overflow);
   const overflowDmg = Math.pow(BOSS_OVERFLOW_DAMAGE_GROWTH, overflow);
 
-  // HP: floor(hp_base × difficulty.hp × powerMul)
+  // HP: floor(hp_base × difficulty.hp × auraMeta × powerMul)
   // Extremo/Inferno: speed_mul 1.75–2.0 — força controle de grupo cedo
   const scaledHp = Math.floor(config.hpBase * hpMul * powerMul);
 

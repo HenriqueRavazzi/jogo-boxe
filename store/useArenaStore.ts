@@ -20,6 +20,7 @@ import {
   getMatchSkillMaxLevel,
   getMaxActiveRunSkills,
   isSpecialSkillType,
+  AURA_MIN_ACTIVE_SKILLS_TO_PICK,
   type MatchSkillBonusDelta,
   type MatchSkillBonuses,
   type MatchUpgrade,
@@ -50,6 +51,8 @@ import {
 import {
   DEFAULT_MATCH_SKILLS,
   getSkillMetaCap,
+  isAuraElementKey,
+  type AuraElementKey,
   type MatchSkillsData,
 } from "@/db/schema";
 import {
@@ -266,10 +269,23 @@ export type ArenaStoreState = {
    */
   matchSkillBonuses: MatchSkillBonuses;
   /**
-   * Skills especiais distintas já escolhidas nesta partida (máx. 2).
+   * Skills especiais distintas já escolhidas nesta partida (máx. 2–3).
    * Controla quais cartas novas podem aparecer no level-up.
    */
   activeRunSkills: SpecialSkillKey[];
+  /**
+   * Primário da Aura nesta run (100%); os demais parceiros ficam em 50%.
+   * Escolhido in-game ao equipar a Aura — não usa o meta.
+   */
+  matchAuraPrimaryElement: AuraElementKey | null;
+  /**
+   * Carta de Aura nova pendente: jogador escolhe qual skill trocar
+   * e qual efeito fica em 100%.
+   */
+  pendingAuraEquip: {
+    value: number;
+    skillBonus?: MatchSkillBonusDelta;
+  } | null;
   /** Maestrias supremas ativadas nesta run (cartas lendárias). */
   matchSkillMastery: MatchSkillMasteryData;
   /** Zonas de chão da Maestria (Tesla / fissuras). */
@@ -375,6 +391,16 @@ export type ArenaStoreState = {
     value: number,
     skillBonus?: MatchSkillBonusDelta,
   ) => void;
+  /**
+   * Confirma equipar Aura: remove `replaceSkill`, define primário 100%
+   * e ativa a Aura no lugar.
+   */
+  confirmAuraEquip: (
+    replaceSkill: SpecialSkillKey,
+    primaryElement: AuraElementKey,
+  ) => void;
+  /** Cancela o fluxo de troca da Aura e volta às cartas. */
+  cancelAuraEquip: () => void;
   /**
    * Sincroniza o countdown de level-up com o relógio real.
    * Em 0, escolhe uma carta aleatória automaticamente.
@@ -590,6 +616,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   matchSkills: { ...DEFAULT_MATCH_SKILLS },
   matchSkillBonuses: createEmptyMatchSkillBonuses(),
   activeRunSkills: [],
+  matchAuraPrimaryElement: null,
+  pendingAuraEquip: null,
   matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
   masteryGroundZones: [],
   activeSkillPulse: createActiveSkillPulseState(),
@@ -672,6 +700,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
+      matchAuraPrimaryElement: null,
+      pendingAuraEquip: null,
       matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
       masteryGroundZones: [],
       activeSkillPulse: createActiveSkillPulseState(),
@@ -824,6 +854,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
+      matchAuraPrimaryElement: null,
+      pendingAuraEquip: null,
       matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
       masteryGroundZones: [],
       activeSkillPulse: createActiveSkillPulseState(),
@@ -1102,45 +1134,78 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         levelUpDeadlineAt: null,
       }));
     } else if (isSpecialSkillType(upgradeType)) {
+      const state = get();
+      // Com maestria ativa, não sobe mais o nível da skill
+      if (state.matchSkillMastery[upgradeType]) {
+        set({
+          gameState: "playing",
+          levelUpOptions: [],
+          isPausedForLevelUp: false,
+          levelUpTimeRemaining: 0,
+          levelUpDeadlineAt: null,
+          pendingAuraEquip: null,
+        });
+        return;
+      }
+      const prevLevel = state.matchSkills[upgradeType] ?? 0;
+      const alreadyTracked = state.activeRunSkills.includes(upgradeType);
+      const game = useGameStore.getState();
+      const maxSlots = getMaxActiveRunSkills(
+        getExtraActiveRunSkillSlots(game.skillTree),
+      );
+      const skillMax = getMatchSkillMaxLevel(
+        getSkillMetaCap(game.skills[upgradeType]),
+      );
+      if (prevLevel >= skillMax) {
+        set({
+          gameState: "playing",
+          levelUpOptions: [],
+          isPausedForLevelUp: false,
+          levelUpTimeRemaining: 0,
+          levelUpDeadlineAt: null,
+          pendingAuraEquip: null,
+        });
+        return;
+      }
+      const isNewSkill = prevLevel === 0 && !alreadyTracked;
+
+      // Aura nova: exige 3 skills e abre o fluxo de troca + primário 100%
+      if (upgradeType === "aura" && isNewSkill) {
+        const nonAura = state.activeRunSkills.filter((k) => k !== "aura");
+        if (nonAura.length < AURA_MIN_ACTIVE_SKILLS_TO_PICK) {
+          set({
+            gameState: "playing",
+            levelUpOptions: [],
+            isPausedForLevelUp: false,
+            levelUpTimeRemaining: 0,
+            levelUpDeadlineAt: null,
+            pendingAuraEquip: null,
+          });
+          return;
+        }
+        set({
+          pendingAuraEquip: { value, skillBonus },
+          // Mantém level_up pausado; UI troca para o painel de troca
+          levelUpOptions: [],
+          levelUpTimeRemaining: Math.max(state.levelUpTimeRemaining, 20),
+          levelUpDeadlineAt: Date.now() + 20_000,
+        });
+        return;
+      }
+
+      if (isNewSkill && state.activeRunSkills.length >= maxSlots) {
+        set({
+          gameState: "playing",
+          levelUpOptions: [],
+          isPausedForLevelUp: false,
+          levelUpTimeRemaining: 0,
+          levelUpDeadlineAt: null,
+          pendingAuraEquip: null,
+        });
+        return;
+      }
+
       set((s) => {
-        // Com maestria ativa, não sobe mais o nível da skill
-        if (s.matchSkillMastery[upgradeType]) {
-          return {
-            gameState: "playing" as const,
-            levelUpOptions: [],
-            isPausedForLevelUp: false,
-            levelUpTimeRemaining: 0,
-            levelUpDeadlineAt: null,
-          };
-        }
-        const prevLevel = s.matchSkills[upgradeType] ?? 0;
-        const alreadyTracked = s.activeRunSkills.includes(upgradeType);
-        const game = useGameStore.getState();
-        const maxSlots = getMaxActiveRunSkills(
-          getExtraActiveRunSkillSlots(game.skillTree),
-        );
-        const skillMax = getMatchSkillMaxLevel(
-          getSkillMetaCap(game.skills[upgradeType]),
-        );
-        if (prevLevel >= skillMax) {
-          return {
-            gameState: "playing" as const,
-            levelUpOptions: [],
-            isPausedForLevelUp: false,
-            levelUpTimeRemaining: 0,
-            levelUpDeadlineAt: null,
-          };
-        }
-        const isNewSkill = prevLevel === 0 && !alreadyTracked;
-        if (isNewSkill && s.activeRunSkills.length >= maxSlots) {
-          return {
-            gameState: "playing" as const,
-            levelUpOptions: [],
-            isPausedForLevelUp: false,
-            levelUpTimeRemaining: 0,
-            levelUpDeadlineAt: null,
-          };
-        }
         const nextSkills = {
           ...s.matchSkills,
           [upgradeType]: Math.min(skillMax, prevLevel + 1),
@@ -1158,6 +1223,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
             ),
           },
           activeRunSkills,
+          pendingAuraEquip: null,
           gameState: "playing" as const,
           levelUpOptions: [],
           isPausedForLevelUp: false,
@@ -1289,6 +1355,87 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     }
   },
 
+  confirmAuraEquip: (replaceSkill, primaryElement) => {
+    const pending = get().pendingAuraEquip;
+    if (!pending) return;
+    if (replaceSkill === "aura") return;
+    if (!isAuraElementKey(primaryElement)) return;
+
+    const state = get();
+    if (!state.activeRunSkills.includes(replaceSkill)) return;
+
+    const remaining = state.activeRunSkills.filter(
+      (k) => k !== replaceSkill && k !== "aura",
+    );
+    if (!remaining.includes(primaryElement)) return;
+    if (remaining.length < AURA_MIN_ACTIVE_SKILLS_TO_PICK - 1) return;
+
+    const game = useGameStore.getState();
+    const skillMax = getMatchSkillMaxLevel(
+      getSkillMetaCap(game.skills.aura),
+    );
+
+    set((s) => {
+      const emptyBonus = createEmptyMatchSkillBonuses()[replaceSkill];
+      const nextSkills = {
+        ...s.matchSkills,
+        [replaceSkill]: 0,
+        aura: Math.min(skillMax, Math.max(1, s.matchSkills.aura + 1)),
+      };
+      const nextBonuses = {
+        ...s.matchSkillBonuses,
+        [replaceSkill]: emptyBonus,
+        aura: applySkillBonusDelta(
+          s.matchSkillBonuses.aura,
+          pending.skillBonus,
+        ),
+      };
+      const nextMastery = {
+        ...s.matchSkillMastery,
+        [replaceSkill]: false,
+      };
+      return {
+        matchSkills: nextSkills,
+        matchSkillBonuses: nextBonuses,
+        matchSkillMastery: nextMastery,
+        activeRunSkills: [...remaining, "aura"],
+        matchAuraPrimaryElement: primaryElement,
+        pendingAuraEquip: null,
+        gameState: "playing" as const,
+        levelUpOptions: [],
+        isPausedForLevelUp: false,
+        levelUpTimeRemaining: 0,
+        levelUpDeadlineAt: null,
+      };
+    });
+
+    const { currentXp, xpToNextLevel, matchLevel } = get();
+    if (currentXp >= xpToNextLevel) {
+      const xpCfg = matchXpConfig();
+      const nextReq = Math.max(
+        xpToNextLevel + 1,
+        Math.floor(xpToNextLevel * xpCfg.xpToNextGrowth),
+      );
+      const remainder = Math.min(
+        nextReq * xpCfg.overflowLevels,
+        currentXp - xpToNextLevel,
+      );
+      enterLevelUp(set, get, remainder, nextReq, matchLevel + 1);
+    }
+  },
+
+  cancelAuraEquip: () => {
+    if (!get().pendingAuraEquip) return;
+    set({
+      pendingAuraEquip: null,
+      gameState: "playing",
+      levelUpOptions: [],
+      isPausedForLevelUp: false,
+      levelUpTimeRemaining: 0,
+      levelUpDeadlineAt: null,
+    });
+  },
+
   tickLevelUpCountdown: () => {
     const state = get();
     if (
@@ -1314,10 +1461,31 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
   },
 
   autoSelectRandomUpgrade: () => {
-    const { gameState, levelUpOptions } = get();
-    if (gameState !== "level_up" || levelUpOptions.length === 0) return;
+    const state = get();
+    if (state.gameState !== "level_up") return;
+
+    if (state.pendingAuraEquip) {
+      const candidates = state.activeRunSkills.filter((k) => k !== "aura");
+      const replace = candidates[0];
+      if (!replace) {
+        get().cancelAuraEquip();
+        return;
+      }
+      const remaining = candidates.filter((k) => k !== replace);
+      const primary = remaining.find((k) => isAuraElementKey(k));
+      if (!primary || !isAuraElementKey(primary)) {
+        get().cancelAuraEquip();
+        return;
+      }
+      get().confirmAuraEquip(replace, primary);
+      return;
+    }
+
+    if (state.levelUpOptions.length === 0) return;
     const card =
-      levelUpOptions[Math.floor(Math.random() * levelUpOptions.length)];
+      state.levelUpOptions[
+        Math.floor(Math.random() * state.levelUpOptions.length)
+      ];
     if (!card) return;
     get().selectUpgrade(card.type, card.value, card.skillBonus);
   },
@@ -1581,6 +1749,8 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       matchSkills: { ...DEFAULT_MATCH_SKILLS },
       matchSkillBonuses: createEmptyMatchSkillBonuses(),
       activeRunSkills: [],
+      matchAuraPrimaryElement: null,
+      pendingAuraEquip: null,
       matchSkillMastery: { ...DEFAULT_MATCH_SKILL_MASTERY },
       masteryGroundZones: [],
       activeSkillPulse: createActiveSkillPulseState(),

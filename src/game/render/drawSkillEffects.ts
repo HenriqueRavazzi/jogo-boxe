@@ -334,11 +334,11 @@ export function drawHeroAuraRing(
     stone?: boolean;
     ricochet?: boolean;
   },
-  now: number,
+  _now?: number,
 ): void {
   if (radius <= 0) return;
-  const pulse = 0.85 + 0.15 * Math.sin(now * 0.006);
-  const r = radius * pulse;
+  void _now;
+  const r = radius;
 
   let stroke = "rgba(232, 121, 249, 0.55)";
   let glow = "#e879f9";

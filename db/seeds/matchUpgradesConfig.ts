@@ -37,7 +37,7 @@ export const MATCH_GLOBALS_SEED: MatchGlobalsSeed = {
   guardMaxLevel: 3,
   mitigationBonusPerTier: 0.02,
   skillLevelCap: 8,
-  baseActiveRunSkills: 2,
+  baseActiveRunSkills: 3,
   specialSkillCardChance: 0.25,
   maxLuckBonus: 0.15,
   luckPerMinute: 0.03,

@@ -83,6 +83,7 @@ import {
   unlockNextDifficultyAfterClear,
   type UnlockedDifficulties,
 } from "@/lib/difficultyProgress";
+import { getAuraEnemyPowerMultipliers } from "@/lib/auraEnemyScaling";
 import {
   FALLBACK_DIFFICULTIES,
   FALLBACK_ENEMY_TYPES,
@@ -1533,12 +1534,26 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   getDifficultyMultipliers: () => {
     const selected = get().getSelectedDifficulty();
-    if (!selected) return { ...NEUTRAL_DIFFICULTY };
-    // Valores da tabela `difficulties` (Neon) — impacto direto no spawn/loot.
+    const aura = getAuraEnemyPowerMultipliers(
+      get().unlockedSkills,
+      get().skills,
+    );
+    if (!selected) {
+      return {
+        enemyHpMultiplier: aura.enemyHpMultiplier,
+        enemyDamageMultiplier: aura.enemyDamageMultiplier,
+        enemySpeedMultiplier: aura.enemySpeedMultiplier,
+        goldDropMultiplier: 1,
+      };
+    }
+    // Tabela `difficulties` × escalamento de Aura (meta).
     return {
-      enemyHpMultiplier: selected.enemyHpMultiplier,
-      enemyDamageMultiplier: selected.enemyDamageMultiplier,
-      enemySpeedMultiplier: selected.enemySpeedMultiplier,
+      enemyHpMultiplier:
+        selected.enemyHpMultiplier * aura.enemyHpMultiplier,
+      enemyDamageMultiplier:
+        selected.enemyDamageMultiplier * aura.enemyDamageMultiplier,
+      enemySpeedMultiplier:
+        selected.enemySpeedMultiplier * aura.enemySpeedMultiplier,
       goldDropMultiplier: selected.goldDropMultiplier,
     };
   },

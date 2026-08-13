@@ -80,6 +80,8 @@ export type RunAuraInput = {
   auraPrimaryElement?: AuraElementKey | null;
   /** Maestria Aura: Domínio Absoluto (raio ×2, secundários 100%). */
   masteryAbsoluteDomain?: boolean;
+  /** Alcance de ataque do herói — a Aura nunca ultrapassa este raio. */
+  maxAuraRadius?: number;
 };
 
 export type RunAuraResult = {
@@ -233,12 +235,22 @@ export function getAuraRadius(
   metaRadius: number,
   bonus: MatchSkillBonusState = DEFAULT_MATCH_SKILL_BONUS,
   prestigeMul = 1,
+  /** Teto opcional — tipicamente o alcance de ataque do herói. */
+  maxRadius?: number,
 ): number {
   const base =
     AURA_BASE_RADIUS +
     Math.max(0, matchLevel) * AURA_RADIUS_PER_MATCH_LEVEL +
     Math.max(0, metaRadius) * AURA_RADIUS_PER_META * prestigeMul;
-  return Math.max(40, base * bonus.radiusMul);
+  let radius = Math.max(40, base * bonus.radiusMul);
+  if (
+    typeof maxRadius === "number" &&
+    Number.isFinite(maxRadius) &&
+    maxRadius > 0
+  ) {
+    radius = Math.min(radius, maxRadius);
+  }
+  return radius;
 }
 
 export function getAuraFireDps(
@@ -359,6 +371,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     prestigeMul,
     auraPrimaryElement,
     masteryAbsoluteDomain = false,
+    maxAuraRadius,
   } = input;
 
   const next: ActiveSkillPulseState = { ...pulseState };
@@ -411,11 +424,17 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   }
 
   const bonus = matchSkillBonuses?.aura ?? DEFAULT_MATCH_SKILL_BONUS;
-  const radius =
+  const uncapped =
     getAuraRadius(auraLevel, skills.aura.radius, bonus, prestigeMul) *
     (masteryAbsoluteDomain
       ? masteryStat("aura", "radiusMul", MASTERY_AURA_RADIUS_MULT)
       : 1);
+  const radius =
+    typeof maxAuraRadius === "number" &&
+    Number.isFinite(maxAuraRadius) &&
+    maxAuraRadius > 0
+      ? Math.min(uncapped, maxAuraRadius)
+      : uncapped;
 
   const inAura: Enemy[] = [];
   for (const enemy of enemies) {

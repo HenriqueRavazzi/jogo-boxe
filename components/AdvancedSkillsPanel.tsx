@@ -31,7 +31,6 @@ import {
   MAX_PURPLE_SKILL_STAT_LEVEL,
   SKILL_STAT_KEYS,
   getSkillMetaCap,
-  type AuraElementKey,
   type SkillUpgradeType,
 } from "@/db/schema";
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
@@ -43,7 +42,6 @@ import { syncWithDB } from "@/lib/syncWithDB";
 import {
   AURA_ELEMENT_LABELS,
   listUnlockedAuraElements,
-  resolveAuraPrimaryElement,
 } from "@/src/game/systems/AuraSystem";
 import {
   getPurpleSkillSpentForLevel,
@@ -204,7 +202,7 @@ const CARDS: SkillCardDef[] = [
     type: "aura",
     title: "Aura",
     description:
-      "Área no herói. Sinergia só com skills ativas na run (1 = 100%; 2 = 100%/50%). Preferência de primário abaixo. Roleta: exige outra skill ativa primeiro.",
+      "Área no herói. In-game: só após 3 skills — troca um slot e escolhe o efeito 100% (demais 50%). Liberar/upar Aura fortalece inimigos.",
     icon: <Circle className="h-5 w-5" aria-hidden />,
     statActions: {
       radius: {
@@ -280,8 +278,6 @@ function SkillDetailModal({
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const skills = useGameStore((s) => s.skills);
   const unlockedSkills = useGameStore((s) => s.unlockedSkills);
-  const auraPrimaryElement = useGameStore((s) => s.auraPrimaryElement);
-  const setAuraPrimaryElement = useGameStore((s) => s.setAuraPrimaryElement);
   const prestigeLevel = useGameStore((s) => s.prestigeLevel);
   const upgradeSkillStat = useGameStore((s) => s.upgradeSkillStat);
   const getSkillStatUpgradeCost = useGameStore(
@@ -295,10 +291,6 @@ function SkillDetailModal({
   const invested = skillInvested(skills, card.type, prestigeLevel);
   const auraElements =
     card.type === "aura" ? listUnlockedAuraElements(unlockedSkills) : [];
-  const auraPrimary =
-    card.type === "aura"
-      ? resolveAuraPrimaryElement(auraPrimaryElement, unlockedSkills)
-      : null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -310,11 +302,6 @@ function SkillDetailModal({
 
   const upgradeStat = async (statKey: string) => {
     if (!upgradeSkillStat(card.type, statKey)) return;
-    await syncWithDB();
-  };
-
-  const pickAuraPrimary = async (element: AuraElementKey) => {
-    if (!setAuraPrimaryElement(element)) return;
     await syncWithDB();
   };
 
@@ -376,38 +363,20 @@ function SkillDetailModal({
         {card.type === "aura" && (
           <div className="shrink-0 border-b border-white/10 px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-200/90">
-              Preferência de primário
+              Sinergia in-game
             </p>
             <p className="mt-1 text-[11px] leading-snug text-zinc-500">
-              Na run, só skills ativas nos slots contam. Com 2 parceiras, esta
-              preferência define o 100% (a outra fica em 50%). Com 1, ela fica
-              sempre em 100%.
+              A Aura só entra na run depois de 3 skills ativas: ao escolher a
+              carta, você troca uma skill e define qual efeito fica em{" "}
+              <span className="font-semibold text-violet-200">100%</span> (os
+              demais em 50%). Liberar / upar Aura também fortalece todos os
+              inimigos.
             </p>
-            {auraElements.length === 0 ? (
+            {auraElements.length > 0 && (
               <p className="mt-2 text-[11px] text-zinc-500">
-                Liberte Gelo, Raio, Fogo, Pedra, Shadow ou Ricochete para escolher.
+                Elementos liberados no meta:{" "}
+                {auraElements.map((e) => AURA_ELEMENT_LABELS[e]).join(", ")}.
               </p>
-            ) : (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {auraElements.map((element) => {
-                  const selected = auraPrimary === element;
-                  return (
-                    <button
-                      key={element}
-                      type="button"
-                      onClick={() => void pickAuraPrimary(element)}
-                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                        selected
-                          ? "border-violet-300/70 bg-violet-500/30 text-violet-50"
-                          : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-violet-400/40 hover:bg-violet-500/15"
-                      }`}
-                    >
-                      {AURA_ELEMENT_LABELS[element]}
-                      {selected ? " · 100%" : " · 50%"}
-                    </button>
-                  );
-                })}
-              </div>
             )}
           </div>
         )}
@@ -574,7 +543,6 @@ export function AdvancedSkillsPanel({
   const gold = useGameStore((s) => s.gold);
   const purpleDiamonds = useGameStore((s) => s.purpleDiamonds);
   const unlockedSkills = useGameStore((s) => s.unlockedSkills);
-  const auraPrimaryElement = useGameStore((s) => s.auraPrimaryElement);
   const skills = useGameStore((s) => s.skills);
   const totalMobsKilled = useGameStore((s) => s.totalMobsKilled);
   const totalBossesKilled = useGameStore((s) => s.totalBossesKilled);
@@ -755,19 +723,11 @@ export function AdvancedSkillsPanel({
                   <p className="mt-0.5 text-[11px] leading-snug text-zinc-400">
                     {card.description}
                   </p>
-                  {card.type === "aura" &&
-                    (() => {
-                      const primary = resolveAuraPrimaryElement(
-                        auraPrimaryElement,
-                        unlockedSkills,
-                      );
-                      if (!primary) return null;
-                      return (
-                        <p className="mt-1 text-[10px] font-semibold text-fuchsia-200/90">
-                          Principal: {AURA_ELEMENT_LABELS[primary]} (100%)
-                        </p>
-                      );
-                    })()}
+                  {card.type === "aura" && (
+                    <p className="mt-1 text-[10px] font-semibold text-fuchsia-200/90">
+                      Primário 100% escolhido in-game · inimigos mais fortes
+                    </p>
+                  )}
                 </div>
                 <ChevronRight
                   className="h-4 w-4 shrink-0 text-violet-300/80"

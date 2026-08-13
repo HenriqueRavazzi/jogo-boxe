@@ -21,7 +21,7 @@ import {
   type MatchSkillBonusState,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
-import { getMasteryCardInfo } from "@/lib/skillMastery";
+import { getMasteryCardInfo, MASTERY_AURA_RADIUS_MULT } from "@/lib/skillMastery";
 import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
 import {
   AURA_ELEMENT_LABELS,
@@ -380,7 +380,7 @@ function buildSkillStatRows(
 
   if (key === "aura") {
     const arena = useArenaStore.getState();
-    const preferred = useGameStore.getState().auraPrimaryElement;
+    const preferred = useArenaStore.getState().matchAuraPrimaryElement;
     const runElements = listRunAuraElements(
       arena.activeRunSkills,
       arena.matchSkills,
@@ -395,12 +395,12 @@ function buildSkillStatRows(
       if (p >= 1) return " · principal";
       return " · 50%";
     };
-    const radius = getAuraRadius(
-      level,
-      skills.aura.radius,
-      bonus,
-      prestigeMul,
-    );
+    const heroRange = stats.attackRange * matchBuffs.attackRange;
+    const masteryAura = useArenaStore.getState().matchSkillMastery.aura === true;
+    const uncapped =
+      getAuraRadius(level, skills.aura.radius, bonus, prestigeMul) *
+      (masteryAura ? MASTERY_AURA_RADIUS_MULT : 1);
+    const radius = Math.min(uncapped, heroRange);
     const neutralDps = neutral
       ? getAuraNeutralDps(
           punchBase * skillDmgMul,

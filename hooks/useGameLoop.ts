@@ -40,6 +40,7 @@ import {
 } from "@/src/game/multiverseLoop";
 import { getAuraRadius } from "@/src/game/systems/AuraSystem";
 import { DEFAULT_MATCH_SKILL_BONUS } from "@/lib/matchUpgrades";
+import { MASTERY_AURA_RADIUS_MULT } from "@/lib/skillMastery";
 import { runSpawner } from "@/src/game/systems/Spawner";
 import {
   isHardOrInfernalDifficulty,
@@ -258,6 +259,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         shadowClones: arena.shadowClones ?? [],
         matchSkillMastery: arena.matchSkillMastery,
         masteryGroundZones: arena.masteryGroundZones ?? [],
+        matchAuraPrimaryElement: arena.matchAuraPrimaryElement,
       });
 
       const livingEnemies = combat.enemies
@@ -818,20 +820,27 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const matchSkillBonuses = useArenaStore.getState().matchSkillBonuses;
       const gameSnap = useGameStore.getState();
       if ((matchSkills.aura ?? 0) > 0) {
-        const auraRadius = getAuraRadius(
-          matchSkills.aura,
-          gameSnap.skills.aura.radius,
-          matchSkillBonuses.aura ?? DEFAULT_MATCH_SKILL_BONUS,
-          gameSnap.getPrestigeMultiplier(),
-        );
+        const attackRange =
+          gameSnap.getEffectiveStats().attackRange *
+          (useArenaStore.getState().matchBuffs.attackRange ?? 1);
+        const masteryAura =
+          useArenaStore.getState().matchSkillMastery.aura === true;
+        const uncapped =
+          getAuraRadius(
+            matchSkills.aura,
+            gameSnap.skills.aura.radius,
+            matchSkillBonuses.aura ?? DEFAULT_MATCH_SKILL_BONUS,
+            gameSnap.getPrestigeMultiplier(),
+          ) * (masteryAura ? MASTERY_AURA_RADIUS_MULT : 1);
+        const auraRadius = Math.min(uncapped, attackRange);
         drawHeroAuraRing(ctx, playerX, playerY, auraRadius, {
-          fire: gameSnap.unlockedSkills.fire,
-          lightning: gameSnap.unlockedSkills.lightning,
-          ice: gameSnap.unlockedSkills.ice,
-          shadow: gameSnap.unlockedSkills.shadow,
-          stone: gameSnap.unlockedSkills.stone,
-          ricochet: gameSnap.unlockedSkills.ricochet,
-        }, now);
+          fire: (matchSkills.fire ?? 0) > 0,
+          lightning: (matchSkills.lightning ?? 0) > 0,
+          ice: (matchSkills.ice ?? 0) > 0,
+          shadow: (matchSkills.shadow ?? 0) > 0,
+          stone: (matchSkills.stone ?? 0) > 0,
+          ricochet: (matchSkills.ricochet ?? 0) > 0,
+        });
       }
 
       // Shadow clones

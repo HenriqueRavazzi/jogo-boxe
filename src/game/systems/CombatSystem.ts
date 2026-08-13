@@ -178,6 +178,8 @@ export type CombatSystemInput = {
   matchSkillMastery?: MatchSkillMasteryData;
   /** Zonas de chão da Maestria. */
   masteryGroundZones?: MasteryGroundZone[];
+  /** Primário da Aura nesta run (100%); escolhido ao equipar in-game. */
+  matchAuraPrimaryElement?: import("@/db/schema").AuraElementKey | null;
 };
 
 export type CombatSystemResult = {
@@ -358,6 +360,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     shadowClones: inputShadowClones = [],
     matchSkillMastery: inputMastery = DEFAULT_MATCH_SKILL_MASTERY,
     masteryGroundZones: inputMasteryZones = [],
+    matchAuraPrimaryElement: inputAuraPrimary = null,
   } = input;
 
   let playerRotation = inputRotation;
@@ -595,8 +598,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     matchSkillBonuses,
     pulseState: activeSkills.pulseState,
     prestigeMul,
-    auraPrimaryElement: gameState.auraPrimaryElement,
+    auraPrimaryElement: inputAuraPrimary,
     masteryAbsoluteDomain: mastery.aura,
+    maxAuraRadius: effectiveRange,
   });
   skillVfx.push(...aura.newSkillVfx);
   if (aura.questFreeze > 0) {
