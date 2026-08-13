@@ -162,6 +162,9 @@ export type CombatSystemInput = {
   projectiles?: EnemyProjectile[];
   canvasWidth?: number;
   canvasHeight?: number;
+  /** Bordas do mundo visível (zoom). Se omitido, assume 0..canvas. */
+  worldMinX?: number;
+  worldMinY?: number;
   /** Skills especiais ativos nesta run (0 = inativo). */
   matchSkills?: MatchSkillsData;
   /** Slots de skills especiais já escolhidos nesta run. */
@@ -352,6 +355,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     projectiles: inputProjectiles = [],
     canvasWidth = 2000,
     canvasHeight = 2000,
+    worldMinX = 0,
+    worldMinY = 0,
     matchSkills: inputMatchSkills,
     activeRunSkills: inputActiveRunSkills = [],
     matchSkillBonuses: inputMatchSkillBonuses,
@@ -676,8 +681,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     ny = bolt.y + vy * dt;
 
     if (
-      nx < -boltMargin ||
-      ny < -boltMargin ||
+      nx < worldMinX - boltMargin ||
+      ny < worldMinY - boltMargin ||
       nx > canvasWidth + boltMargin ||
       ny > canvasHeight + boltMargin
     ) {
@@ -959,8 +964,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     const nx = p.x + p.vx * dt;
     const ny = p.y + p.vy * dt;
     if (
-      nx < -margin ||
-      ny < -margin ||
+      nx < worldMinX - margin ||
+      ny < worldMinY - margin ||
       nx > canvasWidth + margin ||
       ny > canvasHeight + margin
     ) {

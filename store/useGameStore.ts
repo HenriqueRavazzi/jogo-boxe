@@ -1097,6 +1097,20 @@ function skillDamageBonus(tree: SkillTreeState): number {
   return getSkillTreeDamageBonus(tree);
 }
 
+/**
+ * Prestígio de braços: +N% sobre o dano meta efetivo (base + árvore),
+ * não só sobre `baseDamage` — senão o bônus da skill tree dilui o ganho.
+ */
+function applyArmsPrestigeToBaseDamage(
+  baseDamage: number,
+  skillTree: SkillTreeState,
+  prestigeDamageMul: number,
+): number {
+  const skillDmg = skillDamageBonus(skillTree);
+  const mul = Number.isFinite(prestigeDamageMul) ? prestigeDamageMul : 1.15;
+  return Math.max(1, Math.round((baseDamage + skillDmg) * mul - skillDmg));
+}
+
 function skillRangeBonus(tree: SkillTreeState): number {
   return getSkillTreeRangeBonus(tree);
 }
@@ -2720,7 +2734,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           } else {
             arms = cfg.minArms;
             armTier += 1;
-            baseDamage = Math.round(baseDamage * cfg.prestigeDamageMul);
+            baseDamage = applyArmsPrestigeToBaseDamage(
+              baseDamage,
+              s.skillTree,
+              cfg.prestigeDamageMul,
+            );
             armsNextCost = Math.floor(armsNextCost * cfg.resetCostMul);
           }
         }
@@ -2802,7 +2820,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   /**
    * Ciclo de braços (prestige):
    * - arms < maxGoldArms → +1 braço, custo × stepCostGrowth (+20%)
-   * - no teto → volta a minArms, dano × prestigeDamageMul, custo × resetCostMul (×2)
+   * - no teto → volta a minArms, dano atual × prestigeDamageMul, custo × resetCostMul (×2)
    */
   upgradeArms: () => {
     const cfg = readArmsConfig();
@@ -2822,7 +2840,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         gold: s.gold - cost,
         arms: cfg.minArms,
         armTier: s.armTier + 1,
-        baseDamage: Math.round(s.baseDamage * cfg.prestigeDamageMul),
+        baseDamage: applyArmsPrestigeToBaseDamage(
+          s.baseDamage,
+          s.skillTree,
+          cfg.prestigeDamageMul,
+        ),
         armsNextCost: Math.floor(baseStored * cfg.resetCostMul),
       };
     });

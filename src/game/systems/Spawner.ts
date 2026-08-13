@@ -69,9 +69,33 @@ const MIN_INTERVAL = 220;
  * Evita inundar a tela após catch-up de aba em background.
  */
 const MAX_SPAWN_EVENTS_PER_TICK = 4;
-/** Acima desta fração de MAX_ENEMIES, reduz lote / alonga ritmo. */
+/** Acima desta fração do teto atual, reduz lote / alonga ritmo. */
 const CROWD_SOFT_CAP_RATIO = 0.4;
-export const MAX_ENEMIES = 140;
+/** Teto base de inimigos vivos na tela. */
+export const MAX_ENEMIES_BASE = 140;
+/** @deprecated Prefer getMaxEnemies(timeAlive). */
+export const MAX_ENEMIES = MAX_ENEMIES_BASE;
+/** Teto após o ramp tardio (a partir de 15 min). */
+export const MAX_ENEMIES_LATE = 260;
+/** Quando o teto começa a subir. */
+export const MAX_ENEMIES_LATE_START_SECONDS = 15 * 60;
+/** Duração do ramp 140 → 260 (chega no teto em ~25 min). */
+export const MAX_ENEMIES_LATE_RAMP_SECONDS = 10 * 60;
+
+/**
+ * Limite de inimigos vivos: 140 até 15 min, depois sobe linearmente até 260.
+ */
+export function getMaxEnemies(timeAliveSeconds: number): number {
+  const t = Math.max(0, timeAliveSeconds);
+  if (t < MAX_ENEMIES_LATE_START_SECONDS) return MAX_ENEMIES_BASE;
+  const u = Math.min(
+    1,
+    (t - MAX_ENEMIES_LATE_START_SECONDS) / MAX_ENEMIES_LATE_RAMP_SECONDS,
+  );
+  return Math.round(
+    MAX_ENEMIES_BASE + (MAX_ENEMIES_LATE - MAX_ENEMIES_BASE) * u,
+  );
+}
 
 /** Nomes dos inimigos fracos liberados no início da partida. */
 const EARLY_GAME_ENEMY_NAMES = new Set(["Zumbi Fraco", "Rato Corredor"]);
@@ -208,8 +232,10 @@ export function getSpawnAmount(timeAlive: number): number {
 export function getCrowdedBatchAmount(
   baseAmount: number,
   currentEnemyCount: number,
+  maxEnemies: number = MAX_ENEMIES_BASE,
 ): number {
-  const density = currentEnemyCount / MAX_ENEMIES;
+  const cap = Math.max(1, maxEnemies);
+  const density = currentEnemyCount / cap;
   if (density <= CROWD_SOFT_CAP_RATIO) {
     return Math.max(1, baseAmount);
   }
@@ -229,6 +255,16 @@ export type SpawnerInput = {
   matchLevel: number;
   canvasWidth: number;
   canvasHeight: number;
+  /**
+   * Mundo visível (com zoom). Spawn nas bordas deste retângulo.
+   * Se omitido, usa 0..canvasWidth / 0..canvasHeight.
+   */
+  worldView?: {
+    originX: number;
+    originY: number;
+    width: number;
+    height: number;
+  };
   currentEnemyCount: number;
   bossesSpawned: number;
   hasBossAlive: boolean;
@@ -503,6 +539,12 @@ function spawnFromConfig(
   matchLevel: number,
   difficulty?: DifficultySpawnMultipliers,
   overflow = 0,
+  worldView?: {
+    originX: number;
+    originY: number;
+    width: number;
+    height: number;
+  },
 ): EnemyData {
   const scaled = scaleFromType(
     config,
@@ -523,18 +565,23 @@ function spawnFromConfig(
     xpReward: Math.max(1, Math.round(baseRewards.xpReward)),
     goldReward: Number((baseRewards.goldReward * goldScale).toFixed(2)),
   };
-  const enemy = Enemy.spawnAtEdge(canvasWidth, canvasHeight, {
-    hp: scaled.hp,
-    speed: scaled.speed,
-    attackDamage: scaled.damage,
-    attackCooldown: scaled.attackCooldown,
-    projectileDamage: scaled.projectileDamage,
-    type: scaled.type,
-    radius: scaled.radius,
-    color: scaled.color,
-    skipTypeModifiers: true,
-    rewards,
-  });
+  const enemy = Enemy.spawnAtEdge(
+    canvasWidth,
+    canvasHeight,
+    {
+      hp: scaled.hp,
+      speed: scaled.speed,
+      attackDamage: scaled.damage,
+      attackCooldown: scaled.attackCooldown,
+      projectileDamage: scaled.projectileDamage,
+      type: scaled.type,
+      radius: scaled.radius,
+      color: scaled.color,
+      skipTypeModifiers: true,
+      rewards,
+    },
+    worldView,
+  );
   enemy.maxHp = enemy.hp;
   enemy.rewards = rewards;
   return enemy.toData();
@@ -550,6 +597,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     matchLevel,
     canvasWidth,
     canvasHeight,
+    worldView,
     currentEnemyCount,
     hasBossAlive,
     dt,
@@ -595,7 +643,8 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
   let commonsSpawnedDelta = 0;
   let commonsSpawned = stage?.commonsSpawned ?? 0;
 
-  const crowdDensity = count / MAX_ENEMIES;
+  const maxEnemies = getMaxEnemies(timeAliveInSeconds);
+  const crowdDensity = count / maxEnemies;
   const crowdIntervalMul =
     crowdDensity > CROWD_SOFT_CAP_RATIO
       ? 1 + (crowdDensity - CROWD_SOFT_CAP_RATIO) * 1.5
@@ -639,7 +688,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     if (
       bossesSpawned < 1 &&
       progress >= bossThreshold &&
-      count < MAX_ENEMIES &&
+      count < maxEnemies &&
       bosses.length > 0
     ) {
       const stageBossIndex = getStageBossIndex(
@@ -666,6 +715,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
           matchLevel,
           bossDifficulty,
           overflow,
+          worldView,
         ),
       );
       bossesSpawned = 1;
@@ -679,7 +729,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     while (
       remainingQuota - commonsSpawnedDelta > 0 &&
       spawnAccumulatorMs >= spawnIntervalMs &&
-      count < MAX_ENEMIES &&
+      count < maxEnemies &&
       spawnEvents < MAX_SPAWN_EVENTS_PER_TICK
     ) {
       spawnEvents += 1;
@@ -692,11 +742,12 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
             getCrowdedBatchAmount(
               getSpawnAmount(timeAliveInSeconds),
               count,
+              maxEnemies,
             ) * paceMul,
           ),
         ),
       );
-      for (let i = 0; i < batchCap && count < MAX_ENEMIES; i++) {
+      for (let i = 0; i < batchCap && count < maxEnemies; i++) {
         const config = rollCommonConfig(availableTypes);
         spawned.push(
           spawnFromConfig(
@@ -706,7 +757,9 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
             timeAliveInSeconds,
             matchLevel,
             mergedDifficulty,
-          ),
+          0,
+          worldView,
+        ),
         );
         count += 1;
         commonsSpawnedDelta += 1;
@@ -728,6 +781,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
           matchLevel,
           mergedDifficulty,
           overflow,
+          worldView,
         ),
       );
       bossesAlive += 1;
@@ -738,7 +792,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     while (
       endlessBossQueue.length > 0 &&
       bossesAlive < MAX_ALIVE_BOSSES &&
-      count < MAX_ENEMIES &&
+      count < maxEnemies &&
       bosses.length > 0
     ) {
       const next = endlessBossQueue.shift()!;
@@ -754,7 +808,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
         getEndlessBossIntervalSeconds(timeAliveInSeconds) * 1000;
       invasionBossCooldownMs = HORDE_BOSS_INVASION_COOLDOWN_MS;
 
-      if (bossesAlive < MAX_ALIVE_BOSSES && count < MAX_ENEMIES) {
+      if (bossesAlive < MAX_ALIVE_BOSSES && count < maxEnemies) {
         spawnEndlessBoss(bossIndex);
       } else {
         endlessBossQueue.push({ bossIndex });
@@ -764,7 +818,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
     let spawnEvents = 0;
     while (
       spawnAccumulatorMs >= spawnIntervalMs &&
-      count < MAX_ENEMIES &&
+      count < maxEnemies &&
       spawnEvents < MAX_SPAWN_EVENTS_PER_TICK
     ) {
       spawnEvents += 1;
@@ -772,13 +826,14 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
       const batchAmount = getCrowdedBatchAmount(
         getSpawnAmount(timeAliveInSeconds),
         count,
+        maxEnemies,
       );
 
       const canInvade =
         invasionBossCooldownMs <= 0 &&
         bossesAlive < MAX_ALIVE_BOSSES &&
         bosses.length > 0 &&
-        count < MAX_ENEMIES;
+        count < maxEnemies;
       if (
         canInvade &&
         Math.random() < getHordeBossInvasionChance(timeAliveInSeconds)
@@ -793,7 +848,8 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
             matchLevel,
             mergedDifficulty,
             overflow,
-          ),
+          worldView,
+        ),
         );
         count += 1;
         bossesAlive += 1;
@@ -801,7 +857,7 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
         hordeBossInvaded = true;
       }
 
-      for (let i = 0; i < batchAmount && count < MAX_ENEMIES; i++) {
+      for (let i = 0; i < batchAmount && count < maxEnemies; i++) {
         const config = rollCommonConfig(availableTypes);
         spawned.push(
           spawnFromConfig(
@@ -811,13 +867,15 @@ export function runSpawner(input: SpawnerInput): SpawnerResult {
             timeAliveInSeconds,
             matchLevel,
             mergedDifficulty,
-          ),
+          0,
+          worldView,
+        ),
         );
         count += 1;
       }
     }
 
-    if (count >= MAX_ENEMIES) {
+    if (count >= maxEnemies) {
       spawnAccumulatorMs = Math.min(spawnAccumulatorMs, spawnIntervalMs);
     }
   }

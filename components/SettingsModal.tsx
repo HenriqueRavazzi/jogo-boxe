@@ -137,6 +137,39 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             checked={visualSettings.highParticleQuality}
             onChange={(highParticleQuality) => patch({ highParticleQuality })}
           />
+
+          <div className="rounded-xl border border-white/10 bg-zinc-900/80 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-zinc-100">
+                  Zoom da câmera
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  Afaste para ver mais mapa. Com zoom menor, some o clutter de
+                  loot puxado até você.
+                </p>
+              </div>
+              <span className="shrink-0 text-xs font-bold tabular-nums text-sky-300">
+                {Math.round(visualSettings.cameraZoom * 100)}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={50}
+              max={100}
+              step={5}
+              value={Math.round(visualSettings.cameraZoom * 100)}
+              onChange={(e) =>
+                patch({ cameraZoom: Number(e.target.value) / 100 })
+              }
+              className="mt-3 w-full accent-sky-500"
+              aria-label="Zoom da câmera"
+            />
+            <div className="mt-1 flex justify-between text-[10px] uppercase tracking-wider text-zinc-600">
+              <span>Longe</span>
+              <span>Perto</span>
+            </div>
+          </div>
         </div>
 
         <button

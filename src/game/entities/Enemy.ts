@@ -1023,27 +1023,37 @@ export class Enemy {
     canvasWidth: number,
     canvasHeight: number,
     stats?: Partial<EnemySpawnStats>,
+    world?: {
+      originX: number;
+      originY: number;
+      width: number;
+      height: number;
+    },
   ): Enemy {
+    const width = world?.width ?? canvasWidth;
+    const height = world?.height ?? canvasHeight;
+    const originX = world?.originX ?? 0;
+    const originY = world?.originY ?? 0;
     const edge = Math.floor(Math.random() * 4);
     let x = 0;
     let y = 0;
 
     switch (edge) {
       case 0:
-        x = Math.random() * canvasWidth;
-        y = -EDGE_MARGIN;
+        x = originX + Math.random() * width;
+        y = originY - EDGE_MARGIN;
         break;
       case 1:
-        x = canvasWidth + EDGE_MARGIN;
-        y = Math.random() * canvasHeight;
+        x = originX + width + EDGE_MARGIN;
+        y = originY + Math.random() * height;
         break;
       case 2:
-        x = Math.random() * canvasWidth;
-        y = canvasHeight + EDGE_MARGIN;
+        x = originX + Math.random() * width;
+        y = originY + height + EDGE_MARGIN;
         break;
       default:
-        x = -EDGE_MARGIN;
-        y = Math.random() * canvasHeight;
+        x = originX - EDGE_MARGIN;
+        y = originY + Math.random() * height;
         break;
     }
 

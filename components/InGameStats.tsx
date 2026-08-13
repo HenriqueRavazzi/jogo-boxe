@@ -16,6 +16,11 @@ import {
   type TeamMemberId,
   type TeamRole,
 } from "@/lib/teamMembers";
+import {
+  CAMERA_ZOOM_MAX,
+  CAMERA_ZOOM_MIN,
+  clampCameraZoom,
+} from "@/lib/gameVisualSettings";
 import { getEndlessXpMultiplier } from "@/src/game/systems/Spawner";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
@@ -54,6 +59,9 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
   const arms = useGameStore((s) => s.arms);
   const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
   const getEquippedTeamBuffs = useGameStore((s) => s.getEquippedTeamBuffs);
+  const visualSettings = useGameStore((s) => s.visualSettings);
+  const setVisualSettings = useGameStore((s) => s.setVisualSettings);
+  const cameraZoom = clampCameraZoom(visualSettings.cameraZoom);
 
   void skillTree;
   void maxHpLevel;
@@ -198,6 +206,32 @@ export function InGameStats({ onExitMatch }: { onExitMatch: () => void }) {
         <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
         Sair
       </button>
+
+      <aside className="pointer-events-auto rounded-xl border border-white/10 bg-black/60 p-2.5 text-zinc-100 shadow-lg backdrop-blur-md">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+            Zoom
+          </p>
+          <span className="text-[10px] font-semibold tabular-nums text-sky-300">
+            {Math.round(cameraZoom * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={Math.round(CAMERA_ZOOM_MIN * 100)}
+          max={Math.round(CAMERA_ZOOM_MAX * 100)}
+          step={5}
+          value={Math.round(cameraZoom * 100)}
+          onChange={(e) =>
+            setVisualSettings({ cameraZoom: Number(e.target.value) / 100 })
+          }
+          className="w-full accent-sky-500"
+          aria-label="Zoom da câmera"
+        />
+        <p className="mt-1 text-[9px] leading-snug text-zinc-500">
+          Longe esconde ícones de loot
+        </p>
+      </aside>
 
       {equipped.length > 0 && (
         <div className="rounded-xl border border-orange-400/40 bg-orange-950/50 px-2.5 py-2 text-orange-100 shadow-lg backdrop-blur-md">

@@ -39,6 +39,10 @@ import {
   resolveVisualDimension,
 } from "@/src/game/multiverseLoop";
 import { getAuraRadius } from "@/src/game/systems/AuraSystem";
+import {
+  clampCameraZoom,
+  getCameraWorldRect,
+} from "@/lib/gameVisualSettings";
 import { DEFAULT_MATCH_SKILL_BONUS } from "@/lib/matchUpgrades";
 import { MASTERY_AURA_RADIUS_MULT } from "@/lib/skillMastery";
 import { runSpawner } from "@/src/game/systems/Spawner";
@@ -135,7 +139,8 @@ function shoulderOf(
 
 /**
  * Orquestrador do game loop: lê Zustand, delega a entities/systems, escreve de volta.
- * Player fica sempre no centro do canvas (CSS px); loot usa magnetismo após 800ms.
+ * Player fica sempre no centro do canvas (CSS px); zoom afasta a câmera (vê mais mapa).
+ * Loot usa magnetismo após 800ms (ícones ocultos quando a câmera está afastada).
  */
 export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
   const rafId = useRef<number>(0);
@@ -232,6 +237,14 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         );
       }
 
+      const cameraZoom = clampCameraZoom(
+        game.visualSettings?.cameraZoom ?? 1,
+      );
+      const worldView = getCameraWorldRect(
+        canvas.clientWidth,
+        canvas.clientHeight,
+        cameraZoom,
+      );
       const combat = runCombatSystem({
         player,
         enemies,
@@ -249,8 +262,10 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         contactDamage: CONTACT_DAMAGE,
         playerRotation: arena.playerRotation,
         projectiles: arena.projectiles ?? [],
-        canvasWidth: canvas.clientWidth,
-        canvasHeight: canvas.clientHeight,
+        canvasWidth: worldView.originX + worldView.width,
+        canvasHeight: worldView.originY + worldView.height,
+        worldMinX: worldView.originX,
+        worldMinY: worldView.originY,
         matchSkills: arena.matchSkills,
         activeRunSkills: arena.activeRunSkills,
         matchSkillBonuses: arena.matchSkillBonuses,
@@ -275,6 +290,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         screenShake: true,
         damageTextMode: "all" as const,
         highParticleQuality: true,
+        cameraZoom: 1,
       };
 
       const floatingTexts = [
@@ -479,6 +495,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         matchLevel: arena.matchLevel,
         canvasWidth: canvas.clientWidth,
         canvasHeight: canvas.clientHeight,
+        worldView,
         currentEnemyCount: livingEnemies.length,
         bossesSpawned: arena.bossesSpawned,
         hasBossAlive,
@@ -772,17 +789,29 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         lastVisualDimensionRef.current = visualDimension;
       }
 
-      drawArenaBackground(ctx, w, h, visualDimension, now);
+      const cameraZoom = clampCameraZoom(
+        useGameStore.getState().visualSettings?.cameraZoom ?? 1,
+      );
+      const world = getCameraWorldRect(w, h, cameraZoom);
 
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(cameraZoom, cameraZoom);
+      ctx.translate(-w / 2, -h / 2);
+
+      ctx.save();
+      ctx.translate(world.originX, world.originY);
+      drawArenaBackground(ctx, world.width, world.height, visualDimension, now);
       if (multiverseRiftStartedAt > 0) {
         const riftProgress =
           (now - multiverseRiftStartedAt) / MULTIVERSE_RIFT_FLASH_MS;
         if (riftProgress >= 1) {
           useArenaStore.setState({ multiverseRiftStartedAt: 0 });
         } else {
-          drawMultiverseRiftFlash(ctx, w, h, riftProgress);
+          drawMultiverseRiftFlash(ctx, world.width, world.height, riftProgress);
         }
       }
+      ctx.restore();
 
       // VFX de skills (gelo / raio / fogo / parry) — opcional por desempenho
       const highParticles =
@@ -889,43 +918,45 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         }
       }
 
-      for (const drop of drops) {
-        if (drop.type === "bundle") {
-          // Ícone único pós-5min: anéis ouro / diamante / roxo
-          const r = DROP_RADIUS + 3;
-          ctx.beginPath();
-          ctx.arc(drop.x, drop.y, r + 3, 0, Math.PI * 2);
-          ctx.fillStyle = "#facc15";
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(drop.x, drop.y, r + 1.5, 0, Math.PI * 2);
-          ctx.fillStyle = "#7dd3fc";
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(drop.x, drop.y, r - 0.5, 0, Math.PI * 2);
-          ctx.fillStyle = "#c084fc";
-          ctx.fill();
-          ctx.strokeStyle = "#fafafa";
-          ctx.lineWidth = 1.25;
-          ctx.stroke();
-          continue;
-        }
+      if (cameraZoom >= 0.999) {
+        for (const drop of drops) {
+          if (drop.type === "bundle") {
+            // Ícone único pós-5min: anéis ouro / diamante / roxo
+            const r = DROP_RADIUS + 3;
+            ctx.beginPath();
+            ctx.arc(drop.x, drop.y, r + 3, 0, Math.PI * 2);
+            ctx.fillStyle = "#facc15";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(drop.x, drop.y, r + 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#7dd3fc";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(drop.x, drop.y, r - 0.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#c084fc";
+            ctx.fill();
+            ctx.strokeStyle = "#fafafa";
+            ctx.lineWidth = 1.25;
+            ctx.stroke();
+            continue;
+          }
 
-        ctx.beginPath();
-        ctx.arc(drop.x, drop.y, DROP_RADIUS, 0, Math.PI * 2);
-        if (drop.type === "gold") {
-          ctx.fillStyle = "#facc15";
-          ctx.strokeStyle = "#ca8a04";
-        } else if (drop.type === "purple_diamond") {
-          ctx.fillStyle = "#c084fc";
-          ctx.strokeStyle = "#a855f7";
-        } else {
-          ctx.fillStyle = "#7dd3fc";
-          ctx.strokeStyle = "#38bdf8";
+          ctx.beginPath();
+          ctx.arc(drop.x, drop.y, DROP_RADIUS, 0, Math.PI * 2);
+          if (drop.type === "gold") {
+            ctx.fillStyle = "#facc15";
+            ctx.strokeStyle = "#ca8a04";
+          } else if (drop.type === "purple_diamond") {
+            ctx.fillStyle = "#c084fc";
+            ctx.strokeStyle = "#a855f7";
+          } else {
+            ctx.fillStyle = "#7dd3fc";
+            ctx.strokeStyle = "#38bdf8";
+          }
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
         }
-        ctx.fill();
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
       }
 
       // Linha de alcance de ataque (por cima da horda)
@@ -956,6 +987,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ctx.fillText(ft.text, ft.x, ft.y);
       }
       ctx.globalAlpha = 1;
+      ctx.restore();
     };
 
     const draw = () => {

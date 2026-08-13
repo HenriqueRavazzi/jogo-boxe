@@ -189,7 +189,7 @@ export function UpgradePanel({ embedded = false }: { embedded?: boolean }) {
         subtitle={
           arms < maxGoldArms
             ? `Ouro ${arms}/${maxGoldArms}${treeArms || ascensionArms ? ` · árvore +${treeArms} · ascensão +${ascensionArms}` : ""} · teto ${armsCfg.maxTotalArms}`
-            : `Ouro no máx. (${arms}) — próximo compra reseta p/ ${armsCfg.minArms} (+15% dano, custo ×2)${treeArms || ascensionArms ? ` · árvore +${treeArms} · ascensão +${ascensionArms}` : ""}`
+            : `Ouro no máx. (${arms}) — próximo compra reseta p/ ${armsCfg.minArms} (+15% dano atual, custo ×2)${treeArms || ascensionArms ? ` · árvore +${treeArms} · ascensão +${ascensionArms}` : ""}`
         }
         subtitleClassName={
           arms >= maxGoldArms ? "font-semibold text-amber-300" : undefined
