@@ -202,7 +202,7 @@ const CARDS: SkillCardDef[] = [
     type: "aura",
     title: "Aura",
     description:
-      "Área no herói. In-game: só após 3 skills — troca um slot e escolhe o efeito 100% (demais 50%). Liberar/upar Aura fortalece inimigos.",
+      "Área no herói. In-game: slots cheios (2, ou 3 com Skill Arsenal) — troca um slot e escolhe o efeito 100% (demais 50%). Liberar/upar Aura fortalece inimigos.",
     icon: <Circle className="h-5 w-5" aria-hidden />,
     statActions: {
       radius: {
@@ -366,7 +366,8 @@ function SkillDetailModal({
               Sinergia in-game
             </p>
             <p className="mt-1 text-[11px] leading-snug text-zinc-500">
-              A Aura só entra na run depois de 3 skills ativas: ao escolher a
+              A Aura só entra na run com os slots cheios (2, ou 3 com Skill
+              Arsenal): ao escolher a
               carta, você troca uma skill e define qual efeito fica em{" "}
               <span className="font-semibold text-violet-200">100%</span> (os
               demais em 50%). Liberar / upar Aura também fortalece todos os

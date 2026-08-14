@@ -173,7 +173,7 @@ export function resolveAuraPrimaryFromRun(
 
 /**
  * Potências a partir do loadout da run (slots ativos):
- * 0 parceiras → neutra; 1 → 100%; 2+ (Skill Arsenal) → primário 100% / demais 50%.
+ * 0 parceiras → neutra; 1 → 100%; 2+ → primário 100% / demais 50%.
  * Preferência de primário (meta) só vale se a skill estiver nos slots da run.
  */
 export function buildAuraElementPowersFromRun(

@@ -455,7 +455,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
   {
     id: "node_skill_slot",
     name: "Skill Arsenal",
-    description: "+1 slot de habilidade especial na partida",
+    description: "+1 slot de habilidade especial na partida (2 → 3)",
     cost: 1_000_000,
     requires: [],
     requiresFullBoard: true,

@@ -75,6 +75,14 @@ export function getDimensionDisplayName(id: DimensionId): string {
     5: "Vulcânico",
     6: "Ciber-Abissal",
     7: "Cósmico",
+    8: "Rua Neon",
+    9: "Fundição",
+    10: "Synthwave",
+    11: "Inferno Ácido",
+    12: "Aurora",
+    13: "Magma Cobalto",
+    14: "Matrix Rubra",
+    15: "Nebulosa Solar",
   };
   return names[id];
 }

@@ -354,7 +354,7 @@ const SPECIAL_SKILL_POOL: {
     type: "aura",
     category: "aura",
     name: "Aura",
-    short: "Área no herói: após 3 skills, troca um slot e define o 100%/50%",
+    short: "Área no herói: slots cheios, troca um slot e define o 100%/50%",
   },
 ];
 
@@ -442,8 +442,17 @@ export function getMatchSkillMaxLevel(metaSkillLevel: number): number {
   return Math.min(cap, Math.max(MATCH_SKILL_LEVEL_FLOOR, fromMeta));
 }
 
+/** Base de habilidades especiais distintas por partida (sem Skill Arsenal). */
+export const BASE_ACTIVE_RUN_SKILLS = 2;
+/** @deprecated Use BASE_ACTIVE_RUN_SKILLS / getMaxActiveRunSkills. */
+export const MAX_ACTIVE_RUN_SKILLS = BASE_ACTIVE_RUN_SKILLS;
+
+export function getMaxActiveRunSkills(extraSlots = 0): number {
+  return BASE_ACTIVE_RUN_SKILLS + Math.max(0, Math.floor(extraSlots));
+}
+
 /** Mínimo de skills ativas na run para poder escolher Aura pela 1ª vez. */
-export const AURA_MIN_ACTIVE_SKILLS_TO_PICK = 3;
+export const AURA_MIN_ACTIVE_SKILLS_TO_PICK = BASE_ACTIVE_RUN_SKILLS;
 
 export function canOfferSpecialSkill(
   key: SpecialSkillKey,
@@ -453,6 +462,7 @@ export function canOfferSpecialSkill(
   activeRunSkills: SpecialSkillKey[] = [],
   /** Se a maestria da skill já foi ativada nesta run, não oferece mais upgrades. */
   matchSkillMastery?: MatchSkillMasteryData,
+  maxActiveRunSkills: number = BASE_ACTIVE_RUN_SKILLS,
 ): boolean {
   if (!unlockedSkills[key]) return false;
   if (matchSkillMastery?.[key]) return false;
@@ -460,10 +470,14 @@ export function canOfferSpecialSkill(
   const max = getMatchSkillMaxLevel(getSkillMetaCap(skills[key]));
   if (current >= max) return false;
 
-  // Aura: 1ª ativação só com 3 skills já nos slots (vai substituir uma delas)
+  // Aura: 1ª ativação só com os slots cheios (vai substituir uma skill).
   if (key === "aura" && current <= 0 && !activeRunSkills.includes("aura")) {
     const nonAura = activeRunSkills.filter((k) => k !== "aura");
-    if (nonAura.length < AURA_MIN_ACTIVE_SKILLS_TO_PICK) return false;
+    const slots = Math.max(
+      AURA_MIN_ACTIVE_SKILLS_TO_PICK,
+      Math.floor(maxActiveRunSkills),
+    );
+    if (nonAura.length < slots) return false;
   }
 
   return true;
@@ -510,15 +524,6 @@ export type GenerateUpgradeOptionsContext = {
    */
   specialSkillCardChance?: number;
 };
-
-/** Base de habilidades especiais distintas por partida (sem talentos). */
-export const BASE_ACTIVE_RUN_SKILLS = 3;
-/** @deprecated Use BASE_ACTIVE_RUN_SKILLS / getMaxActiveRunSkills. */
-export const MAX_ACTIVE_RUN_SKILLS = BASE_ACTIVE_RUN_SKILLS;
-
-export function getMaxActiveRunSkills(extraSlots = 0): number {
-  return getMatchGlobals().baseActiveRunSkills + Math.max(0, Math.floor(extraSlots));
-}
 
 /**
  * Bônus de sorte (0–0.15) a partir do tempo e do nível.
@@ -897,13 +902,14 @@ export function generateUpgradeOptions(
           skills,
           activeRunSkills,
           ctx?.matchSkillMastery,
+          maxSlots,
         )
       ) {
         continue;
       }
       const alreadyPicked = activeRunSkills.includes(key);
       // Cap atingido: só upgrades das skills já ativas — exceto Aura nova
-      // (ela substitui um slot e exige 3 skills preenchidas).
+      // (ela substitui um slot quando os slots já estão cheios).
       if (atSkillCap && !alreadyPicked && key !== "aura") continue;
       eligibleSpecials.push(key);
     }

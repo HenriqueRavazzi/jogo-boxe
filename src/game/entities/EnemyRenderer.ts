@@ -5,6 +5,9 @@
 
 import type { EnemyType } from "@/src/game/entities/Enemy";
 import {
+  getDimensionFilter,
+  getDimensionTheme,
+  type BaseDimensionId,
   type DimensionId,
 } from "@/src/game/prestigeVisual";
 
@@ -642,7 +645,7 @@ function drawAbyssBoss(ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput): 
 type Drawer = (ctx: CanvasRenderingContext2D, i: ThemedEnemyDrawInput) => void;
 
 const DRAWERS: Record<
-  DimensionId,
+  BaseDimensionId,
   Record<EnemyType, Drawer>
 > = {
   0: {
@@ -704,8 +707,10 @@ export function drawThemedEnemy(
   input: ThemedEnemyDrawInput,
 ): void {
   const dimension = input.visualDimension;
-  const drawer = DRAWERS[dimension][input.type] ?? DRAWERS[dimension].normal;
+  const theme = getDimensionTheme(dimension);
+  const drawer = DRAWERS[theme][input.type] ?? DRAWERS[theme].normal;
   ctx.save();
+  ctx.filter = getDimensionFilter(dimension);
   drawer(ctx, input);
   ctx.restore();
 

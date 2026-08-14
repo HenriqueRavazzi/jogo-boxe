@@ -20,7 +20,6 @@ import {
   getMatchSkillMaxLevel,
   getMaxActiveRunSkills,
   isSpecialSkillType,
-  AURA_MIN_ACTIVE_SKILLS_TO_PICK,
   type MatchSkillBonusDelta,
   type MatchSkillBonuses,
   type MatchUpgrade,
@@ -1169,10 +1168,10 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       }
       const isNewSkill = prevLevel === 0 && !alreadyTracked;
 
-      // Aura nova: exige 3 skills e abre o fluxo de troca + primário 100%
+      // Aura nova: exige slots cheios e abre o fluxo de troca + primário 100%
       if (upgradeType === "aura" && isNewSkill) {
         const nonAura = state.activeRunSkills.filter((k) => k !== "aura");
-        if (nonAura.length < AURA_MIN_ACTIVE_SKILLS_TO_PICK) {
+        if (nonAura.length < maxSlots) {
           set({
             gameState: "playing",
             levelUpOptions: [],
@@ -1368,7 +1367,10 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
       (k) => k !== replaceSkill && k !== "aura",
     );
     if (!remaining.includes(primaryElement)) return;
-    if (remaining.length < AURA_MIN_ACTIVE_SKILLS_TO_PICK - 1) return;
+    const maxSlots = getMaxActiveRunSkills(
+      getExtraActiveRunSkillSlots(useGameStore.getState().skillTree),
+    );
+    if (remaining.length < maxSlots - 1) return;
 
     const game = useGameStore.getState();
     const skillMax = getMatchSkillMaxLevel(

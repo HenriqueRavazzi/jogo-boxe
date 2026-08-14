@@ -5,6 +5,8 @@
 
 import {
   getDefaultDimensionForPrestige,
+  getDimensionFilter,
+  getDimensionTheme,
   type DimensionId,
 } from "@/src/game/prestigeVisual";
 
@@ -33,8 +35,8 @@ type BgCache = {
 
 let cache: BgCache | null = null;
 
-function cacheKey(w: number, h: number, dimension: DimensionId): string {
-  return `${dimension}:${Math.round(w)}x${Math.round(h)}`;
+function cacheKey(w: number, h: number, theme: DimensionId): string {
+  return `${getDimensionTheme(theme)}:${Math.round(w)}x${Math.round(h)}`;
 }
 
 function ensureOffscreen(w: number, h: number): HTMLCanvasElement {
@@ -513,16 +515,17 @@ function buildFloats(w: number, h: number, count: number): FloatSpec[] {
 function rebuildCache(w: number, h: number, dimension: DimensionId): BgCache {
   const canvas = ensureOffscreen(w, h);
   const ctx = canvas.getContext("2d");
-  const stars = dimension === 7 ? buildStars(w, h, 90) : [];
-  const floats = dimension === 7 ? buildFloats(w, h, 18) : [];
+  const theme = getDimensionTheme(dimension);
+  const stars = theme === 7 ? buildStars(w, h, 90) : [];
+  const floats = theme === 7 ? buildFloats(w, h, 18) : [];
   if (ctx) {
-    if (dimension === 0) paintStreet(ctx, w, h);
-    else if (dimension === 1) paintGym(ctx, w, h);
-    else if (dimension === 2) paintCyber(ctx, w, h);
-    else if (dimension === 3) paintInfernal(ctx, w, h);
-    else if (dimension === 4) paintGlacial(ctx, w, h);
-    else if (dimension === 5) paintVolcanic(ctx, w, h);
-    else if (dimension === 6) paintCyberAbyss(ctx, w, h);
+    if (theme === 0) paintStreet(ctx, w, h);
+    else if (theme === 1) paintGym(ctx, w, h);
+    else if (theme === 2) paintCyber(ctx, w, h);
+    else if (theme === 3) paintInfernal(ctx, w, h);
+    else if (theme === 4) paintGlacial(ctx, w, h);
+    else if (theme === 5) paintVolcanic(ctx, w, h);
+    else if (theme === 6) paintCyberAbyss(ctx, w, h);
     else paintCosmic(ctx, w, h, stars);
   }
   return { key: cacheKey(w, h, dimension), canvas, stars, floats };
@@ -584,13 +587,16 @@ export function drawArenaBackground(
 ): void {
   const w = Math.max(1, Math.floor(width));
   const h = Math.max(1, Math.floor(height));
-  const bg = getCache(w, h, dimension);
+  const theme = getDimensionTheme(dimension);
+  const bg = getCache(w, h, theme);
 
+  ctx.save();
+  ctx.filter = getDimensionFilter(dimension);
   ctx.drawImage(bg.canvas, 0, 0);
 
   const t = timeMs / 1000;
 
-  if (dimension === 2) {
+  if (theme === 2) {
     // Neon pulse nas linhas de energia (overlay barato)
     const pulse = 0.35 + 0.25 * Math.sin(t * 2.2);
     ctx.save();
@@ -607,7 +613,7 @@ export function drawArenaBackground(
     ctx.restore();
   }
 
-  if (dimension === 3) {
+  if (theme === 3) {
     // Brasas flutuantes (overlay leve)
     ctx.save();
     for (let i = 0; i < 12; i++) {
@@ -622,7 +628,7 @@ export function drawArenaBackground(
     ctx.restore();
   }
 
-  if (dimension === 4) {
+  if (theme === 4) {
     // Flocos de neve / cristais caindo
     ctx.save();
     for (let i = 0; i < 28; i++) {
@@ -649,7 +655,7 @@ export function drawArenaBackground(
     ctx.restore();
   }
 
-  if (dimension === 5) {
+  if (theme === 5) {
     // Brasas subindo + pulso de lava nas bordas
     ctx.save();
     for (let i = 0; i < 16; i++) {
@@ -670,7 +676,7 @@ export function drawArenaBackground(
     ctx.restore();
   }
 
-  if (dimension === 6) {
+  if (theme === 6) {
     // Colunas de código subindo + glitch
     ctx.save();
     ctx.font = "11px monospace";
@@ -693,7 +699,7 @@ export function drawArenaBackground(
     ctx.restore();
   }
 
-  if (dimension === 7) {
+  if (theme === 7) {
     // Poeira cósmica / drift lento das estrelas
     ctx.save();
     for (const s of bg.stars) {
@@ -723,6 +729,8 @@ export function drawArenaBackground(
     }
     ctx.restore();
   }
+
+  ctx.restore();
 }
 
 /** Invalida o cache (ex.: resize extremo ou troca de dimensão). */
