@@ -528,8 +528,10 @@ export function applyTeamMemberBuffs(
   tierPower: number,
   level: number,
 ): void {
-  const lv = Math.max(1, level);
-  const p = tierPower * (1 + (lv - 1) * 0.12);
+  const lv = Math.max(1, Math.floor(level));
+  const stars = Math.floor(lv / 40);
+  const starMul = Math.pow(1.05, stars);
+  const p = tierPower * (1 + (lv - 1) * 0.12) * starMul;
   const scales = getTeamScaleConstants();
 
   for (const buff of buffs) {

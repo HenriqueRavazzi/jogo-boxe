@@ -148,11 +148,9 @@ import {
   getTeamRecruitCost as calcTeamRecruitCost,
   getTeamMultiRecruitCost as calcTeamMultiRecruitCost,
   MAX_EQUIPPED_TEAM_MEMBERS,
-  MAX_TEAM_MEMBER_LEVEL,
   normalizeEquippedTeamIds,
   normalizeTeamMembersOwned,
   normalizeTeamPity,
-  resetOwnedTeamMembersToBase,
   rollTeamMemberId,
   TEAM_MULTI_PULL_COUNT,
   type EquippedTeamBuffs,
@@ -381,7 +379,7 @@ export type GameStoreState = {
    * (skills liberadas permanecem; atributos voltam ao Nv.1) e Maestrias
    * Supremas (precisam ser liberadas de novo). Mantém upgrades de diamante
    * (meta, XP, skill tree), desbloqueios de skill avançada e passivas de
-   * Ascensão. Equipe: Nv.1 + pity zerado.
+   * Ascensão. Equipe (níveis/estrelas/pity) persiste.
    */
   triggerPrestige: () => boolean;
   canTriggerPrestige: () => boolean;
@@ -1653,10 +1651,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const { memberId, tier } = rollTeamMemberId(pity);
     const owned = normalizeTeamMembersOwned(get().teamMembersOwned);
     const previous = owned[memberId] ?? 0;
-    const nextLevel =
-      previous <= 0
-        ? 1
-        : Math.min(MAX_TEAM_MEMBER_LEVEL, previous + 1);
+    const nextLevel = previous <= 0 ? 1 : previous + 1;
     const nextOwned = { ...owned, [memberId]: nextLevel };
     const nextPity = advancePityAfterPull(pity, tier);
 
@@ -1706,10 +1701,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     for (let i = 0; i < pullCount; i++) {
       const { memberId, tier } = rollTeamMemberId(pity);
       const previous = owned[memberId] ?? 0;
-      const nextLevel =
-        previous <= 0
-          ? 1
-          : Math.min(MAX_TEAM_MEMBER_LEVEL, previous + 1);
+      const nextLevel = previous <= 0 ? 1 : previous + 1;
       owned = { ...owned, [memberId]: nextLevel };
       pity = advancePityAfterPull(pity, tier);
 
@@ -1873,8 +1865,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
    * roxos), upgrades de base (ouro), bônus de XP e atributos granulares das
    * skills (voltam ao Nv.1). Desbloqueios de skills avançadas permanecem;
    * Maestrias Supremas resetam e precisam ser liberadas de novo. Mantém
-   * skill tree / meta tree e passivas de Ascensão. Equipe: membros obtidos
-   * voltam ao Nv.1 e o custo de recrutamento (pity) zera.
+   * skill tree / meta tree, passivas de Ascensão e equipe (níveis, estrelas,
+   * pity e esquina permanecem).
    */
   triggerPrestige: () => {
     if (!get().canTriggerPrestige()) return false;
@@ -1894,7 +1886,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     });
 
     set((s) => {
-      const resetTeam = resetOwnedTeamMembersToBase(s.teamMembersOwned);
       const unlockedSkills = { ...s.unlockedSkills };
       return {
       prestigeLevel: s.prestigeLevel + 1,
@@ -1933,12 +1924,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       skills: resetUnlockedSkillsToLevel1(unlockedSkills),
       totalMobsKilled: 0,
       totalBossesKilled: 0,
-      teamMembersOwned: resetTeam,
-      teamPity: normalizeTeamPity(null),
-      equippedTeamMemberIds: normalizeEquippedTeamIds(
-        s.equippedTeamMemberIds,
-        resetTeam,
-      ),
+      // Equipe (níveis, estrelas, pity, esquina) persiste na Ascensão.
       milestoneQuests: applyMilestoneProgress(s.milestoneQuests, [
         { type: "prestige_level", amount: s.prestigeLevel + 1 },
       ]),

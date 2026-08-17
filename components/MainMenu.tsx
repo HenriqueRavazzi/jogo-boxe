@@ -419,7 +419,8 @@ export function MainMenu({
                     bônus de XP, atributos das skills avançadas (voltam ao Nv.1)
                     e Maestrias Supremas (precisam ser liberadas de novo). Skills
                     já liberadas permanecem no save. Mantém talentos da árvore,
-                    upgrades meta (diamante), passivas/shards/equipe. Custos e
+                    upgrades meta (diamante), passivas/shards e equipe (níveis e
+                    estrelas não resetam). Custos e
                     poder sobem com a Ascensão e concede{" "}
                     <span className="font-semibold text-pink-200">
                       +{shardsPreview} Ascension Shards

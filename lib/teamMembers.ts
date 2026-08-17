@@ -97,7 +97,16 @@ export const TEAM_MEMBER_IDS: TeamMemberId[] = [
 export const DEFAULT_TEAM_MEMBERS_OWNED: TeamMembersOwned =
   Object.fromEntries(TEAM_MEMBER_IDS.map((id) => [id, 0])) as TeamMembersOwned;
 
-export const MAX_TEAM_MEMBER_LEVEL = 40;
+/** A cada N níveis o membro ganha 1 estrela. */
+export const TEAM_STAR_EVERY_LEVELS = 40;
+/** @deprecated Prefer TEAM_STAR_EVERY_LEVELS. */
+export const TEAM_STAR_UNLOCK_LEVEL = TEAM_STAR_EVERY_LEVELS;
+/** @deprecated Não é mais um teto rígido. */
+export const MAX_TEAM_MEMBER_LEVEL = TEAM_STAR_EVERY_LEVELS;
+/** Bônus por estrela sobre os stats do membro (composto). */
+export const TEAM_STAR_STAT_BONUS = 0.05;
+/** Teto só para sanitizar save corrompido. */
+const TEAM_MEMBER_LEVEL_SANITY_CAP = 9_999;
 /** Slots ativos na esquina do ringue. */
 export const MAX_EQUIPPED_TEAM_MEMBERS = 3;
 
@@ -166,8 +175,18 @@ export type TeamMemberDef = {
 };
 
 function power(tier: TeamTier, level: number): number {
-  const lv = Math.max(1, level);
-  return TEAM_TIER_POWER[tier] * (1 + (lv - 1) * 0.12);
+  const lv = Math.max(1, Math.floor(level));
+  const base = TEAM_TIER_POWER[tier] * (1 + (lv - 1) * 0.12);
+  return base * getTeamStarMultiplier(getTeamMemberStars(level));
+}
+
+export function getTeamMemberStars(level: number): number {
+  const lv = Math.max(0, Math.floor(level));
+  return Math.floor(lv / TEAM_STAR_EVERY_LEVELS);
+}
+
+export function getTeamStarMultiplier(stars: number): number {
+  return Math.pow(1 + TEAM_STAR_STAT_BONUS, Math.max(0, Math.floor(stars)));
 }
 
 /** Escalas de buff — % do stat do jogador (não valores fixos). */
@@ -600,7 +619,7 @@ export function getTeamMembersByTier(tier: TeamTier): TeamMemberDef[] {
 
 export function clampTeamMemberLevel(value: unknown): number {
   const n = Math.floor(Number(value) || 0);
-  return Math.min(MAX_TEAM_MEMBER_LEVEL, Math.max(0, n));
+  return Math.min(TEAM_MEMBER_LEVEL_SANITY_CAP, Math.max(0, n));
 }
 
 export function normalizeTeamMembersOwned(
@@ -847,7 +866,7 @@ export function getEquippedTeamBuffs(
   return acc;
 }
 
-/** Prestígio: membros obtidos voltam ao Nv.1; não-possuídos ficam 0. */
+/** Prestígio legado: membros obtidos → Nv.1. A Ascensão atual não usa mais. */
 export function resetOwnedTeamMembersToBase(
   owned: TeamMembersOwned,
 ): TeamMembersOwned {

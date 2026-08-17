@@ -14,13 +14,15 @@ import {
 } from "lucide-react";
 import {
   getTeamMemberDef,
+  getTeamMemberStars,
   getTeamTierWeights,
   MAX_EQUIPPED_TEAM_MEMBERS,
-  MAX_TEAM_MEMBER_LEVEL,
   TEAM_MEMBER_DEFS,
   TEAM_MULTI_PULL_COUNT,
   TEAM_MULTI_PULL_DISCOUNT,
   TEAM_ROLE_LABEL,
+  TEAM_STAR_EVERY_LEVELS,
+  TEAM_STAR_STAT_BONUS,
   TEAM_TIER_LABEL,
   type RecruitTeamPullEntry,
   type TeamMemberId,
@@ -69,6 +71,31 @@ const TIER_RANK: Record<TeamTier, number> = {
   epic: 3,
   legendary: 4,
 };
+
+function TeamStars({ level }: { level: number }) {
+  const stars = getTeamMemberStars(level);
+  if (stars <= 0) return null;
+  const shown = Math.min(stars, 5);
+  return (
+    <span
+      className="inline-flex items-center gap-0.5"
+      title={`${stars} estrela${stars > 1 ? "s" : ""} · +${Math.round(TEAM_STAR_STAT_BONUS * 100)}% stats cada`}
+    >
+      {Array.from({ length: shown }, (_, i) => (
+        <Star
+          key={i}
+          className="h-3 w-3 fill-amber-400 text-amber-400"
+          aria-hidden
+        />
+      ))}
+      {stars > shown ? (
+        <span className="text-[9px] font-bold tabular-nums text-amber-200">
+          +{stars - shown}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 /** Painel da Equipe: gacha com pity + slots na esquina. */
 export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
@@ -299,6 +326,9 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
               <p className="text-lg font-black text-white">{revealDef.name}</p>
               <p className="text-xs text-white/80">
                 {TEAM_ROLE_LABEL[revealDef.role]} · Nv. {reveal.level}
+                {getTeamMemberStars(reveal.level) > 0
+                  ? ` · ${getTeamMemberStars(reveal.level)}★`
+                  : ""}
               </p>
               <p className="mt-1 text-[11px] text-white/75">
                 {revealDef.bonusLabel(reveal.level)}
@@ -336,6 +366,9 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
                     <p className="text-[10px] text-white/75">
                       {pull.isDuplicate ? "Duplicata" : "Novo"} ·{" "}
                       {TEAM_TIER_LABEL[pull.tier]} · Nv. {pull.level}
+                      {getTeamMemberStars(pull.level) > 0
+                        ? ` · ${getTeamMemberStars(pull.level)}★`
+                        : ""}
                     </p>
                   </div>
                 </li>
@@ -363,7 +396,10 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
                 >
                   {ROLE_ICONS[def.role]}
                   {def.name}
-                  <span className="opacity-70">Nv.{level}</span>
+                  <span className="inline-flex items-center gap-1 opacity-70">
+                    Nv.{level}
+                    <TeamStars level={level} />
+                  </span>
                 </button>
               );
             })}
@@ -383,7 +419,7 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
           {ownedList.map((def) => {
             const level = teamMembersOwned[def.id] ?? 0;
             const equipped = equippedTeamMemberIds.includes(def.id);
-            const atMax = level >= MAX_TEAM_MEMBER_LEVEL;
+            const stars = getTeamMemberStars(level);
             return (
               <li
                 key={def.id}
@@ -407,10 +443,9 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
                     >
                       {TEAM_TIER_LABEL[def.tier]}
                     </span>
-                    <p className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-bold tabular-nums opacity-80">
-                      <Star className="h-3 w-3" aria-hidden />
+                    <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold tabular-nums opacity-80">
                       Nv. {level}
-                      {atMax ? " Máx" : ""}
+                      <TeamStars level={level} />
                     </p>
                   </div>
                 </div>
@@ -420,6 +455,17 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
                 <p className="mb-2 text-[11px] font-medium opacity-90">
                   {def.bonusLabel(level)}
                 </p>
+                {stars > 0 ? (
+                  <p className="mb-2 text-[10px] font-semibold text-amber-200/90">
+                    {stars}★ · +{Math.round(((1 + TEAM_STAR_STAT_BONUS) ** stars - 1) * 100)}% nos stats
+                    (1★ a cada {TEAM_STAR_EVERY_LEVELS} nv. · 5★ no nv.{" "}
+                    {TEAM_STAR_EVERY_LEVELS * 5})
+                  </p>
+                ) : (
+                  <p className="mb-2 text-[10px] text-amber-200/70">
+                    Estrela no nv.{TEAM_STAR_EVERY_LEVELS} (+{Math.round(TEAM_STAR_STAT_BONUS * 100)}% stats · 5★ no nv.{TEAM_STAR_EVERY_LEVELS * 5})
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => void handleToggleEquip(def.id)}

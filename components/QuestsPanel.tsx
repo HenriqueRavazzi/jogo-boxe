@@ -19,6 +19,7 @@ import {
 } from "@/lib/quests";
 import {
   getTeamMemberDef,
+  getTeamMemberStars,
   TEAM_ROLE_LABEL,
   type TeamRole,
 } from "@/lib/teamMembers";
@@ -55,7 +56,11 @@ function EsquinaPanel() {
               <div className="min-w-0">
                 <p className="truncate text-[11px] font-bold">{def.name}</p>
                 <p className="truncate text-[9px] text-orange-200/75">
-                  Nv.{teamMembersOwned[id] ?? 0} · {TEAM_ROLE_LABEL[def.role]}
+                  Nv.{teamMembersOwned[id] ?? 0}
+                  {getTeamMemberStars(teamMembersOwned[id] ?? 0) > 0
+                    ? ` · ${getTeamMemberStars(teamMembersOwned[id] ?? 0)}★`
+                    : ""}{" "}
+                  · {TEAM_ROLE_LABEL[def.role]}
                 </p>
               </div>
             </li>
