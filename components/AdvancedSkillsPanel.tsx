@@ -203,7 +203,7 @@ const CARDS: SkillCardDef[] = [
     type: "aura",
     title: "Aura",
     description:
-      "Área no herói. In-game: slots cheios (2, ou 3 com Skill Arsenal) — troca um slot e escolhe o efeito 100% (demais 50%). Liberar/upar Aura fortalece inimigos.",
+      "Área no herói. In-game: raio, dano da aura e buffs das skills em sinergia (Fogo, Pedra, Shadow…). Slots cheios — troca um slot e escolhe o efeito 100%. Liberar/upar Aura fortalece inimigos.",
     icon: <Circle className="h-5 w-5" aria-hidden />,
     statActions: {
       radius: {

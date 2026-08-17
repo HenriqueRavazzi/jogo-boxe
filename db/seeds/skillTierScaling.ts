@@ -132,16 +132,16 @@ export const SKILL_TIER_SCALING_SEEDS: SkillTierScalingSeed[] = [
   },
 
   ...cardRows("aura", {
-    common: { statMultipliers: { damageMul: 1.12 }, effectLines: ["+12% poder da aura"] },
+    common: { statMultipliers: { damageMul: 1.12 }, effectLines: ["+12% dano da aura"] },
     uncommon: { statMultipliers: { radiusMul: 1.15 }, effectLines: ["+15% raio da aura"] },
-    rare: { statMultipliers: { damageMul: 1.2, radiusMul: 1.12 }, effectLines: ["+20% poder", "+12% raio"] },
+    rare: { statMultipliers: { damageMul: 1.2, radiusMul: 1.12 }, effectLines: ["+20% dano da aura", "+12% raio"] },
     epic: {
-      statMultipliers: { damageMul: 1.28, cooldownMul: 0.85, radiusMul: 1.18 },
-      effectLines: ["+28% poder", "−15% intervalo stun", "+18% raio"],
+      statMultipliers: { damageMul: 1.28, radiusMul: 1.18 },
+      effectLines: ["+28% dano da aura", "+18% raio"],
     },
     legendary: {
-      statMultipliers: { damageMul: 1.4, cooldownMul: 0.75, radiusMul: 1.3 },
-      effectLines: ["+40% poder", "−25% intervalo stun", "+30% raio"],
+      statMultipliers: { damageMul: 1.4, radiusMul: 1.3 },
+      effectLines: ["+40% dano da aura", "+30% raio"],
     },
   }),
   {

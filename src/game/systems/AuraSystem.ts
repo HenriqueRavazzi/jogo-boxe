@@ -470,14 +470,15 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
 
   // Fogo → DPS contínuo
   if (activeElements.fire && inAura.length > 0 && dt > 0) {
-    const dps = getAuraFireDps(
-      baseDamage,
-      auraLevel,
-      skills.aura.damage,
-      bonus,
-      prestigeMul,
-      elementPowers.fire,
-    );
+    const dps =
+      getAuraFireDps(
+        baseDamage,
+        auraLevel,
+        skills.aura.damage,
+        bonus,
+        prestigeMul,
+        elementPowers.fire,
+      ) * (matchSkillBonuses?.fire?.damageMul ?? 1);
     const tickDamage = dps * dt;
     if (tickDamage > 0) {
       for (const enemy of inAura) {
@@ -491,7 +492,10 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
 
   // Raio → lentidão
   if (activeElements.lightning && inAura.length > 0) {
-    const slow = AURA_LIGHTNING_SLOW * elementPowers.lightning;
+    const slow =
+      AURA_LIGHTNING_SLOW *
+      elementPowers.lightning *
+      (bonus.lightningSlowMul ?? 1);
     for (const enemy of inAura) {
       enemy.applyShockSlow(slow, now, 220);
     }
@@ -515,7 +519,8 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
         const stunMs = Math.round(
           AURA_ICE_STUN_DURATION_MS *
             (1 + skills.aura.pulse * 0.04 * prestigeMul) *
-            elementPowers.ice,
+            elementPowers.ice *
+            (matchSkillBonuses?.ice?.durationMul ?? 1),
         );
         for (const enemy of inAura) {
           enemy.applyStun(
@@ -583,7 +588,9 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   // Vendaval → puxão gravitacional contínuo dentro da aura
   if (activeElements.vendaval && inAura.length > 0) {
     const strength =
-      AURA_VENDAVAL_PULL_STRENGTH * elementPowers.vendaval;
+      AURA_VENDAVAL_PULL_STRENGTH *
+      elementPowers.vendaval *
+      (bonus.vendavalPullMul ?? 1);
     for (const enemy of inAura) {
       enemy.applyVacuumPull(
         playerX,

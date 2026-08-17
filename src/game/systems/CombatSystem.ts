@@ -624,6 +624,13 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       aura.auraRadius,
       aura.elementPowers.stone,
     );
+  const auraStoneShieldMul =
+    1 -
+    Math.min(
+      0.35,
+      (matchSkillBonuses?.aura.stoneShield ?? 0) * aura.elementPowers.stone,
+    );
+  const playerIncomingMul = damageTakenMul * auraStoneShieldMul;
 
   // Projéteis de raio: homing garantido + explosão em área (dano + shock)
   let skillDamageFromLightning =
@@ -919,7 +926,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           meleeDamageDealt += damage;
           const takenDamage =
             damage *
-            damageTakenMul *
+            playerIncomingMul *
             (matchBuffs.damageTakenMultiplier ?? 1);
           applyThorns(enemy, takenDamage);
         }
@@ -955,7 +962,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   }
 
   if (meleeDamageDealt > 0) {
-    player.takeDamage(meleeDamageDealt * damageTakenMul);
+    player.takeDamage(meleeDamageDealt * playerIncomingMul);
   }
 
   // Projéteis em voo: move + colisão com clone ou jogador
@@ -1013,7 +1020,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       if (Math.random() < parryChance) {
         parriesThisFrame += 1;
       } else {
-        const incoming = p.damage * damageTakenMul;
+        const incoming = p.damage * playerIncomingMul;
         player.takeDamage(incoming);
         const attacker = p.sourceEnemyId
           ? enemies.find((e) => e.id === p.sourceEnemyId) ?? null
@@ -1283,7 +1290,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           const splash =
             damage *
             AURA_RICOCHET_SPLASH_RATIO *
-            aura.elementPowers.ricochet;
+            aura.elementPowers.ricochet *
+            (matchSkillBonuses?.aura.ricochetSplashMul ?? 1);
           for (const other of living) {
             if (other.isDead || other.id === enemy.id) continue;
             const dist = Math.hypot(other.x - player.x, other.y - player.y);

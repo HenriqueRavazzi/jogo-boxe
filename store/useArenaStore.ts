@@ -14,6 +14,7 @@ import {
   type QuestSkillContext,
 } from "@/lib/quests";
 import {
+  applyPartnerBonuses,
   applySkillBonusDelta,
   createEmptyMatchSkillBonuses,
   generateUpgradeOptions,
@@ -389,6 +390,7 @@ export type ArenaStoreState = {
     upgradeType: UpgradeType,
     value: number,
     skillBonus?: MatchSkillBonusDelta,
+    partnerBonuses?: Partial<Record<SpecialSkillKey, MatchSkillBonusDelta>>,
   ) => void;
   /**
    * Confirma equipar Aura: remove `replaceSkill`, define primário 100%
@@ -1118,7 +1120,7 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
     set({ currentXp: xp });
   },
 
-  selectUpgrade: (upgradeType, value, skillBonus) => {
+  selectUpgrade: (upgradeType, value, skillBonus, partnerBonuses) => {
     if (isSkillMasteryUpgradeType(upgradeType)) {
       const key = skillMasteryUpgradeToKey(upgradeType);
       set((s) => ({
@@ -1214,13 +1216,16 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
           : s.activeRunSkills;
         return {
           matchSkills: nextSkills,
-          matchSkillBonuses: {
-            ...s.matchSkillBonuses,
-            [upgradeType]: applySkillBonusDelta(
-              s.matchSkillBonuses[upgradeType],
-              skillBonus,
-            ),
-          },
+          matchSkillBonuses: applyPartnerBonuses(
+            {
+              ...s.matchSkillBonuses,
+              [upgradeType]: applySkillBonusDelta(
+                s.matchSkillBonuses[upgradeType],
+                skillBonus,
+              ),
+            },
+            partnerBonuses,
+          ),
           activeRunSkills,
           pendingAuraEquip: null,
           gameState: "playing" as const,
@@ -1489,7 +1494,12 @@ export const useArenaStore = create<ArenaStoreState>((set, get) => ({
         Math.floor(Math.random() * state.levelUpOptions.length)
       ];
     if (!card) return;
-    get().selectUpgrade(card.type, card.value, card.skillBonus);
+    get().selectUpgrade(
+      card.type,
+      card.value,
+      card.skillBonus,
+      card.partnerBonuses,
+    );
   },
 
   setPlayerPosition: (x, y) => set({ playerX: x, playerY: y }),

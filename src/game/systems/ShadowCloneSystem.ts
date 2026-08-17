@@ -317,20 +317,22 @@ export function runShadowCloneSystem(
     nextPulse.shadowActiveUntil = 0;
   }
 
+  const desiredCount =
+    (input.masteryMirroredArmy
+      ? masteryStat("shadow", "cloneCount", MASTERY_SHADOW_CLONE_COUNT)
+      : 1) + Math.max(0, bonus.cloneCount ?? 0);
+  const baseRatio = input.masteryMirroredArmy
+    ? masteryStat("shadow", "cloneStatRatio", MASTERY_SHADOW_STAT_RATIO)
+    : SHADOW_CLONE_STAT_RATIO;
+
   // Spawn se não há clone vivo e CD pronto
   if (clones.length === 0) {
     if (nextPulse.shadowNextSpawnAt <= 0) {
       nextPulse.shadowNextSpawnAt = now;
     }
     if (now >= nextPulse.shadowNextSpawnAt) {
-      const count = input.masteryMirroredArmy
-        ? masteryStat("shadow", "cloneCount", MASTERY_SHADOW_CLONE_COUNT)
-        : 1;
-      const baseRatio = input.masteryMirroredArmy
-        ? masteryStat("shadow", "cloneStatRatio", MASTERY_SHADOW_STAT_RATIO)
-        : SHADOW_CLONE_STAT_RATIO;
       const spawned: ShadowCloneState[] = [];
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < desiredCount; i++) {
         spawned.push(
           createShadowClone({
             playerX,
@@ -346,7 +348,8 @@ export function runShadowCloneSystem(
             matchSkillBonuses,
             prestigeMul,
             baseStatRatio: baseRatio,
-            angleOffset: (Math.PI * 2 * i) / count + Math.random() * 0.4,
+            angleOffset:
+              (Math.PI * 2 * i) / desiredCount + Math.random() * 0.4,
           }),
         );
       }
@@ -355,10 +358,37 @@ export function runShadowCloneSystem(
       nextPulse.shadowActiveUntil = Math.max(
         ...spawned.map((c) => c.expiresAt),
       );
-      // Próximo spawn só após este clone sumir (+ CD)
       nextPulse.shadowNextSpawnAt =
         nextPulse.shadowActiveUntil + cooldownMs;
     }
+  } else if (clones.length < desiredCount) {
+    const extra = desiredCount - clones.length;
+    for (let i = 0; i < extra; i++) {
+      clones.push(
+        createShadowClone({
+          playerX,
+          playerY,
+          now,
+          playerMaxHp: input.playerMaxHp,
+          playerDamage: input.playerDamage,
+          playerRange: input.playerRange,
+          playerAttackCooldownMs: input.playerAttackCooldownMs,
+          playerArms: input.playerArms,
+          matchLevel: shadowLevel,
+          skills,
+          matchSkillBonuses,
+          prestigeMul,
+          baseStatRatio: baseRatio,
+          angleOffset:
+            (Math.PI * 2 * (clones.length + i)) / desiredCount +
+            Math.random() * 0.4,
+        }),
+      );
+    }
+    nextPulse.shadowActiveUntil = Math.max(
+      nextPulse.shadowActiveUntil,
+      ...clones.map((c) => c.expiresAt),
+    );
   }
 
   const livingClones: ShadowCloneState[] = [];

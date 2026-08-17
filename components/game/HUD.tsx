@@ -22,7 +22,7 @@ import {
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
 import { formatSciNumber } from "@/lib/formatNumber";
-import { getMasteryCardInfo, MASTERY_AURA_RADIUS_MULT } from "@/lib/skillMastery";
+import { getMasteryCardInfo, MASTERY_AURA_RADIUS_MULT, MASTERY_SHADOW_CLONE_COUNT } from "@/lib/skillMastery";
 import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
 import {
   AURA_ELEMENT_LABELS,
@@ -231,6 +231,18 @@ function buildRunBonusNote(bonus: MatchSkillBonusState): string | null {
   if (bonus.extraProjectiles > 0) {
     parts.push(`+${bonus.extraProjectiles} projétil(is)`);
   }
+  if ((bonus.cloneCount ?? 0) > 0) {
+    parts.push(`+${bonus.cloneCount} clone(s)`);
+  }
+  if ((bonus.stoneShield ?? 0) > 0) {
+    parts.push(`+${Math.round(bonus.stoneShield * 100)}% escudo`);
+  }
+  const slow = formatBonusPct(bonus.lightningSlowMul ?? 1);
+  if (slow) parts.push(`${slow} lentidão da aura`);
+  const splash = formatBonusPct(bonus.ricochetSplashMul ?? 1);
+  if (splash) parts.push(`${splash} splash`);
+  const pull = formatBonusPct(bonus.vendavalPullMul ?? 1);
+  if (pull) parts.push(`${pull} puxão`);
   if (parts.length === 0) return null;
   return `Cartas de raridade nesta run: ${parts.join(" · ")}.`;
 }
@@ -245,6 +257,7 @@ function buildSkillStatRows(
   const prestigeMul = useGameStore.getState().getPrestigeMultiplier();
   const stats = useGameStore.getState().getEffectiveStats();
   const matchBuffs = useArenaStore.getState().matchBuffs;
+  const matchSkillBonuses = useArenaStore.getState().matchSkillBonuses;
   const punchBase = stats.damage * matchBuffs.damageMultiplier;
   const skillPunchBase = punchBase * skillDmgMul;
   const skillDmgPct = Math.round((skillDmgMul - 1) * 100);
@@ -411,6 +424,7 @@ function buildSkillStatRows(
           prestigeMul,
         )
       : 0;
+    const fireDpsMul = matchSkillBonuses.fire.damageMul ?? 1;
     const dps = powers.fire
       ? getAuraFireDps(
           punchBase * skillDmgMul,
@@ -419,7 +433,7 @@ function buildSkillStatRows(
           bonus,
           prestigeMul,
           powers.fire,
-        )
+        ) * fireDpsMul
       : 0;
     const stunInterval = powers.ice
       ? getAuraIceStunIntervalMs(skills.aura.pulse, bonus, prestigeMul)
@@ -438,13 +452,22 @@ function buildSkillStatRows(
       ? getAuraShadowBurstIntervalMs(skills.aura.pulse, bonus, prestigeMul)
       : 0;
     const lightningSlowPct = Math.round(
-      AURA_LIGHTNING_SLOW * powers.lightning * 100,
+      AURA_LIGHTNING_SLOW *
+        powers.lightning *
+        (bonus.lightningSlowMul ?? 1) *
+        100,
     );
     const stoneOutgoingPct = Math.round(
       (1 - (1 - AURA_STONE_OUTGOING_DAMAGE_MUL) * powers.stone) * 100,
     );
+    const stoneShieldPct = Math.round(
+      Math.min(0.35, (bonus.stoneShield ?? 0) * powers.stone) * 100,
+    );
     const ricochetSplashPct = Math.round(
-      AURA_RICOCHET_SPLASH_RATIO * powers.ricochet * 100,
+      AURA_RICOCHET_SPLASH_RATIO *
+        powers.ricochet *
+        (bonus.ricochetSplashMul ?? 1) *
+        100,
     );
     const synergyRows = neutral
       ? [
@@ -483,7 +506,9 @@ function buildSkillStatRows(
           {
             label: `Pedra (defesa)${powerTag("stone")}`,
             value: powers.stone
-              ? `inimigos na aura causam ${stoneOutgoingPct}% dano`
+              ? `inimigos ${stoneOutgoingPct}% dano${
+                  stoneShieldPct > 0 ? ` · escudo ${stoneShieldPct}%` : ""
+                }`
               : "— (não na run)",
           },
           {
@@ -495,7 +520,12 @@ function buildSkillStatRows(
           {
             label: `Vendaval (puxão)${powerTag("vendaval")}`,
             value: powers.vendaval
-              ? `puxão contínuo (${Math.round(AURA_VENDAVAL_PULL_STRENGTH * powers.vendaval * 100)}%)`
+              ? `puxão contínuo (${Math.round(
+                  AURA_VENDAVAL_PULL_STRENGTH *
+                    powers.vendaval *
+                    (bonus.vendavalPullMul ?? 1) *
+                    100,
+                )}%)`
               : "— (não na run)",
           },
         ];
@@ -556,6 +586,14 @@ function buildSkillStatRows(
           value: `${Math.round(SHADOW_CLONE_STAT_RATIO * 100)}% do herói`,
         },
         { label: "Duração", value: formatMs(ttl) },
+        {
+          label: "Clones",
+          value: String(
+            (useArenaStore.getState().matchSkillMastery.shadow
+              ? MASTERY_SHADOW_CLONE_COUNT
+              : 1) + Math.max(0, bonus.cloneCount ?? 0),
+          ),
+        },
         { label: "Cooldown", value: formatMs(cd) },
         { label: "Heal / skills", value: "Nenhum" },
         { label: "Alvos", value: "Diferentes do herói (boss ok)" },

@@ -87,7 +87,12 @@ export function LevelUpModal() {
               key={card.id}
               card={card}
               onSelect={() =>
-                selectUpgrade(card.type, card.value, card.skillBonus)
+                selectUpgrade(
+                  card.type,
+                  card.value,
+                  card.skillBonus,
+                  card.partnerBonuses,
+                )
               }
             />
           ))}

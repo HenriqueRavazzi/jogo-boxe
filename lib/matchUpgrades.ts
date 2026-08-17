@@ -115,6 +115,11 @@ export type MatchUpgrade = {
   effectLines?: string[];
   /** Efeitos extras de raridade em cartas de skill especial. */
   skillBonus?: MatchSkillBonusDelta;
+  /**
+   * Bônus aplicados nas skills parceiras da Aura (Fogo, Pedra, Shadow…).
+   * Só cartas de Aura a partir do Lv.2.
+   */
+  partnerBonuses?: Partial<Record<SpecialSkillKey, MatchSkillBonusDelta>>;
 };
 
 /** Delta aplicado ao escolher uma carta de skill (raridade importa). */
@@ -131,6 +136,16 @@ export type MatchSkillBonusDelta = {
   extraHits?: number;
   /** Projéteis extras (Raio). */
   extraProjectiles?: number;
+  /** Clones extras (Shadow). */
+  cloneCount?: number;
+  /** Escudo da Aura+Pedra (fração de dano evitado, soma). */
+  stoneShield?: number;
+  /** Multiplica a lentidão da Aura+Raio. */
+  lightningSlowMul?: number;
+  /** Multiplica o splash da Aura+Ricochete. */
+  ricochetSplashMul?: number;
+  /** Multiplica o puxão da Aura+Vendaval. */
+  vendavalPullMul?: number;
 };
 
 /** Bônus acumulados in-run por skill especial. */
@@ -141,6 +156,11 @@ export type MatchSkillBonusState = {
   radiusMul: number;
   extraHits: number;
   extraProjectiles: number;
+  cloneCount: number;
+  stoneShield: number;
+  lightningSlowMul: number;
+  ricochetSplashMul: number;
+  vendavalPullMul: number;
 };
 
 export type MatchSkillBonuses = Record<SpecialSkillKey, MatchSkillBonusState>;
@@ -152,6 +172,11 @@ export const DEFAULT_MATCH_SKILL_BONUS: MatchSkillBonusState = {
   radiusMul: 1,
   extraHits: 0,
   extraProjectiles: 0,
+  cloneCount: 0,
+  stoneShield: 0,
+  lightningSlowMul: 1,
+  ricochetSplashMul: 1,
+  vendavalPullMul: 1,
 };
 
 export const DEFAULT_MATCH_SKILL_BONUSES: MatchSkillBonuses = {
@@ -190,6 +215,289 @@ export function applySkillBonusDelta(
     radiusMul: (current.radiusMul ?? 1) * (delta.radiusMul ?? 1),
     extraHits: current.extraHits + (delta.extraHits ?? 0),
     extraProjectiles: current.extraProjectiles + (delta.extraProjectiles ?? 0),
+    cloneCount: (current.cloneCount ?? 0) + (delta.cloneCount ?? 0),
+    stoneShield: (current.stoneShield ?? 0) + (delta.stoneShield ?? 0),
+    lightningSlowMul:
+      (current.lightningSlowMul ?? 1) * (delta.lightningSlowMul ?? 1),
+    ricochetSplashMul:
+      (current.ricochetSplashMul ?? 1) * (delta.ricochetSplashMul ?? 1),
+    vendavalPullMul:
+      (current.vendavalPullMul ?? 1) * (delta.vendavalPullMul ?? 1),
+  };
+}
+
+export function applyPartnerBonuses(
+  current: MatchSkillBonuses,
+  partners?: Partial<Record<SpecialSkillKey, MatchSkillBonusDelta>> | null,
+): MatchSkillBonuses {
+  if (!partners) return current;
+  const next = { ...current };
+  for (const key of SPECIAL_SKILL_KEYS) {
+    const delta = partners[key];
+    if (!delta) continue;
+    next[key] = applySkillBonusDelta(next[key], delta);
+  }
+  return next;
+}
+
+const AURA_CORE_BY_RARITY: Record<
+  Rarity,
+  { delta: MatchSkillBonusDelta; lines: string[] }
+> = {
+  common: {
+    delta: { damageMul: 1.12 },
+    lines: ["+12% dano da aura"],
+  },
+  uncommon: {
+    delta: { radiusMul: 1.15 },
+    lines: ["+15% raio da aura"],
+  },
+  rare: {
+    delta: { damageMul: 1.2, radiusMul: 1.12 },
+    lines: ["+20% dano da aura", "+12% raio"],
+  },
+  epic: {
+    delta: { damageMul: 1.28, radiusMul: 1.18 },
+    lines: ["+28% dano da aura", "+18% raio"],
+  },
+  legendary: {
+    delta: { damageMul: 1.4, radiusMul: 1.3 },
+    lines: ["+40% dano da aura", "+30% raio"],
+  },
+};
+
+type AuraSynergyPack = {
+  auraDelta?: MatchSkillBonusDelta;
+  partner?: MatchSkillBonusDelta;
+  lines: string[];
+};
+
+function auraSynergyFor(
+  partner: SpecialSkillKey,
+  rarity: Rarity,
+): AuraSynergyPack | null {
+  if (rarity === "common") return null;
+  if (partner === "fire") {
+    if (rarity === "uncommon") {
+      return {
+        partner: { damageMul: 1.12 },
+        lines: ["+12% queimadura (Fogo)"],
+      };
+    }
+    if (rarity === "rare") {
+      return {
+        partner: { damageMul: 1.18 },
+        lines: ["+18% queimadura (Fogo)"],
+      };
+    }
+    if (rarity === "epic") {
+      return {
+        partner: { damageMul: 1.22, extraHits: 1 },
+        lines: ["+22% queimadura · +1 stack (Fogo)"],
+      };
+    }
+    return {
+      partner: { damageMul: 1.3, extraHits: 2 },
+      lines: ["+30% queimadura · +2 stacks (Fogo)"],
+    };
+  }
+  if (partner === "ice") {
+    if (rarity === "uncommon") {
+      return {
+        partner: { durationMul: 1.12 },
+        lines: ["+12% duração do gelo"],
+      };
+    }
+    if (rarity === "rare") {
+      return {
+        partner: { durationMul: 1.18 },
+        lines: ["+18% duração do gelo"],
+      };
+    }
+    if (rarity === "epic") {
+      return {
+        partner: { durationMul: 1.22 },
+        lines: ["+22% duração do gelo"],
+      };
+    }
+    return {
+      partner: { durationMul: 1.3, cooldownMul: 0.88 },
+      lines: ["+30% duração do gelo · −12% CD"],
+    };
+  }
+  if (partner === "lightning") {
+    if (rarity === "uncommon") {
+      return {
+        auraDelta: { lightningSlowMul: 1.12 },
+        lines: ["+12% lentidão (Raio)"],
+      };
+    }
+    if (rarity === "rare") {
+      return {
+        auraDelta: { lightningSlowMul: 1.18 },
+        lines: ["+18% lentidão (Raio)"],
+      };
+    }
+    if (rarity === "epic") {
+      return {
+        auraDelta: { lightningSlowMul: 1.22 },
+        partner: { extraHits: 1 },
+        lines: ["+22% lentidão · +1 burst (Raio)"],
+      };
+    }
+    return {
+      auraDelta: { lightningSlowMul: 1.3 },
+      partner: { extraProjectiles: 1 },
+      lines: ["+30% lentidão · +1 raio extra"],
+    };
+  }
+  if (partner === "stone") {
+    if (rarity === "uncommon") {
+      return { auraDelta: { stoneShield: 0.05 }, lines: ["+5% escudo (Pedra)"] };
+    }
+    if (rarity === "rare") {
+      return { auraDelta: { stoneShield: 0.08 }, lines: ["+8% escudo (Pedra)"] };
+    }
+    if (rarity === "epic") {
+      return { auraDelta: { stoneShield: 0.12 }, lines: ["+12% escudo (Pedra)"] };
+    }
+    return { auraDelta: { stoneShield: 0.16 }, lines: ["+16% escudo (Pedra)"] };
+  }
+  if (partner === "shadow") {
+    if (rarity === "uncommon") {
+      return {
+        partner: { durationMul: 1.12 },
+        lines: ["+12% duração do clone"],
+      };
+    }
+    if (rarity === "rare") {
+      return {
+        partner: { durationMul: 1.18 },
+        lines: ["+18% duração do clone"],
+      };
+    }
+    if (rarity === "epic") {
+      return {
+        partner: { durationMul: 1.22 },
+        lines: ["+22% duração do clone"],
+      };
+    }
+    return {
+      partner: { durationMul: 1.25, cloneCount: 1 },
+      lines: ["+25% duração · +1 clone"],
+    };
+  }
+  if (partner === "ricochet") {
+    if (rarity === "uncommon") {
+      return {
+        auraDelta: { ricochetSplashMul: 1.15 },
+        lines: ["+15% splash na aura"],
+      };
+    }
+    if (rarity === "rare") {
+      return {
+        auraDelta: { ricochetSplashMul: 1.25 },
+        lines: ["+25% splash na aura"],
+      };
+    }
+    if (rarity === "epic") {
+      return {
+        auraDelta: { ricochetSplashMul: 1.4 },
+        lines: ["+40% splash na aura"],
+      };
+    }
+    return {
+      auraDelta: { ricochetSplashMul: 1.55 },
+      partner: { extraHits: 1 },
+      lines: ["+55% splash · +1 salto"],
+    };
+  }
+  if (partner === "vendaval") {
+    if (rarity === "uncommon") {
+      return {
+        auraDelta: { vendavalPullMul: 1.15 },
+        lines: ["+15% puxão (Vendaval)"],
+      };
+    }
+    if (rarity === "rare") {
+      return {
+        auraDelta: { vendavalPullMul: 1.22 },
+        lines: ["+22% puxão (Vendaval)"],
+      };
+    }
+    if (rarity === "epic") {
+      return {
+        auraDelta: { vendavalPullMul: 1.3 },
+        partner: { damageMul: 1.12 },
+        lines: ["+30% puxão · +12% dano (Vendaval)"],
+      };
+    }
+    return {
+      auraDelta: { vendavalPullMul: 1.4 },
+      partner: { damageMul: 1.2 },
+      lines: ["+40% puxão · +20% dano (Vendaval)"],
+    };
+  }
+  return null;
+}
+
+function buildAuraCardEffect(
+  rarity: Rarity,
+  nextLevel: number,
+  activePartners: readonly SpecialSkillKey[],
+): {
+  delta: MatchSkillBonusDelta;
+  partnerBonuses?: Partial<Record<SpecialSkillKey, MatchSkillBonusDelta>>;
+  description: string;
+  effectLines: string[];
+} {
+  const core = AURA_CORE_BY_RARITY[rarity];
+  const delta: MatchSkillBonusDelta = { ...core.delta };
+  const lines = [...core.lines];
+  const partnerBonuses: Partial<Record<SpecialSkillKey, MatchSkillBonusDelta>> =
+    {};
+  const isFirst = nextLevel <= 1;
+  const partners = isFirst
+    ? []
+    : activePartners.filter((k) => k !== "aura");
+
+  for (const partner of partners) {
+    const pack = auraSynergyFor(partner, rarity);
+    if (!pack) continue;
+    if (pack.auraDelta) {
+      if (pack.auraDelta.lightningSlowMul != null) {
+        delta.lightningSlowMul =
+          (delta.lightningSlowMul ?? 1) * pack.auraDelta.lightningSlowMul;
+      }
+      if (pack.auraDelta.ricochetSplashMul != null) {
+        delta.ricochetSplashMul =
+          (delta.ricochetSplashMul ?? 1) * pack.auraDelta.ricochetSplashMul;
+      }
+      if (pack.auraDelta.vendavalPullMul != null) {
+        delta.vendavalPullMul =
+          (delta.vendavalPullMul ?? 1) * pack.auraDelta.vendavalPullMul;
+      }
+      if (pack.auraDelta.stoneShield != null) {
+        delta.stoneShield =
+          (delta.stoneShield ?? 0) + pack.auraDelta.stoneShield;
+      }
+    }
+    if (pack.partner) partnerBonuses[partner] = pack.partner;
+    lines.push(...pack.lines);
+  }
+
+  const pool = getSpecialSkillPool().find((p) => p.type === "aura");
+  const short = pool?.short ?? "Aura";
+  const description = isFirst
+    ? `Ativa: ${short}. ${lines.join(" · ")}`
+    : `+1 nível · ${lines.join(" · ")}`;
+
+  return {
+    delta,
+    partnerBonuses:
+      Object.keys(partnerBonuses).length > 0 ? partnerBonuses : undefined,
+    description,
+    effectLines: lines,
   };
 }
 
@@ -201,7 +509,16 @@ function buildSpecialSkillEffect(
   key: SpecialSkillKey,
   rarity: Rarity,
   nextLevel: number,
-): { delta: MatchSkillBonusDelta; description: string; effectLines: string[] } {
+  activePartners: readonly SpecialSkillKey[] = [],
+): {
+  delta: MatchSkillBonusDelta;
+  partnerBonuses?: Partial<Record<SpecialSkillKey, MatchSkillBonusDelta>>;
+  description: string;
+  effectLines: string[];
+} {
+  if (key === "aura") {
+    return buildAuraCardEffect(rarity, nextLevel, activePartners);
+  }
   const isFirst = nextLevel <= 1;
   const pool = getSpecialSkillPool().find((p) => p.type === key);
   const effect = getMatchSkillEffect(key, rarity);
@@ -687,10 +1004,11 @@ function createSpecialUpgrade(
   key: SpecialSkillKey,
   rarity: Rarity,
   nextLevel: number,
+  activePartners: readonly SpecialSkillKey[] = [],
 ): MatchUpgrade {
   const pool = getSpecialSkillPool().find((p) => p.type === key)!;
   const isFirst = nextLevel <= 1;
-  const effect = buildSpecialSkillEffect(key, rarity, nextLevel);
+  const effect = buildSpecialSkillEffect(key, rarity, nextLevel, activePartners);
 
   return {
     id: crypto.randomUUID(),
@@ -702,6 +1020,7 @@ function createSpecialUpgrade(
     description: effect.description,
     effectLines: effect.effectLines,
     skillBonus: effect.delta,
+    partnerBonuses: effect.partnerBonuses,
   };
 }
 
@@ -968,7 +1287,7 @@ export function generateUpgradeOptions(
       const idx = Math.floor(Math.random() * availableSpecials.length);
       const key = availableSpecials[idx]!;
       const nextLevel = (matchSkills?.[key] ?? 0) + 1;
-      picked = createSpecialUpgrade(key, rarity, nextLevel);
+      picked = createSpecialUpgrade(key, rarity, nextLevel, activeRunSkills);
       specialPool = specialPool.filter((k) => k !== key);
     } else if (availableStats.length > 0) {
       const category = pickWeightedStatCategory(availableStats, rarity);
@@ -985,7 +1304,7 @@ export function generateUpgradeOptions(
       const idx = Math.floor(Math.random() * availableSpecials.length);
       const key = availableSpecials[idx]!;
       const nextLevel = (matchSkills?.[key] ?? 0) + 1;
-      picked = createSpecialUpgrade(key, rarity, nextLevel);
+      picked = createSpecialUpgrade(key, rarity, nextLevel, activeRunSkills);
       specialPool = specialPool.filter((k) => k !== key);
     } else {
       // Pool esgotado para esta raridade / tentativa — tenta de novo
