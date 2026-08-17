@@ -9,6 +9,7 @@ import {
   type MatchSkillBonusState,
   type MatchSkillBonuses,
 } from "@/lib/matchUpgrades";
+import { formatSciNumber } from "@/lib/formatNumber";
 import {
   MASTERY_SHADOW_CLONE_COUNT,
   MASTERY_SHADOW_STAT_RATIO,
@@ -446,7 +447,7 @@ export function runShadowCloneSystem(
             id: crypto.randomUUID(),
             x: enemy.x,
             y: enemy.y,
-            text: String(displayDamage),
+            text: formatSciNumber(displayDamage),
             age: 0,
             color: "#a78bfa",
             scale: 0.9,

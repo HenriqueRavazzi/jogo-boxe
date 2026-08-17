@@ -5,6 +5,7 @@ import {
   CAMERA_ZOOM_MIN,
   clampCameraZoom,
 } from "@/lib/gameVisualSettings";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { getEndlessXpMultiplier } from "@/src/game/systems/Spawner";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
@@ -121,8 +122,8 @@ export function InGameStats() {
             },
           ]
         : []),
-    { label: "HP", value: `${Math.ceil(currentHp)}/${stats.maxHp}` },
-    { label: "Dano", value: String(damage) },
+    { label: "HP", value: `${formatSciNumber(Math.ceil(currentHp))}/${formatSciNumber(stats.maxHp)}` },
+    { label: "Dano", value: formatSciNumber(damage) },
     { label: "APS", value: attacksPerSecond.toFixed(2) },
     { label: "Chance Crít.", value: `${critChancePct}%` },
     { label: "Dano Crít.", value: `${critDamage.toFixed(2)}x` },

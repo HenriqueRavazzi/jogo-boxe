@@ -9,6 +9,7 @@ import {
 } from "@/src/game/entities/Player";
 import type { QuestProgressEvent } from "@/lib/quests";
 import type { MilestoneProgressEvent } from "@/lib/milestoneQuests";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { getLifeStealRatio, getSkillDamageTakenMultiplier, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
 import {
   getMetaLifeStealRatio,
@@ -725,7 +726,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         id: crypto.randomUUID(),
         x: enemy.x,
         y: enemy.y - 6,
-        text: String(
+        text: formatSciNumber(
           Math.max(1, Math.round(dmg * enemy.getDamageTakenMultiplier(now))),
         ),
         age: 0,
@@ -1064,7 +1065,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         id: crypto.randomUUID(),
         x: enemy.x,
         y: enemy.y,
-        text: String(displayDamage),
+        text: formatSciNumber(displayDamage),
         age: 0,
         color: "#fde68a",
         scale: 1.15,
@@ -1137,7 +1138,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         id: crypto.randomUUID(),
         x: player.x,
         y: player.y - player.radius - 8,
-        text: `+${Math.max(1, Math.round(healed))}`,
+        text: `+${formatSciNumber(Math.max(1, Math.round(healed)))}`,
         age: 0,
         color: "#4ade80",
       });
@@ -1264,7 +1265,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           id: crypto.randomUUID(),
           x: enemy.x,
           y: enemy.y,
-          text: isCrit ? `${displayDamage}!` : String(displayDamage),
+          text: isCrit ? `${formatSciNumber(displayDamage)}!` : formatSciNumber(displayDamage),
           age: 0,
           color: isCrit ? "#fb923c" : "#ffffff",
           scale: isCrit ? 1.4 : 1,
@@ -1292,7 +1293,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
               id: crypto.randomUUID(),
               x: other.x,
               y: other.y,
-              text: String(Math.max(1, Math.round(splash))),
+              text: formatSciNumber(Math.max(1, Math.round(splash))),
               age: 0,
               color: "#c4b5fd",
               scale: 0.85,
@@ -1360,7 +1361,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
               id: crypto.randomUUID(),
               x: target.x,
               y: target.y,
-              text: String(displayBounce),
+              text: formatSciNumber(displayBounce),
               age: 0,
               color: "#fca5a5",
             });

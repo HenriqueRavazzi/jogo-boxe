@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSciNumber } from "@/lib/formatNumber";
 import { useArenaStore } from "@/store/useArenaStore";
 
 /** Barras de vida no topo — uma por boss vivo. */
@@ -26,8 +27,8 @@ export function BossHealthBar() {
                   {label}
                 </span>
                 <span className="tabular-nums text-violet-100/80">
-                  {Math.max(0, Math.ceil(boss.hp)).toLocaleString("pt-BR")} /{" "}
-                  {boss.maxHp.toLocaleString("pt-BR")}
+                  {formatSciNumber(Math.max(0, Math.ceil(boss.hp)))} /{" "}
+                  {formatSciNumber(boss.maxHp)}
                 </span>
               </div>
               <div className="h-4 overflow-hidden rounded-sm border-2 border-violet-300/70 bg-black/70 shadow-[0_0_24px_rgba(126,34,206,0.35)]">

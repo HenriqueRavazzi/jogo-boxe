@@ -21,6 +21,7 @@ import {
   type MatchSkillBonusState,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { getMasteryCardInfo, MASTERY_AURA_RADIUS_MULT } from "@/lib/skillMastery";
 import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
 import {
@@ -273,13 +274,13 @@ function buildSkillStatRows(
         { label: "Nível in-run", value: String(level) },
         {
           label: "Burn / stack",
-          value: `${burnPerStack.toFixed(1)} DPS`,
+          value: `${formatSciNumber(burnPerStack)} DPS`,
           accent: true,
         },
         { label: "Stacks máx.", value: String(maxStacks) },
         {
           label: "Burn total (máx.)",
-          value: `${(burnPerStack * maxStacks).toFixed(1)} DPS`,
+          value: `${formatSciNumber(burnPerStack * maxStacks)} DPS`,
         },
         { label: "Duração do stack", value: formatMs(durationMs) },
       ],
@@ -352,7 +353,7 @@ function buildSkillStatRows(
         { label: "Cooldown", value: formatMs(cycleMs) },
         {
           label: "Dano do estouro",
-          value: burst.toFixed(1),
+          value: formatSciNumber(burst),
           accent: true,
         },
         { label: "Raio da explosão", value: `${LIGHTNING_AOE_RADIUS} px` },
@@ -365,7 +366,7 @@ function buildSkillStatRows(
         },
         {
           label: "Dano meta",
-          value: String(Math.max(0, skills.lightning.damage)),
+          value: formatSciNumber(Math.max(0, skills.lightning.damage)),
         },
       ],
       levelBonusNote: [
@@ -449,7 +450,7 @@ function buildSkillStatRows(
       ? [
           {
             label: "Neutro (DPS)",
-            value: `${neutralDps.toFixed(1)}/s`,
+            value: `${formatSciNumber(neutralDps)}/s`,
           },
           {
             label: "Neutro (slow)",
@@ -459,7 +460,7 @@ function buildSkillStatRows(
       : [
           {
             label: `Fogo (DPS)${powerTag("fire")}`,
-            value: powers.fire ? `${dps.toFixed(1)}/s` : "— (não na run)",
+            value: powers.fire ? `${formatSciNumber(dps)}/s` : "— (não na run)",
           },
           {
             label: `Raio (slow)${powerTag("lightning")}`,
@@ -476,7 +477,7 @@ function buildSkillStatRows(
           {
             label: `Shadow (burst)${powerTag("shadow")}`,
             value: powers.shadow
-              ? `${shadowBurst.toFixed(0)} a cada ${formatMs(shadowInterval)}`
+              ? `${formatSciNumber(shadowBurst)} a cada ${formatMs(shadowInterval)}`
               : "— (não na run)",
           },
           {
@@ -591,7 +592,7 @@ function buildSkillStatRows(
         { label: "Nível in-run", value: String(level) },
         {
           label: "Dano",
-          value: quakeDamage.toFixed(1),
+          value: formatSciNumber(quakeDamage),
           accent: true,
         },
         {
@@ -636,7 +637,7 @@ function buildSkillStatRows(
         { label: "Nível in-run", value: String(level) },
         {
           label: "Dano",
-          value: impact.toFixed(1),
+          value: formatSciNumber(impact),
           accent: true,
         },
         { label: "Raio", value: `${Math.round(radius)}px` },
@@ -680,7 +681,7 @@ function buildSkillStatRows(
       },
       {
         label: "Com Dano Skills",
-        value: `${(skillPunchBase * bouncePct).toFixed(1)} (aprox.)`,
+        value: `${formatSciNumber(skillPunchBase * bouncePct)} (aprox.)`,
       },
     ],
     levelBonusNote: [

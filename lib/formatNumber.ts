@@ -1,50 +1,62 @@
-/** Formatação compacta de números grandes (ex.: 6,93×10⁸⁹). */
+/** Formatação compacta para HUD: 1k, 10M, 1B, 1aa, 1ab… Cálculos continuam com o número bruto. */
 
-const SUPER_DIGITS: Record<string, string> = {
-  "0": "⁰",
-  "1": "¹",
-  "2": "²",
-  "3": "³",
-  "4": "⁴",
-  "5": "⁵",
-  "6": "⁶",
-  "7": "⁷",
-  "8": "⁸",
-  "9": "⁹",
-  "-": "⁻",
-};
+const NAMED_SUFFIXES = ["", "k", "M", "B", "T"] as const;
 
-function toSuperscript(n: number): string {
-  return String(n)
-    .split("")
-    .map((ch) => SUPER_DIGITS[ch] ?? ch)
-    .join("");
+function letterSuffix(index: number): string {
+  if (index < 676) {
+    const first = Math.floor(index / 26);
+    const second = index % 26;
+    return String.fromCharCode(97 + first) + String.fromCharCode(97 + second);
+  }
+  const i = index - 676;
+  const first = Math.floor(i / 676);
+  const second = Math.floor((i % 676) / 26);
+  const third = i % 26;
+  return (
+    String.fromCharCode(97 + first) +
+    String.fromCharCode(97 + second) +
+    String.fromCharCode(97 + third)
+  );
 }
 
-/** Abaixo disso, mostra o número normal em pt-BR. */
-export const SCI_NOTATION_THRESHOLD = 10_000_000;
+function suffixForTier(tier: number): string {
+  if (tier < NAMED_SUFFIXES.length) return NAMED_SUFFIXES[tier];
+  return letterSuffix(tier - NAMED_SUFFIXES.length);
+}
+
+function formatMantissa(mantissa: number, decimals: number): string {
+  return mantissa.toLocaleString("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  });
+}
 
 /**
- * Números grandes em notação científica pt-BR: `6,93×10⁸⁹`.
- * Valores menores que 10.000.000 continuam com separador de milhar.
+ * Exibe magnitudes em degraus de 1 / 10 / 100 com sufixo:
+ * 1k, 10k, 100k, 1M … 1T, 1aa, 10aa, 100aa, 1ab…
  */
-export function formatSciNumber(
-  value: number,
-  threshold = SCI_NOTATION_THRESHOLD,
-): string {
+export function formatSciNumber(value: number): string {
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   const sign = n < 0 ? "−" : "";
   const abs = Math.abs(n);
-  if (abs < threshold) {
+  if (abs < 1000) {
     return `${sign}${Math.round(abs).toLocaleString("pt-BR")}`;
   }
-  const [rawMant, rawExp] = abs.toExponential(2).split("e");
-  const mantissa = Number(rawMant);
-  const exp = Number(rawExp);
-  const mantStr = mantissa.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return `${sign}${mantStr}×10${toSuperscript(exp)}`;
+
+  const [coeff, expStr] = abs.toExponential(10).split("e");
+  const exp = Number(expStr);
+  let tier = Math.floor(exp / 3);
+  let mantissa = Number(coeff) * 10 ** (exp - tier * 3);
+
+  let decimals = mantissa < 10 ? 2 : mantissa < 100 ? 1 : 0;
+  let rounded = Number(mantissa.toFixed(decimals));
+  if (rounded >= 1000) {
+    tier += 1;
+    mantissa = rounded / 1000;
+    decimals = mantissa < 10 ? 2 : mantissa < 100 ? 1 : 0;
+    rounded = Number(mantissa.toFixed(decimals));
+  }
+
+  return `${sign}${formatMantissa(rounded, decimals)}${suffixForTier(tier)}`;
 }
