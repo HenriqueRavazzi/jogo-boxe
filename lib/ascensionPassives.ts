@@ -1,5 +1,7 @@
 /** Passivas permanentes de Ascensão (Ascension Shards) — nunca resetam no prestígio. */
 
+import { formatSciNumber } from "@/lib/formatNumber";
+
 export type AscensionPassiveId =
   | "extraArms"
   | "startingStats"
@@ -90,7 +92,7 @@ export const ASCENSION_PASSIVES: AscensionPassiveDef[] = [
     description:
       "Após ascender (e a cada nova run), você recebe um bônus fixo de ouro.",
     bonusLabel: (level) =>
-      `+${(level * STARTING_GOLD_PER_LEVEL).toLocaleString("pt-BR")} ouro ao iniciar`,
+      `+${formatSciNumber(level * STARTING_GOLD_PER_LEVEL)} ouro ao iniciar`,
   },
   {
     id: "diamondLuck",

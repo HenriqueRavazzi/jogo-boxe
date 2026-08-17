@@ -13,6 +13,7 @@ import {
   getAscensionPassiveMaxLevel,
   type AscensionPassiveId,
 } from "@/lib/ascensionPassives";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { syncWithDB } from "@/lib/syncWithDB";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -52,7 +53,7 @@ export function AscensionPanel({ embedded = false }: { embedded?: boolean }) {
       <div className="mb-3 flex flex-wrap items-center gap-3 px-1 text-[11px]">
         <span className="inline-flex items-center gap-1.5 font-semibold text-fuchsia-200">
           <Sparkles className="h-3.5 w-3.5 text-fuchsia-300" aria-hidden />
-          {ascensionShards.toLocaleString("pt-BR")} shards
+          {formatSciNumber(ascensionShards)} shards
         </span>
         <span className="text-zinc-600">·</span>
         <span className="text-zinc-400">
@@ -60,7 +61,7 @@ export function AscensionPanel({ embedded = false }: { embedded?: boolean }) {
         </span>
         <span className="text-zinc-600">·</span>
         <span className="text-zinc-500">
-          Próx. ascensão ≈ +{previewAscensionShards().toLocaleString("pt-BR")}{" "}
+          Próx. ascensão ≈ +{formatSciNumber(previewAscensionShards())}{" "}
           shards
         </span>
       </div>
@@ -111,7 +112,7 @@ export function AscensionPanel({ embedded = false }: { embedded?: boolean }) {
                   className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/25 px-2.5 py-2 text-xs font-bold text-fuchsia-50 transition hover:bg-fuchsia-500/40 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-fuchsia-300" aria-hidden />
-                  Upgrade · {cost.toLocaleString("pt-BR")} shards
+                  Upgrade · {formatSciNumber(cost)} shards
                 </button>
               )}
             </li>

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { Award, Coins, Gem, X } from "lucide-react";
 import type { MilestoneQuestRewards } from "@/lib/milestoneQuests";
 import type { MilestoneToastItem } from "@/lib/milestoneToasts";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { useGameStore } from "@/store/useGameStore";
 
 export type { MilestoneToastItem };
@@ -17,7 +18,7 @@ const MAX_VISIBLE = 3;
 
 function formatRewards(r: MilestoneQuestRewards): string {
   const parts: string[] = [];
-  if (r.gold > 0) parts.push(`+${r.gold.toLocaleString("pt-BR")} ouro`);
+  if (r.gold > 0) parts.push(`+${formatSciNumber(r.gold)} ouro`);
   if (r.gems > 0) parts.push(`+${r.gems} diam.`);
   if (r.purpleDiamonds > 0) parts.push(`+${r.purpleDiamonds} roxos`);
   return parts.join(" · ");

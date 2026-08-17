@@ -13,6 +13,7 @@ import {
   clampGameSpeed,
   useGameStore,
 } from "@/store/useGameStore";
+import { formatSciNumber } from "@/lib/formatNumber";
 
 function formatRunClock(timeAlive: number): string {
   const total = Math.max(0, Math.floor(timeAlive));
@@ -71,19 +72,19 @@ export function TopBar() {
     <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-4 p-4">
       <div className="pointer-events-auto flex flex-col gap-2">
         <div className="flex items-center gap-3 rounded-lg bg-black/55 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur-sm">
-          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium tabular-nums">
             <Coins className="h-4 w-4 text-amber-400" aria-hidden />
-            {gold.toLocaleString("pt-BR")}
+            {formatSciNumber(gold)}
           </span>
           <span className="h-4 w-px bg-white/20" aria-hidden />
-          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium tabular-nums">
             <Gem className="h-4 w-4 text-cyan-400" aria-hidden />
-            {gems.toLocaleString("pt-BR")}
+            {formatSciNumber(gems)}
           </span>
           <span className="h-4 w-px bg-white/20" aria-hidden />
-          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums text-violet-200">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium tabular-nums text-violet-200">
             <Gem className="h-4 w-4 text-violet-400" aria-hidden />
-            {purpleDiamonds.toLocaleString("pt-BR")}
+            {formatSciNumber(purpleDiamonds)}
           </span>
         </div>
 
@@ -97,17 +98,17 @@ export function TopBar() {
           <span className="h-3.5 w-px bg-white/15" aria-hidden />
           <span className="inline-flex items-center gap-1 font-medium tabular-nums text-amber-200">
             <Coins className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-            +{goldCollected.toLocaleString("pt-BR")}
+            +{formatSciNumber(goldCollected)}
           </span>
           <span className="h-3.5 w-px bg-white/15" aria-hidden />
           <span className="inline-flex items-center gap-1 font-medium tabular-nums text-cyan-200">
             <Gem className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
-            +{diamondsCollected.toLocaleString("pt-BR")}
+            +{formatSciNumber(diamondsCollected)}
           </span>
           <span className="h-3.5 w-px bg-white/15" aria-hidden />
           <span className="inline-flex items-center gap-1 font-medium tabular-nums text-violet-200">
             <Gem className="h-3.5 w-3.5 text-violet-400" aria-hidden />
-            +{purpleCollected.toLocaleString("pt-BR")}
+            +{formatSciNumber(purpleCollected)}
           </span>
         </div>
 
@@ -142,8 +143,8 @@ export function TopBar() {
               <Star className="h-3.5 w-3.5 text-amber-300" aria-hidden />
               Nv {matchLevel}
             </span>
-            <span className="tabular-nums">
-              {currentXp}/{xpToNextLevel}
+            <span className="whitespace-nowrap tabular-nums">
+              {formatSciNumber(currentXp)}/{formatSciNumber(xpToNextLevel)}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded bg-zinc-800">

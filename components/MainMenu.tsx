@@ -20,6 +20,7 @@ import {
   getMaxSelectableStage,
   getStageDef,
 } from "@/lib/stages";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { useGameStore } from "@/store/useGameStore";
 
 type MainMenuProps = {
@@ -162,19 +163,19 @@ export function MainMenu({
           <CurrencyChip
             icon={<Coins className="h-4 w-4 text-amber-300" aria-hidden />}
             label="Ouro"
-            value={gold.toLocaleString("pt-BR")}
+            value={formatSciNumber(gold)}
             tone="border-amber-500/30 bg-amber-500/10 text-amber-200"
           />
           <CurrencyChip
             icon={<Gem className="h-4 w-4 text-cyan-300" aria-hidden />}
             label="Diamantes"
-            value={gems.toLocaleString("pt-BR")}
+            value={formatSciNumber(gems)}
             tone="border-cyan-400/30 bg-cyan-500/10 text-cyan-200"
           />
           <CurrencyChip
             icon={<Gem className="h-4 w-4 text-violet-300" aria-hidden />}
             label="Roxos"
-            value={purpleDiamonds.toLocaleString("pt-BR")}
+            value={formatSciNumber(purpleDiamonds)}
             tone="border-violet-400/30 bg-violet-500/10 text-violet-200"
           />
           <CurrencyChip
@@ -186,7 +187,7 @@ export function MainMenu({
           <CurrencyChip
             icon={<Sparkles className="h-4 w-4 text-pink-300" aria-hidden />}
             label="Shards"
-            value={ascensionShards.toLocaleString("pt-BR")}
+            value={formatSciNumber(ascensionShards)}
             tone="border-pink-400/30 bg-pink-500/10 text-pink-200"
           />
         </div>
@@ -457,19 +458,19 @@ export function MainMenu({
             <CurrencyChip
               icon={<Coins className="h-4 w-4 text-amber-300" aria-hidden />}
               label="Ouro"
-              value={gold.toLocaleString("pt-BR")}
+              value={formatSciNumber(gold)}
               tone="border-amber-500/30 bg-amber-500/10 text-amber-200"
             />
             <CurrencyChip
               icon={<Gem className="h-4 w-4 text-cyan-300" aria-hidden />}
               label="Diamantes"
-              value={gems.toLocaleString("pt-BR")}
+              value={formatSciNumber(gems)}
               tone="border-cyan-400/30 bg-cyan-500/10 text-cyan-200"
             />
             <CurrencyChip
               icon={<Gem className="h-4 w-4 text-violet-300" aria-hidden />}
               label="Roxos"
-              value={purpleDiamonds.toLocaleString("pt-BR")}
+              value={formatSciNumber(purpleDiamonds)}
               tone="border-violet-400/30 bg-violet-500/10 text-violet-200"
             />
             <CurrencyChip
@@ -483,7 +484,7 @@ export function MainMenu({
             <CurrencyChip
               icon={<Sparkles className="h-4 w-4 text-pink-300" aria-hidden />}
               label="Shards"
-              value={ascensionShards.toLocaleString("pt-BR")}
+              value={formatSciNumber(ascensionShards)}
               tone="border-pink-400/30 bg-pink-500/10 text-pink-200"
             />
           </div>
@@ -542,19 +543,19 @@ export function MainMenu({
               <CurrencyChip
                 icon={<Coins className="h-4 w-4 text-amber-300" aria-hidden />}
                 label="Ouro"
-                value={gold.toLocaleString("pt-BR")}
+                value={formatSciNumber(gold)}
                 tone="border-amber-500/30 bg-amber-500/10 text-amber-200"
               />
               <CurrencyChip
                 icon={<Gem className="h-4 w-4 text-cyan-300" aria-hidden />}
                 label="Diamantes"
-                value={gems.toLocaleString("pt-BR")}
+                value={formatSciNumber(gems)}
                 tone="border-cyan-400/30 bg-cyan-500/10 text-cyan-200"
               />
               <CurrencyChip
                 icon={<Gem className="h-4 w-4 text-violet-300" aria-hidden />}
                 label="Roxos"
-                value={purpleDiamonds.toLocaleString("pt-BR")}
+                value={formatSciNumber(purpleDiamonds)}
                 tone="border-violet-400/30 bg-violet-500/10 text-violet-200"
               />
               <CurrencyChip
@@ -562,7 +563,7 @@ export function MainMenu({
                   <Sparkles className="h-4 w-4 text-pink-300" aria-hidden />
                 }
                 label="Shards"
-                value={ascensionShards.toLocaleString("pt-BR")}
+                value={formatSciNumber(ascensionShards)}
                 tone="border-pink-400/30 bg-pink-500/10 text-pink-200"
               />
             </div>

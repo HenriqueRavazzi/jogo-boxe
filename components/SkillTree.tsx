@@ -11,6 +11,7 @@ import {
   type SkillNodeDef,
   type SkillNodeId,
 } from "@/lib/skillTree";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
   MAX_UPGRADE_LEVELS,
@@ -114,11 +115,11 @@ export function SkillTree({ onClose }: SkillTreeProps) {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500/15 px-3 py-1.5 text-sm font-semibold tabular-nums text-cyan-300">
               <Gem className="h-4 w-4" />
-              {gems.toLocaleString("pt-BR")}
+              {formatSciNumber(gems)}
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-3 py-1.5 text-sm font-semibold tabular-nums text-violet-300">
               <Gem className="h-4 w-4" />
-              {purpleDiamonds.toLocaleString("pt-BR")} Roxos
+              {formatSciNumber(purpleDiamonds)} Roxos
             </span>
             <button
               type="button"
@@ -194,7 +195,7 @@ export function SkillTree({ onClose }: SkillTreeProps) {
                   className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
                 >
                   <Gem className="h-4 w-4" />
-                  {xpCost.toLocaleString("pt-BR")} Diamantes
+                  {formatSciNumber(xpCost)} Diamantes
                 </button>
               )}
             </div>
@@ -362,7 +363,7 @@ function SkillNodeButton({
         ) : (
           <>
             <Gem className="h-3.5 w-3.5 text-cyan-300" />
-            {cost.toLocaleString("pt-BR")} Diamantes
+            {formatSciNumber(cost)} Diamantes
           </>
         )}
       </p>

@@ -29,6 +29,7 @@ import {
   type TeamRole,
   type TeamTier,
 } from "@/lib/teamMembers";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { syncWithDB } from "@/lib/syncWithDB";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -274,9 +275,9 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
             Recrutar Membro
             <span className="inline-flex items-center gap-1 font-semibold tabular-nums opacity-90">
               <Coins className="h-3 w-3 text-amber-200" aria-hidden />
-              {cost.gold.toLocaleString("pt-BR")}
+              {formatSciNumber(cost.gold)}
               <Gem className="h-3 w-3 text-cyan-200" aria-hidden />
-              {cost.gems.toLocaleString("pt-BR")}
+              {formatSciNumber(cost.gems)}
             </span>
           </button>
           <button
@@ -292,16 +293,16 @@ export function TeamPanel({ embedded = false }: { embedded?: boolean }) {
             </span>
             <span className="inline-flex items-center gap-1 font-semibold tabular-nums opacity-90">
               <Coins className="h-3 w-3 text-amber-200" aria-hidden />
-              {multiCost.gold.toLocaleString("pt-BR")}
+              {formatSciNumber(multiCost.gold)}
               <Gem className="h-3 w-3 text-cyan-200" aria-hidden />
-              {multiCost.gems.toLocaleString("pt-BR")}
+              {formatSciNumber(multiCost.gems)}
             </span>
           </button>
         </div>
         <p className="text-[10px] text-zinc-500">
           Pacote: soma das próximas {TEAM_MULTI_PULL_COUNT} pulls com desconto
-          (sem pacote: {multiCost.rawGold.toLocaleString("pt-BR")} ouro ·{" "}
-          {multiCost.rawGems.toLocaleString("pt-BR")} diamantes).
+          (sem pacote: {formatSciNumber(multiCost.rawGold)} ouro ·{" "}
+          {formatSciNumber(multiCost.rawGems)} diamantes).
         </p>
         {error && (
           <span className="text-[11px] font-medium text-rose-300">{error}</span>

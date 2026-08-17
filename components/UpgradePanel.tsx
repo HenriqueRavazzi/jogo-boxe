@@ -10,6 +10,7 @@ import {
   Swords,
 } from "lucide-react";
 import { getArmsUpgradeConfig } from "@/lib/balanceConfig";
+import { formatSciNumber } from "@/lib/formatNumber";
 import {
   goldDamageMultiplier,
   goldDamagePctGainAt,
@@ -268,7 +269,7 @@ function UpgradeCard({
                 canAfford ? "text-amber-300/90" : "text-rose-400"
               }`}
             >
-              Custo: {displayCost.toLocaleString("pt-BR")} Ouro
+              Custo: {formatSciNumber(displayCost)} Ouro
             </p>
             {!canAfford && (
               <p className="text-[10px] font-semibold text-rose-400/90">

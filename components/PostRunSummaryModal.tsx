@@ -18,6 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import { TOTAL_STAGES, getStageDef } from "@/lib/stages";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { useArenaStore } from "@/store/useArenaStore";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -102,7 +103,7 @@ export function PostRunSummaryModal({
     {
       icon: <Swords className="h-4 w-4 text-rose-300" aria-hidden />,
       label: "Dano total",
-      value: Math.floor(runStats.damageDealt).toLocaleString("pt-BR"),
+      value: formatSciNumber(Math.floor(runStats.damageDealt)),
     },
     {
       icon: <Skull className="h-4 w-4 text-rose-300" aria-hidden />,
@@ -126,17 +127,17 @@ export function PostRunSummaryModal({
     {
       icon: <Coins className="h-4 w-4 text-amber-300" aria-hidden />,
       label: "Ouro coletado",
-      value: runStats.goldCollected.toLocaleString("pt-BR"),
+      value: formatSciNumber(runStats.goldCollected),
     },
     {
       icon: <Gem className="h-4 w-4 text-cyan-300" aria-hidden />,
       label: "Diamantes",
-      value: runStats.diamondsCollected.toLocaleString("pt-BR"),
+      value: formatSciNumber(runStats.diamondsCollected),
     },
     {
       icon: <Gem className="h-4 w-4 text-violet-300" aria-hidden />,
       label: "Diamantes roxos",
-      value: runStats.purpleDiamondsCollected.toLocaleString("pt-BR"),
+      value: formatSciNumber(runStats.purpleDiamondsCollected),
     },
     ...(runStats.ascensionShardsGained > 0
       ? [
@@ -145,7 +146,7 @@ export function PostRunSummaryModal({
               <Sparkles className="h-4 w-4 text-fuchsia-300" aria-hidden />
             ),
             label: "Ascension Shards",
-            value: runStats.ascensionShardsGained.toLocaleString("pt-BR"),
+            value: formatSciNumber(runStats.ascensionShardsGained),
           },
         ]
       : []),
@@ -157,7 +158,7 @@ export function PostRunSummaryModal({
     {
       icon: <Zap className="h-4 w-4 text-sky-300" aria-hidden />,
       label: "XP na barra",
-      value: `${currentXp.toLocaleString("pt-BR")} / ${xpToNextLevel.toLocaleString("pt-BR")}`,
+      value: `${formatSciNumber(currentXp)} / ${formatSciNumber(xpToNextLevel)}`,
     },
   ];
 
@@ -191,7 +192,7 @@ export function PostRunSummaryModal({
           {isVictory && stageClearReward && (
             <p className="mt-2 text-sm font-semibold text-emerald-300/90">
               {stageClearReward.firstClear ? "1ª vitória" : "Replay"} · +
-              {stageClearReward.gold.toLocaleString("pt-BR")} ouro
+              {formatSciNumber(stageClearReward.gold)} ouro
               {stageClearReward.gems > 0
                 ? ` · +${stageClearReward.gems} diamantes`
                 : ""}

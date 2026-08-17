@@ -9,6 +9,7 @@ import {
   getMilestonePhaseTarget,
   type MilestoneQuestId,
 } from "@/lib/milestoneQuests";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { syncWithDB } from "@/lib/syncWithDB";
 import { useGameStore } from "@/store/useGameStore";
 
@@ -198,7 +199,7 @@ export function MilestoneQuestsPanel({
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold tabular-nums">
                   <span className="inline-flex items-center gap-0.5 text-amber-300">
                     <Coins className="h-3 w-3" aria-hidden />
-                    {rewards.gold.toLocaleString("pt-BR")}
+                    {formatSciNumber(rewards.gold)}
                   </span>
                   <span className="inline-flex items-center gap-0.5 text-cyan-300">
                     <Gem className="h-3 w-3" aria-hidden />

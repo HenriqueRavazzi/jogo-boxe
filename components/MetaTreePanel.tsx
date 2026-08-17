@@ -11,6 +11,7 @@ import {
   Swords,
 } from "lucide-react";
 import type { MetaTreeUpgradeType } from "@/db/schema";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
   formatLevelLabel,
@@ -256,7 +257,7 @@ function MetaUpgradeCard({
             }`}
           >
             <Gem className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            Custo: {displayCost.toLocaleString("pt-BR")} Diamantes
+            Custo: {formatSciNumber(displayCost)} Diamantes
           </p>
           {!canAfford && (
             <p className="text-[10px] font-semibold text-rose-400/90">

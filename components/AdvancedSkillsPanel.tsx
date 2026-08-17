@@ -33,6 +33,7 @@ import {
   getSkillMetaCap,
   type SkillUpgradeType,
 } from "@/db/schema";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
 import {
   areAllSkillStatsMaxed,
@@ -346,13 +347,13 @@ function SkillDetailModal({
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-violet-200/85">
             <span className="inline-flex items-center gap-1 font-semibold">
               <Gem className="h-3 w-3 text-violet-300" aria-hidden />
-              {purpleDiamonds.toLocaleString("pt-BR")} disponíveis
+              {formatSciNumber(purpleDiamonds)} disponíveis
             </span>
             <span className="text-zinc-600">·</span>
             <span>
               Investido nesta skill:{" "}
               <span className="font-semibold text-violet-200">
-                {invested.toLocaleString("pt-BR")}
+                {formatSciNumber(invested)}
               </span>
             </span>
             <span className="text-zinc-600">·</span>
@@ -440,7 +441,7 @@ function SkillDetailModal({
                     className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-violet-400/50 bg-violet-500/25 px-2.5 py-2 text-xs font-bold text-violet-50 transition hover:bg-violet-500/40 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Gem className="h-3.5 w-3.5 text-violet-300" aria-hidden />
-                    Upgrade · {cost.toLocaleString("pt-BR")}
+                    Upgrade · {formatSciNumber(cost)}
                   </button>
                 )}
               </li>
@@ -595,15 +596,15 @@ export function AdvancedSkillsPanel({
       <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px]">
         <span className="inline-flex items-center gap-1 font-semibold text-amber-300/90">
           <Coins className="h-3 w-3" aria-hidden />
-          {gold.toLocaleString("pt-BR")} ouro
+          {formatSciNumber(gold)} ouro
         </span>
         <span className="inline-flex items-center gap-1 font-semibold text-cyan-300/90">
           <Gem className="h-3 w-3" aria-hidden />
-          {gems.toLocaleString("pt-BR")} diamantes
+          {formatSciNumber(gems)} diamantes
         </span>
         <span className="inline-flex items-center gap-1 font-semibold text-violet-300/80">
           <Gem className="h-3 w-3" aria-hidden />
-          {purpleDiamonds.toLocaleString("pt-BR")} roxos
+          {formatSciNumber(purpleDiamonds)} roxos
         </span>
       </div>
 
@@ -656,7 +657,7 @@ export function AdvancedSkillsPanel({
                       }`}
                     >
                       <Coins className="h-3 w-3" aria-hidden />
-                      {req.goldCost.toLocaleString("pt-BR")} Ouro
+                      {formatSciNumber(req.goldCost)} Ouro
                     </span>
                     <span className="text-zinc-600">+</span>
                     <span
@@ -665,7 +666,7 @@ export function AdvancedSkillsPanel({
                       }`}
                     >
                       <Gem className="h-3 w-3" aria-hidden />
-                      {req.diamondCost.toLocaleString("pt-BR")} Diamantes
+                      {formatSciNumber(req.diamondCost)} Diamantes
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-zinc-400">
@@ -758,7 +759,7 @@ export function AdvancedSkillsPanel({
           Resetar Árvore de Skills
           {canReset && (
             <span className="font-semibold text-violet-200">
-              · +{investment.toLocaleString("pt-BR")} roxos
+              · +{formatSciNumber(investment)} roxos
             </span>
           )}
         </button>
@@ -794,7 +795,7 @@ export function AdvancedSkillsPanel({
                 <p className="mt-1 text-[11px] leading-snug text-zinc-400">
                   Todos os atributos granulares voltam a 0. Você recebe{" "}
                   <span className="font-semibold text-violet-300">
-                    {investment.toLocaleString("pt-BR")} diamantes roxos
+                    {formatSciNumber(investment)} diamantes roxos
                   </span>{" "}
                   de volta.
                 </p>
