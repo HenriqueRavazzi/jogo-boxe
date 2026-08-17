@@ -1,14 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Coins, Gem, ScrollText } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Coins,
+  Crosshair,
+  Dumbbell,
+  Gem,
+  HeartPulse,
+  ScrollText,
+  Users,
+  Wallet,
+} from "lucide-react";
 import {
   QUEST_CLAIM_SCALE_PER_CLAIM,
   QUEST_LABELS,
 } from "@/lib/quests";
+import {
+  getTeamMemberDef,
+  TEAM_ROLE_LABEL,
+  type TeamRole,
+} from "@/lib/teamMembers";
 import { useArenaStore } from "@/store/useArenaStore";
+import { useGameStore } from "@/store/useGameStore";
 
-/** Painel flutuante de quests ativas (direita) — auto-collect ao completar. */
+const ROLE_ICONS: Record<TeamRole, ReactNode> = {
+  cutman: <HeartPulse className="h-3.5 w-3.5" aria-hidden />,
+  sparring: <Dumbbell className="h-3.5 w-3.5" aria-hidden />,
+  vitality: <Users className="h-3.5 w-3.5" aria-hidden />,
+  coach: <Crosshair className="h-3.5 w-3.5" aria-hidden />,
+  manager: <Wallet className="h-3.5 w-3.5" aria-hidden />,
+};
+
+function EsquinaPanel() {
+  const teamMembersOwned = useGameStore((s) => s.teamMembersOwned);
+  const equippedTeamMemberIds = useGameStore((s) => s.equippedTeamMemberIds);
+
+  if (equippedTeamMemberIds.length === 0) return null;
+
+  return (
+    <div className="pointer-events-auto shrink-0 rounded-xl border border-orange-400/40 bg-orange-950/50 px-2.5 py-2 text-orange-100 shadow-lg backdrop-blur-md">
+      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-orange-200/70">
+        Esquina
+      </p>
+      <ul className="space-y-1.5">
+        {equippedTeamMemberIds.map((id) => {
+          const def = getTeamMemberDef(id);
+          return (
+            <li key={id} className="flex items-center gap-1.5">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-orange-500/20 text-orange-200">
+                {ROLE_ICONS[def.role]}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-bold">{def.name}</p>
+                <p className="truncate text-[9px] text-orange-200/75">
+                  Nv.{teamMembersOwned[id] ?? 0} · {TEAM_ROLE_LABEL[def.role]}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Painel flutuante de quests + equipe (direita). */
 export function QuestsPanel() {
   const activeQuests = useArenaStore((s) => s.activeQuests);
   const questsClaimedThisRun = useArenaStore((s) => s.questsClaimedThisRun);
@@ -27,11 +85,17 @@ export function QuestsPanel() {
     }
   }, [activeQuests, claimQuest]);
 
-  if (activeQuests.length === 0) return null;
+  if (activeQuests.length === 0) {
+    return (
+      <div className="pointer-events-none absolute right-4 top-36 z-20 flex w-60 flex-col gap-2">
+        <EsquinaPanel />
+      </div>
+    );
+  }
 
   return (
-    <div className="pointer-events-none absolute right-4 top-36 z-20 w-60 max-h-[calc(100dvh-10rem)] overflow-y-auto">
-      <div className="pointer-events-auto overflow-hidden rounded-xl border border-white/10 bg-black/65 shadow-lg backdrop-blur-md">
+    <div className="pointer-events-none absolute right-4 top-36 z-20 flex w-60 flex-col gap-2">
+      <div className="pointer-events-auto max-h-[calc(100dvh-22rem)] min-h-0 overflow-y-auto overflow-hidden rounded-xl border border-white/10 bg-black/65 shadow-lg backdrop-blur-md">
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
@@ -112,6 +176,7 @@ export function QuestsPanel() {
           </ul>
         )}
       </div>
+      <EsquinaPanel />
     </div>
   );
 }

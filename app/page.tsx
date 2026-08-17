@@ -146,7 +146,7 @@ export default function Home() {
           <BossHealthBar />
           <ActiveSkillsHud />
           <BossHordeAlert />
-          <InGameStats onExitMatch={() => void handleExitMatch()} />
+          <InGameStats />
           <QuestsPanel />
         </>
       )}
