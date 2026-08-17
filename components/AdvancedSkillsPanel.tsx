@@ -16,6 +16,7 @@ import {
   Flame,
   Gem,
   Ghost,
+  HeartPulse,
   Lock,
   Mountain,
   RotateCcw,
@@ -42,6 +43,7 @@ import {
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
   AURA_ELEMENT_LABELS,
+  getAuraRegenMaxHpRatio,
   listUnlockedAuraElements,
 } from "@/src/game/systems/AuraSystem";
 import {
@@ -203,7 +205,7 @@ const CARDS: SkillCardDef[] = [
     type: "aura",
     title: "Aura",
     description:
-      "Área no herói. In-game: raio, dano da aura e buffs das skills em sinergia (Fogo, Pedra, Shadow…). Slots cheios — troca um slot e escolhe o efeito 100%. Liberar/upar Aura fortalece inimigos.",
+      "Área no herói. Regenera % da vida máxima por segundo (atributo Regen). In-game: raio, dano e buffs das skills em sinergia. Slots cheios — troca um slot e escolhe o efeito 100%. Liberar/upar Aura fortalece inimigos.",
     icon: <Circle className="h-5 w-5" aria-hidden />,
     statActions: {
       radius: {
@@ -217,6 +219,10 @@ const CARDS: SkillCardDef[] = [
       pulse: {
         label: "Acelerar Pulso",
         icon: <Timer className="h-4 w-4" aria-hidden />,
+      },
+      regen: {
+        label: "Aumentar Regeneração",
+        icon: <HeartPulse className="h-4 w-4" aria-hidden />,
       },
     },
   },
@@ -280,6 +286,7 @@ function SkillDetailModal({
   const skills = useGameStore((s) => s.skills);
   const unlockedSkills = useGameStore((s) => s.unlockedSkills);
   const prestigeLevel = useGameStore((s) => s.prestigeLevel);
+  const getPrestigeMultiplier = useGameStore((s) => s.getPrestigeMultiplier);
   const upgradeSkillStat = useGameStore((s) => s.upgradeSkillStat);
   const getSkillStatUpgradeCost = useGameStore(
     (s) => s.getSkillStatUpgradeCost,
@@ -428,6 +435,18 @@ function SkillDetailModal({
                   </span>
                 </div>
                 <StatProgressBar level={level} />
+                {card.type === "aura" && statKey === "regen" && (
+                  <p className="mt-1.5 text-[11px] text-zinc-500">
+                    {(
+                      getAuraRegenMaxHpRatio(level, getPrestigeMultiplier()) *
+                      100
+                    ).toLocaleString("pt-BR", {
+                      maximumFractionDigits: 2,
+                      minimumFractionDigits: 1,
+                    })}
+                    % da vida máxima por segundo (com Aura ativa na run)
+                  </p>
+                )}
                 {atMax ? (
                   <div className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-500/15 px-2.5 py-2 text-xs font-bold text-amber-100">
                     <Check className="h-3.5 w-3.5" aria-hidden />

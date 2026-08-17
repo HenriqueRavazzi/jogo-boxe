@@ -45,11 +45,13 @@ export type LightningSkillStats = {
   cooldown: number;
 };
 
-/** Aura elemental: raio da área, poder (DPS) e pulso (intervalo do stun de gelo). */
+/** Aura: raio da área, poder (DPS), pulso (intervalo de gelo/sombra) e regen de HP. */
 export type AuraSkillStats = {
   radius: number;
   damage: number;
   pulse: number;
+  /** Regeneração: % da vida máxima por segundo enquanto a Aura está na run. */
+  regen: number;
 };
 
 /** Shadow Clone: poder do clone, duração e cooldown de invocação. */
@@ -129,7 +131,7 @@ export const DEFAULT_SKILLS_DATA: SkillsData = {
   ice: { duration: 0, cooldown: 0 },
   fire: { damage: 0, duration: 0 },
   lightning: { damage: 0, hits: 0, cooldown: 0 },
-  aura: { radius: 0, damage: 0, pulse: 0 },
+  aura: { radius: 0, damage: 0, pulse: 0, regen: 0 },
   shadow: { damage: 0, duration: 0, cooldown: 0 },
   stone: { damage: 0, duration: 0, cooldown: 0 },
   vendaval: { damage: 0, radius: 0, cooldown: 0 },
@@ -140,7 +142,7 @@ export const SKILL_STAT_KEYS = {
   ice: ["duration", "cooldown"],
   fire: ["damage", "duration"],
   lightning: ["damage", "hits", "cooldown"],
-  aura: ["radius", "damage", "pulse"],
+  aura: ["radius", "damage", "pulse", "regen"],
   shadow: ["damage", "duration", "cooldown"],
   stone: ["damage", "duration", "cooldown"],
   vendaval: ["damage", "radius", "cooldown"],
@@ -370,7 +372,7 @@ export const gameSaves = pgTable("game_saves", {
     .$type<SkillsData>()
     .notNull()
     .default(
-      sql`'{"ricochet":{"damage":0,"cooldown":0,"hits":0},"ice":{"duration":0,"cooldown":0},"fire":{"damage":0,"duration":0},"lightning":{"damage":0,"hits":0,"cooldown":0},"aura":{"radius":0,"damage":0,"pulse":0},"shadow":{"damage":0,"duration":0,"cooldown":0},"stone":{"damage":0,"duration":0,"cooldown":0},"vendaval":{"damage":0,"radius":0,"cooldown":0}}'::jsonb`,
+      sql`'{"ricochet":{"damage":0,"cooldown":0,"hits":0},"ice":{"duration":0,"cooldown":0},"fire":{"damage":0,"duration":0},"lightning":{"damage":0,"hits":0,"cooldown":0},"aura":{"radius":0,"damage":0,"pulse":0,"regen":0},"shadow":{"damage":0,"duration":0,"cooldown":0},"stone":{"damage":0,"duration":0,"cooldown":0},"vendaval":{"damage":0,"radius":0,"cooldown":0}}'::jsonb`,
     ),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

@@ -36,6 +36,7 @@ import {
   getAuraIceStunIntervalMs,
   getAuraNeutralDps,
   getAuraRadius,
+  getAuraRegenMaxHpRatio,
   getAuraShadowBurstDamage,
   getAuraShadowBurstIntervalMs,
   listRunAuraElements,
@@ -543,6 +544,21 @@ function buildSkillStatRows(
         },
         { label: "Nível in-run", value: String(level) },
         { label: "Raio", value: `${Math.round(radius)} px` },
+        {
+          label: "Regen",
+          value: (() => {
+            const ratio = getAuraRegenMaxHpRatio(
+              skills.aura.regen ?? 0,
+              prestigeMul,
+            );
+            if (ratio <= 0) return "—";
+            const pct = ratio * 100;
+            return `${pct.toLocaleString("pt-BR", {
+              maximumFractionDigits: 2,
+              minimumFractionDigits: 1,
+            })}%/s`;
+          })(),
+        },
         ...synergyRows,
       ],
       levelBonusNote: [

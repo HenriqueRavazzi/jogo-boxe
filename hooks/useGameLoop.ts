@@ -38,7 +38,7 @@ import {
   MULTIVERSE_RIFT_FLASH_MS,
   resolveVisualDimension,
 } from "@/src/game/multiverseLoop";
-import { getAuraRadius } from "@/src/game/systems/AuraSystem";
+import { getAuraRadius, getAuraRegenMaxHpRatio } from "@/src/game/systems/AuraSystem";
 import {
   clampCameraZoom,
   getCameraWorldRect,
@@ -518,15 +518,23 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       let nextHp = combat.player.hp;
       const teamBuffs = game.getEquippedTeamBuffs();
       const teamRegenRatio = teamBuffs.hpRegenMaxHpRatioPerSecond;
+      const auraRegenRatio =
+        (arena.matchSkills.aura ?? 0) > 0
+          ? getAuraRegenMaxHpRatio(
+              game.skills.aura.regen ?? 0,
+              game.getPrestigeMultiplier(),
+            )
+          : 0;
+      const regenRatio = teamRegenRatio + auraRegenRatio;
       if (
-        teamRegenRatio > 0 &&
+        regenRatio > 0 &&
         nextHp > 0 &&
         nextHp < stats.maxHp &&
         !combat.player.isDead
       ) {
         nextHp = Math.min(
           stats.maxHp,
-          nextHp + stats.maxHp * teamRegenRatio * dt,
+          nextHp + stats.maxHp * regenRatio * dt,
         );
       }
 

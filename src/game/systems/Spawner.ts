@@ -71,30 +71,51 @@ const MIN_INTERVAL = 220;
 const MAX_SPAWN_EVENTS_PER_TICK = 4;
 /** Acima desta fração do teto atual, reduz lote / alonga ritmo. */
 const CROWD_SOFT_CAP_RATIO = 0.4;
-/** Teto base de inimigos vivos na tela. */
-export const MAX_ENEMIES_BASE = 140;
+/** Teto de inimigos vivos até os 10 min. */
+export const MAX_ENEMIES_BASE = 125;
 /** @deprecated Prefer getMaxEnemies(timeAlive). */
 export const MAX_ENEMIES = MAX_ENEMIES_BASE;
-/** Teto após o ramp tardio (a partir de 15 min). */
-export const MAX_ENEMIES_LATE = 260;
-/** Quando o teto começa a subir. */
-export const MAX_ENEMIES_LATE_START_SECONDS = 15 * 60;
-/** Duração do ramp 140 → 260 (chega no teto em ~25 min). */
-export const MAX_ENEMIES_LATE_RAMP_SECONDS = 10 * 60;
+/** Teto aos 20 min. */
+export const MAX_ENEMIES_MID = 250;
+/** Teto a partir dos 30 min. */
+export const MAX_ENEMIES_LATE = 500;
+/** Até aqui o teto fica em MAX_ENEMIES_BASE. */
+export const MAX_ENEMIES_RAMP_START_SECONDS = 10 * 60;
+/** Momento em que o teto chega em MAX_ENEMIES_MID. */
+export const MAX_ENEMIES_MID_SECONDS = 20 * 60;
+/** Momento em que o teto chega em MAX_ENEMIES_LATE. */
+export const MAX_ENEMIES_LATE_SECONDS = 30 * 60;
+
+function lerpEnemyCap(t: number, t0: number, t1: number, a: number, b: number): number {
+  const u = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+  return Math.round(a + (b - a) * u);
+}
 
 /**
- * Limite de inimigos vivos: 140 até 15 min, depois sobe linearmente até 260.
+ * Limite de inimigos vivos: 125 até 10 min, 250 aos 20 min, 500 aos 30 min.
  */
 export function getMaxEnemies(timeAliveSeconds: number): number {
   const t = Math.max(0, timeAliveSeconds);
-  if (t < MAX_ENEMIES_LATE_START_SECONDS) return MAX_ENEMIES_BASE;
-  const u = Math.min(
-    1,
-    (t - MAX_ENEMIES_LATE_START_SECONDS) / MAX_ENEMIES_LATE_RAMP_SECONDS,
-  );
-  return Math.round(
-    MAX_ENEMIES_BASE + (MAX_ENEMIES_LATE - MAX_ENEMIES_BASE) * u,
-  );
+  if (t <= MAX_ENEMIES_RAMP_START_SECONDS) return MAX_ENEMIES_BASE;
+  if (t <= MAX_ENEMIES_MID_SECONDS) {
+    return lerpEnemyCap(
+      t,
+      MAX_ENEMIES_RAMP_START_SECONDS,
+      MAX_ENEMIES_MID_SECONDS,
+      MAX_ENEMIES_BASE,
+      MAX_ENEMIES_MID,
+    );
+  }
+  if (t < MAX_ENEMIES_LATE_SECONDS) {
+    return lerpEnemyCap(
+      t,
+      MAX_ENEMIES_MID_SECONDS,
+      MAX_ENEMIES_LATE_SECONDS,
+      MAX_ENEMIES_MID,
+      MAX_ENEMIES_LATE,
+    );
+  }
+  return MAX_ENEMIES_LATE;
 }
 
 /** Nomes dos inimigos fracos liberados no início da partida. */

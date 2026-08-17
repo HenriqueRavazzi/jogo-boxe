@@ -4,13 +4,13 @@ import type { SkillsData, UnlockedSkillsData } from "@/db/schema";
 
 /**
  * Liberar Aura já deixa o mundo mais pesado — a skill é muito forte.
- * Cada ponto roxo investido (radius / damage / pulse) aumenta um pouco mais.
+ * Cada ponto roxo investido (radius / damage / pulse / regen) aumenta um pouco mais.
  */
 export const AURA_UNLOCK_ENEMY_HP_MUL = 1.18;
 export const AURA_UNLOCK_ENEMY_DAMAGE_MUL = 1.15;
 export const AURA_UNLOCK_ENEMY_SPEED_MUL = 1.08;
 
-/** Por nível roxo total da Aura (soma de radius+damage+pulse, 0–60). */
+/** Por nível roxo total da Aura (soma de radius+damage+pulse+regen). */
 export const AURA_STAT_ENEMY_HP_PER_LEVEL = 0.01;
 export const AURA_STAT_ENEMY_DAMAGE_PER_LEVEL = 0.008;
 export const AURA_STAT_ENEMY_SPEED_PER_LEVEL = 0.0035;
@@ -31,7 +31,8 @@ export function getAuraMetaInvestedLevels(skills: SkillsData): number {
   return (
     Math.max(0, Math.floor(aura.radius ?? 0)) +
     Math.max(0, Math.floor(aura.damage ?? 0)) +
-    Math.max(0, Math.floor(aura.pulse ?? 0))
+    Math.max(0, Math.floor(aura.pulse ?? 0)) +
+    Math.max(0, Math.floor(aura.regen ?? 0))
   );
 }
 

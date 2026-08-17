@@ -57,6 +57,21 @@ export const AURA_RICOCHET_SPLASH_RATIO = 0.25;
 export const AURA_SECONDARY_POWER = 0.5;
 /** Força base do puxão contínuo da Aura + Vendaval. */
 export const AURA_VENDAVAL_PULL_STRENGTH = 0.42;
+/** % da vida máxima regenerada por segundo, por nível roxo de regen (0.1%/s). */
+export const AURA_REGEN_MAXHP_RATIO_PER_LEVEL = 0.001;
+
+/**
+ * Regeneração da Aura: fração do HP máximo por segundo.
+ * Só vale com a Aura ativa na run; o cliente aplica o tick.
+ */
+export function getAuraRegenMaxHpRatio(
+  metaRegen: number,
+  prestigeMul = 1,
+): number {
+  return (
+    Math.max(0, metaRegen) * AURA_REGEN_MAXHP_RATIO_PER_LEVEL * prestigeMul
+  );
+}
 /** Renovação curta do puxão contínuo (ms). */
 export const AURA_VENDAVAL_PULL_REFRESH_MS = 140;
 
