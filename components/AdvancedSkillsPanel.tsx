@@ -35,6 +35,7 @@ import {
   getSkillMetaCap,
   type SkillUpgradeType,
 } from "@/db/schema";
+import { formatSciNumber } from "@/lib/formatNumber";
 import { getSkillStatPreview } from "@/lib/skillStatPreview";
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
 import {

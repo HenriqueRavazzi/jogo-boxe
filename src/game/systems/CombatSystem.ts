@@ -9,6 +9,7 @@ import {
 } from "@/src/game/entities/Player";
 import type { QuestProgressEvent } from "@/lib/quests";
 import type { MilestoneProgressEvent } from "@/lib/milestoneQuests";
+import { getMatchGlobals } from "@/lib/balanceConfig";
 import { formatSciNumber } from "@/lib/formatNumber";
 import { getLifeStealRatio, getSkillDamageTakenMultiplier } from "@/lib/skillTree";
 import {
