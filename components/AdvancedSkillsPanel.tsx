@@ -83,7 +83,7 @@ const CARDS: SkillCardDef[] = [
     type: "ice",
     title: "Gelo",
     description:
-      "Onda a 40% do alcance: congela e deixa vulnerável (+30% dano). Na Aura: stun periódico na área.",
+      "Onda no alcance de ataque: congela e deixa vulnerável (+30% dano). Na Aura: stun periódico na área.",
     icon: <Snowflake className="h-5 w-5" aria-hidden />,
     statActions: {
       duration: {
@@ -121,7 +121,7 @@ const CARDS: SkillCardDef[] = [
     type: "stone",
     title: "Pedra",
     description:
-      "Terremoto: dano em todos + −50% AS/dano por 10s. Na Aura: inimigos causam −50% dano.",
+      "Terremoto no alcance de ataque: dano + −50% AS/dano por 10s. Na Aura: inimigos causam −50% dano.",
     icon: <Mountain className="h-5 w-5" aria-hidden />,
     statActions: {
       damage: {
@@ -142,7 +142,7 @@ const CARDS: SkillCardDef[] = [
     type: "ricochet",
     title: "Ricochete",
     description:
-      "Socos saltam entre inimigos. Na Aura: cada hit espalha 25% do dano a todos dentro.",
+      "Socos saltam entre inimigos no alcance de ataque. Na Aura: cada hit espalha 25% do dano a todos dentro.",
     icon: <Spline className="h-5 w-5" aria-hidden />,
     statActions: {
       damage: {

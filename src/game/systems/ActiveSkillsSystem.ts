@@ -16,8 +16,8 @@ export const ACTIVE_SKILL_DURATION_MS = 3_000;
 /** @deprecated Preferir fórmula: max(2000, 7000 - cooldown×500). */
 export const RICOCHET_CYCLE_MS = 7_000;
 export const RICOCHET_ACTIVE_MS = 2_000;
-/** Fração do alcance efetivo do herói usada pelo gelo. */
-export const ICE_RANGE_RATIO = 0.4;
+/** Onda de gelo usa o alcance de ataque do herói (nunca ultrapassa). */
+export const ICE_RANGE_RATIO = 1;
 /** Duração do VFX da onda de gelo (ms). */
 export const ICE_VFX_MS = 520;
 /** Duração do VFX do raio single-target (ms). */
@@ -40,7 +40,7 @@ export const LIGHTNING_HIT_SLOP_PX = 28;
 export const LIGHTNING_BURST_BASE = 2.8;
 /** @deprecated Cadeia removida — Raio é single-target. */
 export const LIGHTNING_LINK_RADIUS = 280;
-/** @deprecated Preferir iceRadius dinâmico (40% do range). */
+/** @deprecated Preferir iceRadius dinâmico (alcance de ataque). */
 export const ICE_WAVE_RADIUS = 2400;
 /** @deprecated */
 export const LIGHTNING_FIRST_RANGE = 520;
@@ -247,7 +247,7 @@ export type RunActiveSkillsInput = {
   matchSkills: MatchSkillsData;
   skills: SkillsData;
   pulseState: ActiveSkillPulseState;
-  /** Alcance efetivo do herói (base × buffs) — gelo usa 40%. */
+  /** Alcance efetivo do herói (base × buffs) — gelo e pedra não ultrapassam. */
   effectiveRange: number;
   /** Bônus in-run acumulados das cartas de raridade. */
   matchSkillBonuses?: MatchSkillBonuses;
@@ -278,7 +278,7 @@ function applyIceWave(
   for (const enemy of enemies) {
     if (enemy.isDead) continue;
     const dist = Math.hypot(enemy.x - playerX, enemy.y - playerY);
-    if (dist > iceRadius) continue;
+    if (dist > iceRadius + enemy.radius) continue;
     enemy.applyStatus("freeze", now + freezeDurationMs, {
       vulnerable: true,
       damageTakenMultiplier: ICE_VULNERABILITY_MULTIPLIER,
@@ -348,7 +348,7 @@ export function buildZigzagPoints(
 }
 
 /**
- * Atualiza timers: gelo (AoE 40% range), raio (projétil), ricochete.
+ * Atualiza timers: gelo (AoE no alcance de ataque), raio (projétil), ricochete.
  * Fogo é tratado no CombatSystem (on-hit).
  */
 export function runActiveSkills(
@@ -399,14 +399,17 @@ export function runActiveSkills(
       ricochetBonus.cooldownMul,
   );
 
-  // ——— Gelo (onda periódica a 40% do range) ———
+  // ——— Gelo (onda periódica no alcance de ataque) ———
   if (matchSkills.ice > 0) {
     if (next.iceNextPulseAt <= 0) {
       next.iceNextPulseAt = now;
     }
 
     if (now >= next.iceNextPulseAt) {
-      const iceRadius = Math.max(40, effectiveRange * ICE_RANGE_RATIO);
+      const iceRadius = Math.min(
+        effectiveRange,
+        Math.max(40, effectiveRange * ICE_RANGE_RATIO),
+      );
       next.iceActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
       next.icePulseAt = now;
       next.iceWaveRadius = iceRadius;
@@ -515,7 +518,7 @@ export function runActiveSkills(
     next.ricochetActiveUntil = 0;
   }
 
-  // ——— Pedra: terremoto em todos os inimigos ———
+  // ——— Pedra: terremoto só no alcance de ataque ———
   const stoneBonus = matchSkillBonuses?.stone ?? DEFAULT_MATCH_SKILL_BONUS;
   const stoneCooldownMs = Math.max(
     6_000,
@@ -529,7 +532,12 @@ export function runActiveSkills(
     }
 
     if (now >= next.stoneNextPulseAt) {
-      const living = enemies.filter((e) => !e.isDead);
+      const stoneRadius = Math.max(40, effectiveRange);
+      const living = enemies.filter((e) => {
+        if (e.isDead) return false;
+        const dist = Math.hypot(e.x - playerX, e.y - playerY);
+        return dist <= stoneRadius + e.radius;
+      });
       if (living.length > 0) {
         next.stonePulseAt = now;
         next.stoneActiveUntil = now + ACTIVE_SKILL_DURATION_MS;
@@ -562,16 +570,11 @@ export function runActiveSkills(
           skillHitsLanded += 1;
         }
 
-        const maxDist = living.reduce((m, e) => {
-          const d = Math.hypot(e.x - playerX, e.y - playerY);
-          return Math.max(m, d + e.radius);
-        }, 180);
-
         newSkillVfx.push({
           kind: "stone",
           x: playerX,
           y: playerY,
-          maxRadius: Math.min(900, maxDist + 80),
+          maxRadius: stoneRadius,
           startedAt: now,
           expiresAt: now + STONE_VFX_MS,
         });

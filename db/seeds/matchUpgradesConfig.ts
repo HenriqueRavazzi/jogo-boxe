@@ -133,13 +133,13 @@ export const MATCH_SKILL_CARD_SEEDS = [
   {
     skillKey: "stone",
     name: "Pedra",
-    short: "Terremoto: dano em todos + −50% AS/dano inimigo por 10s",
+    short: "Terremoto no alcance: dano + −50% AS/dano inimigo por 10s",
     sortOrder: 3,
   },
   {
     skillKey: "ricochet",
     name: "Ricochete",
-    short: "Soco ricocheteia entre inimigos",
+    short: "Soco ricocheteia entre inimigos no alcance",
     sortOrder: 4,
   },
   {

@@ -10,7 +10,7 @@ import {
 import type { QuestProgressEvent } from "@/lib/quests";
 import type { MilestoneProgressEvent } from "@/lib/milestoneQuests";
 import { formatSciNumber } from "@/lib/formatNumber";
-import { getLifeStealRatio, getSkillDamageTakenMultiplier, RICOCHET_LINK_RADIUS } from "@/lib/skillTree";
+import { getLifeStealRatio, getSkillDamageTakenMultiplier } from "@/lib/skillTree";
 import {
   getMetaLifeStealRatio,
   getMetaParryChance,
@@ -290,14 +290,15 @@ export function assignArmTargets<T extends { enemy: Enemy }>(
   return out;
 }
 
-/** Cadeia: saltos a partir de um origem; `used` evita alvos já atingidos. */
+/** Cadeia: saltos só em inimigos no alcance de ataque do herói. */
 function chainRicochet(
   living: Enemy[],
   originX: number,
   originY: number,
   maxBounces: number,
-  firstRange: number,
-  linkRadius: number,
+  playerX: number,
+  playerY: number,
+  heroRange: number,
   usedIds: Set<string> = new Set(),
 ): Enemy[] {
   const chain: Enemy[] = [];
@@ -306,14 +307,15 @@ function chainRicochet(
   let cy = originY;
 
   for (let i = 0; i < maxBounces; i++) {
-    const maxDist = i === 0 ? firstRange : linkRadius;
     let best: Enemy | null = null;
     let bestDist = Infinity;
 
     for (const enemy of living) {
       if (used.has(enemy.id) || enemy.isDead) continue;
+      const distFromHero = Math.hypot(enemy.x - playerX, enemy.y - playerY);
+      if (distFromHero > heroRange + enemy.radius) continue;
       const dist = Math.hypot(enemy.x - cx, enemy.y - cy);
-      if (dist <= maxDist && dist < bestDist) {
+      if (dist < bestDist) {
         best = enemy;
         bestDist = dist;
       }
@@ -1317,8 +1319,9 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             enemy.x,
             enemy.y,
             maxBounces - 1,
-            RICOCHET_LINK_RADIUS,
-            RICOCHET_LINK_RADIUS,
+            player.x,
+            player.y,
+            effectiveRange,
             new Set([enemy.id]),
           );
 

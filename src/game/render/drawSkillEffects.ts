@@ -20,7 +20,7 @@ export function drawIceSkillVfx(
     Math.min(1, (effect.expiresAt - now) / Math.max(1, life)),
   );
   const progress = 1 - alpha;
-  const radius = Math.max(8, effect.maxRadius * Math.min(1, progress * 1.35));
+  const radius = Math.max(8, effect.maxRadius * Math.min(1, progress));
 
   ctx.save();
   ctx.globalAlpha = alpha;

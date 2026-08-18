@@ -647,13 +647,13 @@ const SPECIAL_SKILL_POOL: {
     type: "stone",
     category: "stone",
     name: "Pedra",
-    short: "Terremoto: dano em todos + −50% AS/dano inimigo por 10s",
+    short: "Terremoto no alcance: dano + −50% AS/dano inimigo por 10s",
   },
   {
     type: "ricochet",
     category: "ricochet",
     name: "Ricochete",
-    short: "Soco ricocheteia entre inimigos",
+    short: "Soco ricocheteia entre inimigos no alcance",
   },
   {
     type: "vendaval",

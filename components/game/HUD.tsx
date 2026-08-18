@@ -45,6 +45,7 @@ import {
   getLightningBurstDamage,
   getSkillCooldownInfo,
   getSkillCycleMs,
+  ICE_RANGE_RATIO,
   LIGHTNING_AOE_RADIUS,
   STONE_DEBUFF_BASE_MS,
   STONE_ENEMY_POWER_MUL,
@@ -73,7 +74,7 @@ const SKILL_UI: Record<
     icon: <Snowflake className="h-5 w-5" aria-hidden />,
     ring: "stroke-sky-400",
     fill: "text-sky-200",
-    blurb: "Onda periódica: congela e deixa vulnerável (+30% dano).",
+    blurb: "Onda no alcance de ataque: congela e deixa vulnerável (+30% dano).",
   },
   lightning: {
     name: "Raio",
@@ -96,7 +97,7 @@ const SKILL_UI: Record<
     ring: "stroke-stone-400",
     fill: "text-stone-200",
     blurb:
-      "Terremoto: dano em todos os inimigos e −50% AS/dano deles por 10s.",
+      "Terremoto no alcance de ataque: dano e −50% AS/dano deles por 10s.",
   },
   shadow: {
     name: "Shadow Clone",
@@ -111,7 +112,7 @@ const SKILL_UI: Record<
     icon: <Spline className="h-5 w-5" aria-hidden />,
     ring: "stroke-violet-400",
     fill: "text-violet-200",
-    blurb: "Socos saltam entre inimigos na janela ativa.",
+    blurb: "Socos saltam entre inimigos no alcance de ataque.",
   },
   aura: {
     name: "Aura",
@@ -318,9 +319,10 @@ function buildSkillStatRows(
       (1000 + Math.round(skills.ice.duration * 500 * prestigeMul)) *
         bonus.durationMul,
     );
-    const range = Math.max(
-      40,
-      stats.attackRange * matchBuffs.attackRange * 0.4,
+    const attackRange = stats.attackRange * matchBuffs.attackRange;
+    const range = Math.min(
+      attackRange,
+      Math.max(40, attackRange * ICE_RANGE_RATIO),
     );
     return {
       rows: [
@@ -640,15 +642,17 @@ function buildSkillStatRows(
       6_000,
       (18_000 - skills.stone.cooldown * 700 * prestigeMul) * bonus.cooldownMul,
     );
+    const range = Math.max(40, stats.attackRange * matchBuffs.attackRange);
     return {
       rows: [
-        { label: "Tipo", value: "Terremoto global" },
+        { label: "Tipo", value: "Terremoto no alcance" },
         { label: "Nível in-run", value: String(level) },
         {
           label: "Dano",
           value: formatSciNumber(quakeDamage),
           accent: true,
         },
+        { label: "Raio", value: `${Math.round(range)} px` },
         {
           label: "Debuff",
           value: `−${Math.round((1 - STONE_ENEMY_POWER_MUL) * 100)}% AS e dano`,
@@ -657,7 +661,7 @@ function buildSkillStatRows(
         { label: "Cooldown", value: formatMs(cycleMs) },
       ],
       levelBonusNote: [
-        `Nível ${level}: afeta todos os inimigos na tela.`,
+        `Nível ${level}: só acerta inimigos no alcance de ataque.`,
         runBonusNote,
       ]
         .filter(Boolean)
@@ -728,6 +732,7 @@ function buildSkillStatRows(
       { label: "Nível in-run", value: String(level) },
       { label: "Cooldown", value: formatMs(cycleMs) },
       { label: "Saltos máx.", value: String(maxBounces) },
+      { label: "Alcance", value: "Só no alcance de ataque" },
       {
         label: "Dano por salto",
         value: `${Math.round(bouncePct * 100)}% do soco`,
@@ -739,7 +744,7 @@ function buildSkillStatRows(
       },
     ],
     levelBonusNote: [
-      `Nível ${level}: skill ativa na run. Saltos/dano escalam com meta roxa e prestígio.`,
+      `Nível ${level}: saltos só em inimigos no alcance de ataque.`,
       runBonusNote,
     ]
       .filter(Boolean)
