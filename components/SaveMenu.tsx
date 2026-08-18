@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { RefreshCw } from "lucide-react";
 import {
   createSave,
   deleteSave,
+  loadSaveById,
   unlockSaveByName,
 } from "@/actions/saveGame";
 import { useGameStore } from "@/store/useGameStore";
@@ -25,11 +27,14 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
 
   const resetForm = () => {
     setPassword("");
     setError(null);
+    setStatus(null);
   };
 
   const handleLogin = async (e: FormEvent) => {
@@ -76,6 +81,26 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
     resetForm();
   };
 
+  const handleReload = async () => {
+    if (!activeSaveId || busy) return;
+    setBusy(true);
+    setReloading(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const result = await loadSaveById(activeSaveId);
+      if (!result.ok || !result.id || !result.saveData) {
+        setError(result.error ?? "Falha ao recarregar o save");
+        return;
+      }
+      hydrateFromSave(result.id, result.saveData, result.saveName);
+      setStatus("Save atualizado");
+    } finally {
+      setReloading(false);
+      setBusy(false);
+    }
+  };
+
   const handleDeleteActive = async () => {
     if (!activeSaveId || !activeSaveName) return;
     const pass = window.prompt(
@@ -84,6 +109,7 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
     if (pass == null) return;
     setBusy(true);
     setError(null);
+    setStatus(null);
     try {
       const result = await deleteSave(activeSaveId, pass);
       if (!result.ok) {
@@ -103,13 +129,28 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
           Save
         </p>
-        <div className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-3 py-3">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-sky-200/70">
-            Conectado
-          </p>
-          <p className="mt-0.5 truncate text-sm font-bold text-sky-100">
-            {activeSaveName}
-          </p>
+        <div className="flex items-center gap-2 rounded-xl border border-sky-400/40 bg-sky-500/10 px-3 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-sky-200/70">
+              Conectado
+            </p>
+            <p className="mt-0.5 truncate text-sm font-bold text-sky-100">
+              {activeSaveName}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void handleReload()}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-sky-400/40 bg-sky-500/10 text-sky-100 transition hover:bg-sky-500/20 disabled:opacity-50"
+            aria-label="Recarregar save"
+            title="Puxar o progresso mais recente"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${reloading ? "animate-spin" : ""}`}
+              aria-hidden
+            />
+          </button>
         </div>
         <div className="flex gap-2">
           <button
@@ -129,6 +170,11 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
             Apagar
           </button>
         </div>
+        {status && (
+          <p className="text-center text-xs text-sky-300" role="status">
+            {status}
+          </p>
+        )}
         {error && (
           <p className="text-center text-xs text-rose-400" role="alert">
             {error}

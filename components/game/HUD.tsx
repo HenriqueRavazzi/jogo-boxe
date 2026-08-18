@@ -22,8 +22,14 @@ import {
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
 import { formatSciNumber } from "@/lib/formatNumber";
+import {
+  describeSkillMapAffinity,
+  formatSkillMapMulBadge,
+  getSkillMapDamageMul,
+} from "@/lib/skillMapAffinity";
 import { getMasteryCardInfo, MASTERY_AURA_RADIUS_MULT, MASTERY_SHADOW_CLONE_COUNT } from "@/lib/skillMastery";
 import { getExtraActiveRunSkillSlots } from "@/lib/skillTree";
+import type { DimensionId } from "@/src/game/prestigeVisual";
 import {
   AURA_ELEMENT_LABELS,
   AURA_LIGHTNING_SLOW,
@@ -219,6 +225,49 @@ function formatBonusPct(mul: number, invert = false): string | null {
   return pct === 0 ? null : `+${pct}%`;
 }
 
+function attachMapAffinityRows(
+  key: SpecialSkillKey,
+  rows: StatRow[],
+  dim: DimensionId,
+): StatRow[] {
+  const insert = (extra: StatRow[]) => [
+    ...rows.slice(0, 2),
+    ...extra,
+    ...rows.slice(2),
+  ];
+  if (key === "aura") {
+    const extras: StatRow[] = [];
+    for (const sk of SPECIAL_SKILL_KEYS) {
+      if (sk === "aura") continue;
+      const info = describeSkillMapAffinity(sk, dim);
+      if (!info.summary) continue;
+      extras.push({
+        label: `Mapa · ${SKILL_UI[sk].name}`,
+        value: info.summary,
+        accent: info.mul > 1,
+      });
+    }
+    if (extras.length === 0) {
+      extras.push({
+        label: "Mapa",
+        value: `Neutro em ${describeSkillMapAffinity("aura", dim).mapName}`,
+      });
+    }
+    return insert(extras);
+  }
+  const info = describeSkillMapAffinity(key, dim);
+  const row: StatRow = info.summary
+    ? {
+        label: "Mapa",
+        value: info.reason
+          ? `${info.summary} · ${info.reason}`
+          : info.summary,
+        accent: info.mul > 1,
+      }
+    : { label: "Mapa", value: `Neutro em ${info.mapName}` };
+  return insert([row]);
+}
+
 function buildRunBonusNote(bonus: MatchSkillBonusState): string | null {
   const parts: string[] = [];
   const dmg = formatBonusPct(bonus.damageMul);
@@ -261,6 +310,10 @@ function buildSkillStatRows(
   const matchBuffs = useArenaStore.getState().matchBuffs;
   const matchSkillBonuses = useArenaStore.getState().matchSkillBonuses;
   const punchBase = stats.damage * matchBuffs.damageMultiplier;
+  const mapMul = getSkillMapDamageMul(
+    key,
+    useArenaStore.getState().activeVisualDimension,
+  );
   const skillPunchBase = punchBase * skillDmgMul;
   const skillDmgPct = Math.round((skillDmgMul - 1) * 100);
   const skillDmgNote =
@@ -273,7 +326,7 @@ function buildSkillStatRows(
     const levelMul = 1 + level * 0.15;
     const levelPct = Math.round((levelMul - 1) * 100);
     const burnPerStack =
-      skillPunchBase * 0.2 * levelMul * bonus.damageMul;
+      skillPunchBase * 0.2 * levelMul * bonus.damageMul * mapMul;
     const maxStacks = Math.max(
       1,
       1 +
@@ -333,7 +386,7 @@ function buildSkillStatRows(
         { label: "Raio da onda", value: `${Math.round(range)} px` },
         {
           label: "Vulnerabilidade",
-          value: "+30% dano recebido",
+          value: `+${Math.round((1.3 - 1) * mapMul * 100)}% dano recebido`,
           accent: true,
         },
       ],
@@ -360,7 +413,8 @@ function buildSkillStatRows(
         skills.lightning.hits + Math.max(0, bonus.extraHits),
       ) *
       prestigeMul *
-      bonus.damageMul;
+      bonus.damageMul *
+      mapMul;
     const boltCount = 1 + Math.max(0, bonus.extraProjectiles);
     return {
       rows: [
@@ -436,10 +490,10 @@ function buildSkillStatRows(
           bonus,
           prestigeMul,
           powers.fire,
-        ) * fireDpsMul
+        ) * fireDpsMul * getSkillMapDamageMul("fire", arena.activeVisualDimension)
       : 0;
     const stunInterval = powers.ice
-      ? getAuraIceStunIntervalMs(skills.aura.pulse, bonus, prestigeMul)
+      ? getAuraIceStunIntervalMs(bonus)
       : 0;
     const shadowBurst = powers.shadow
       ? getAuraShadowBurstDamage(
@@ -449,10 +503,10 @@ function buildSkillStatRows(
           bonus,
           prestigeMul,
           powers.shadow,
-        )
+        ) * getSkillMapDamageMul("shadow", arena.activeVisualDimension)
       : 0;
     const shadowInterval = powers.shadow
-      ? getAuraShadowBurstIntervalMs(skills.aura.pulse, bonus, prestigeMul)
+      ? getAuraShadowBurstIntervalMs(bonus)
       : 0;
     const lightningSlowPct = Math.round(
       AURA_LIGHTNING_SLOW *
@@ -596,7 +650,7 @@ function buildSkillStatRows(
         { label: "Nível in-run", value: String(level) },
         {
           label: "Poder do clone",
-          value: `${Math.round(ratio * 100)}% dos stats`,
+          value: `${Math.round(ratio * 100 * mapMul)}% dos stats`,
           accent: true,
         },
         {
@@ -633,7 +687,8 @@ function buildSkillStatRows(
       STONE_QUAKE_DAMAGE_RATIO *
       (1 + level * 0.12) *
       (1 + skills.stone.damage * 0.08 * prestigeMul) *
-      bonus.damageMul;
+      bonus.damageMul *
+      mapMul;
     const debuffMs = Math.round(
       (STONE_DEBUFF_BASE_MS + skills.stone.duration * 800 * prestigeMul) *
         bonus.durationMul,
@@ -683,7 +738,8 @@ function buildSkillStatRows(
       VENDAVAL_DAMAGE_RATIO *
       (1 + level * 0.1) *
       (1 + skills.vendaval.damage * 0.08 * prestigeMul) *
-      bonus.damageMul;
+      bonus.damageMul *
+      mapMul;
     const cycleMs = Math.max(
       5_000,
       (7_500 - skills.vendaval.cooldown * 200 * prestigeMul) *
@@ -735,12 +791,12 @@ function buildSkillStatRows(
       { label: "Alcance", value: "Só no alcance de ataque" },
       {
         label: "Dano por salto",
-        value: `${Math.round(bouncePct * 100)}% do soco`,
+        value: `${Math.round(bouncePct * mapMul * 100)}% do soco`,
         accent: true,
       },
       {
         label: "Com Dano Skills",
-        value: `${formatSciNumber(skillPunchBase * bouncePct)} (aprox.)`,
+        value: `${formatSciNumber(skillPunchBase * bouncePct * mapMul)} (aprox.)`,
       },
     ],
     levelBonusNote: [
@@ -764,6 +820,7 @@ function SkillDetailPanel({
   const matchSkillMastery = useArenaStore((s) => s.matchSkillMastery);
   const matchBuffs = useArenaStore((s) => s.matchBuffs);
   const matchSkillBonuses = useArenaStore((s) => s.matchSkillBonuses);
+  const activeVisualDimension = useArenaStore((s) => s.activeVisualDimension);
   const pulse = useArenaStore((s) => s.activeSkillPulse);
   const gameClockMs = useArenaStore((s) => s.gameClockMs);
   const skills = useGameStore((s) => s.skills);
@@ -781,11 +838,16 @@ function SkillDetailPanel({
     gameClockMs,
     bonus.cooldownMul,
   );
-  const { rows, levelBonusNote, skillDmgNote } = buildSkillStatRows(
+  const { rows: rawRows, levelBonusNote, skillDmgNote } = buildSkillStatRows(
     skillKey,
     level,
     skillDmgMul,
     bonus,
+  );
+  const rows = attachMapAffinityRows(
+    skillKey,
+    rawRows,
+    activeVisualDimension,
   );
 
   const modeLabel =
@@ -913,6 +975,7 @@ export function HUD() {
   const matchSkills = useArenaStore((s) => s.matchSkills);
   const matchSkillMastery = useArenaStore((s) => s.matchSkillMastery);
   const matchSkillBonuses = useArenaStore((s) => s.matchSkillBonuses);
+  const activeVisualDimension = useArenaStore((s) => s.activeVisualDimension);
   const pulse = useArenaStore((s) => s.activeSkillPulse);
   const gameClockMs = useArenaStore((s) => s.gameClockMs);
   const skills = useGameStore((s) => s.skills);
@@ -1013,6 +1076,9 @@ export function HUD() {
               const level = matchSkills[key] ?? 0;
               const mastered = Boolean(matchSkillMastery[key]);
               const selected = selectedSkill === key;
+              const mapBadge = formatSkillMapMulBadge(
+                getSkillMapDamageMul(key, activeVisualDimension),
+              );
 
               return (
                 <button
@@ -1026,9 +1092,9 @@ export function HUD() {
                       ? "ring-2 ring-amber-300/80 ring-offset-2 ring-offset-black/60"
                       : "hover:brightness-110"
                   } ${mastered ? "ring-1 ring-amber-400/50" : ""}`}
-                  title={`${ui.name} · Nv. ${level}${mastered ? " · Master" : ""} · ver stats`}
+                  title={`${ui.name} · Nv. ${level}${mastered ? " · Master" : ""}${mapBadge ? ` · mapa ${mapBadge}` : ""} · ver stats`}
                   aria-expanded={selected}
-                  aria-label={`${ui.name}, nível ${level}${mastered ? ", maestria ativa" : ""}. Clique para ver detalhes.`}
+                  aria-label={`${ui.name}, nível ${level}${mastered ? ", maestria ativa" : ""}${mapBadge ? `, mapa ${mapBadge}` : ""}. Clique para ver detalhes.`}
                 >
                   <CooldownRing
                     progress={info.progress}
@@ -1048,6 +1114,17 @@ export function HUD() {
                   <span className="absolute -bottom-1 rounded bg-black/80 px-1 text-[8px] font-bold tabular-nums text-zinc-200">
                     {level}
                   </span>
+                  {mapBadge && (
+                    <span
+                      className={`absolute -left-1 top-1/2 z-[2] -translate-y-1/2 rounded px-0.5 text-[7px] font-black tabular-nums ${
+                        mapBadge.startsWith("+")
+                          ? "bg-emerald-500/90 text-emerald-950"
+                          : "bg-rose-500/90 text-rose-50"
+                      }`}
+                    >
+                      {mapBadge}
+                    </span>
+                  )}
                 </button>
               );
             })}

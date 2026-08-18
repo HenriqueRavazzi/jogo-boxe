@@ -9,6 +9,8 @@ import {
   DEFAULT_MATCH_SKILL_BONUS,
   type MatchSkillBonuses,
 } from "@/lib/matchUpgrades";
+import { getSkillMapDamageMul } from "@/lib/skillMapAffinity";
+import type { DimensionId } from "@/src/game/prestigeVisual";
 import { useGameStore } from "@/store/useGameStore";
 
 export const ACTIVE_SKILL_CYCLE_MS = 20_000;
@@ -251,6 +253,8 @@ export type RunActiveSkillsInput = {
   effectiveRange: number;
   /** Bônus in-run acumulados das cartas de raridade. */
   matchSkillBonuses?: MatchSkillBonuses;
+  /** Tema do mapa — fogo/gelo/raio etc. ganham ou perdem dano. */
+  visualDimension?: DimensionId;
 };
 
 export type RunActiveSkillsResult = {
@@ -273,6 +277,7 @@ function applyIceWave(
   now: number,
   freezeDurationMs: number,
   iceRadius: number,
+  vulnerabilityMul = ICE_VULNERABILITY_MULTIPLIER,
 ): number {
   let hit = 0;
   for (const enemy of enemies) {
@@ -281,7 +286,7 @@ function applyIceWave(
     if (dist > iceRadius + enemy.radius) continue;
     enemy.applyStatus("freeze", now + freezeDurationMs, {
       vulnerable: true,
-      damageTakenMultiplier: ICE_VULNERABILITY_MULTIPLIER,
+      damageTakenMultiplier: vulnerabilityMul,
     });
     hit += 1;
   }
@@ -365,7 +370,12 @@ export function runActiveSkills(
     pulseState,
     effectiveRange,
     matchSkillBonuses,
+    visualDimension = 0,
   } = input;
+  const iceMapMul = getSkillMapDamageMul("ice", visualDimension);
+  const lightningMapMul = getSkillMapDamageMul("lightning", visualDimension);
+  const stoneMapMul = getSkillMapDamageMul("stone", visualDimension);
+  const vendavalMapMul = getSkillMapDamageMul("vendaval", visualDimension);
 
   const next: ActiveSkillPulseState = { ...pulseState };
   let questFreeze = 0;
@@ -426,6 +436,7 @@ export function runActiveSkills(
         now,
         freezeDurationMs,
         iceRadius,
+        1 + (ICE_VULNERABILITY_MULTIPLIER - 1) * iceMapMul,
       );
       skillHitsLanded += questFreeze;
       newSkillVfx.push({
@@ -477,7 +488,8 @@ export function runActiveSkills(
             skills.lightning.hits + Math.max(0, lightningBonus.extraHits),
           ) *
           prestigeMul *
-          lightningBonus.damageMul;
+          lightningBonus.damageMul *
+          lightningMapMul;
 
         for (const { enemy: target } of livingSorted) {
           const dx = target.x - playerX;
@@ -549,7 +561,8 @@ export function runActiveSkills(
           STONE_QUAKE_DAMAGE_RATIO *
           (1 + matchLevel * 0.12) *
           (1 + skills.stone.damage * 0.08 * prestigeMul) *
-          stoneBonus.damageMul;
+          stoneBonus.damageMul *
+          stoneMapMul;
 
         const debuffMs = Math.round(
           (STONE_DEBUFF_BASE_MS +
@@ -627,7 +640,8 @@ export function runActiveSkills(
           VENDAVAL_DAMAGE_RATIO *
           (1 + matchLevel * 0.1) *
           (1 + skills.vendaval.damage * 0.08 * prestigeMul) *
-          vendavalBonus.damageMul;
+          vendavalBonus.damageMul *
+          vendavalMapMul;
 
         for (const enemy of inRange) {
           enemy.applyVacuumPull(

@@ -44,7 +44,8 @@ import {
 } from "@/src/game/systems/ShadowCloneSystem";
 import type { MatchSkillsData } from "@/db/schema";
 import { DEFAULT_MATCH_SKILLS } from "@/db/schema";
-import { getMatchGlobals } from "@/lib/balanceConfig";
+import { getSkillMapDamageMul } from "@/lib/skillMapAffinity";
+import type { DimensionId } from "@/src/game/prestigeVisual";
 import {
   DEFAULT_MATCH_SKILL_BONUS,
   type MatchSkillBonuses,
@@ -72,7 +73,7 @@ import {
   type MasteryGroundZone,
   type MatchSkillMasteryData,
 } from "@/lib/skillMastery";
-import { LIGHTNING_STUN_MS } from "@/src/game/entities/Enemy";
+import { LIGHTNING_STUN_MS, ICE_VULNERABILITY_MULTIPLIER } from "@/src/game/entities/Enemy";
 
 export type MatchBuffsInput = {
   attackSpeed: number;
@@ -184,6 +185,8 @@ export type CombatSystemInput = {
   masteryGroundZones?: MasteryGroundZone[];
   /** Primário da Aura nesta run (100%); escolhido ao equipar in-game. */
   matchAuraPrimaryElement?: import("@/db/schema").AuraElementKey | null;
+  /** Tema visual do mapa (vantagem/desvantagem elemental). */
+  visualDimension?: DimensionId;
 };
 
 export type CombatSystemResult = {
@@ -369,9 +372,17 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     matchSkillMastery: inputMastery = DEFAULT_MATCH_SKILL_MASTERY,
     masteryGroundZones: inputMasteryZones = [],
     matchAuraPrimaryElement: inputAuraPrimary = null,
+    visualDimension: inputVisualDimension = 0,
   } = input;
 
   let playerRotation = inputRotation;
+  const visualDimension = inputVisualDimension;
+  const fireMapMul = getSkillMapDamageMul("fire", visualDimension);
+  const iceMapMul = getSkillMapDamageMul("ice", visualDimension);
+  const lightningMapMul = getSkillMapDamageMul("lightning", visualDimension);
+  const ricochetMapMul = getSkillMapDamageMul("ricochet", visualDimension);
+  const vendavalMapMul = getSkillMapDamageMul("vendaval", visualDimension);
+  const shadowMapMul = getSkillMapDamageMul("shadow", visualDimension);
   const mastery = inputMastery;
   let masteryGroundZones: MasteryGroundZone[] = inputMasteryZones.filter(
     (z) => z.kind === "fissure" || z.expiresAt > now,
@@ -490,7 +501,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         const shatterDmg =
           baseDamage *
           matchBuffs.damageMultiplier *
-          masteryStat("ice", "iceShatterDamageRatio", MASTERY_ICE_SHATTER_DAMAGE_RATIO);
+          masteryStat("ice", "iceShatterDamageRatio", MASTERY_ICE_SHATTER_DAMAGE_RATIO) *
+          iceMapMul;
         for (const other of enemies) {
           if (other.isDead || other.id === enemy.id) continue;
           const dist = Math.hypot(other.x - enemy.x, other.y - enemy.y);
@@ -498,7 +510,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           other.takeDamage(shatterDmg, now);
           other.applyStatus("freeze", now + masteryStat("ice", "iceShatterFreezeMs", MASTERY_ICE_SHATTER_FREEZE_MS), {
             vulnerable: true,
-            damageTakenMultiplier: 1.3,
+            damageTakenMultiplier:
+              1 + (ICE_VULNERABILITY_MULTIPLIER - 1) * iceMapMul,
           });
         }
       }
@@ -535,6 +548,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     pulseState: inputPulse,
     effectiveRange,
     matchSkillBonuses,
+    visualDimension,
   });
   skillVfx.push(...activeSkills.newSkillVfx);
   ricochetWindowActive = isRicochetActive(activeSkills.pulseState, now);
@@ -575,7 +589,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         baseDamage *
         matchBuffs.damageMultiplier *
         skillDamageMult *
-        masteryStat("vendaval", "vendavalImplosionDamageRatio", MASTERY_VENDAVAL_IMPLOSION_DAMAGE_RATIO);
+        masteryStat("vendaval", "vendavalImplosionDamageRatio", MASTERY_VENDAVAL_IMPLOSION_DAMAGE_RATIO) *
+        vendavalMapMul;
       for (const enemy of enemies) {
         if (enemy.isDead) continue;
         const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
@@ -609,6 +624,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     auraPrimaryElement: inputAuraPrimary,
     masteryAbsoluteDomain: mastery.aura,
     maxAuraRadius: effectiveRange,
+    visualDimension,
   });
   skillVfx.push(...aura.newSkillVfx);
   if (aura.questFreeze > 0) {
@@ -756,7 +772,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
           baseDamage *
           matchBuffs.damageMultiplier *
           skillDamageMult *
-          masteryStat("lightning", "teslaDpsRatio", MASTERY_TESLA_DPS_RATIO),
+          masteryStat("lightning", "teslaDpsRatio", MASTERY_TESLA_DPS_RATIO) *
+          lightningMapMul,
       });
     }
 
@@ -818,7 +835,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     now,
     dt,
     playerMaxHp: statsForClone.maxHp,
-    playerDamage: statsForClone.damage,
+    playerDamage: statsForClone.damage * shadowMapMul,
     playerRange: statsForClone.range,
     playerAttackCooldownMs: statsForClone.attackCooldownMs,
     playerArms: statsForClone.arms,
@@ -1293,7 +1310,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             damage *
             AURA_RICOCHET_SPLASH_RATIO *
             aura.elementPowers.ricochet *
-            (matchSkillBonuses?.aura.ricochetSplashMul ?? 1);
+            (matchSkillBonuses?.aura.ricochetSplashMul ?? 1) *
+            ricochetMapMul;
           for (const other of living) {
             if (other.isDead || other.id === enemy.id) continue;
             const dist = Math.hypot(other.x - player.x, other.y - player.y);
@@ -1313,7 +1331,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
         // Ricochete ativo: cadeia a partir do alvo do soco (1º alvo = dano cheio do soco)
         if (ricochetWindowActive && maxBounces > 1) {
-          const baseBounceDamage = skillPunchBase * bounceDamageMult;
+          const baseBounceDamage = skillPunchBase * bounceDamageMult * ricochetMapMul;
           const bounceChain = chainRicochet(
             living,
             enemy.x,
@@ -1394,7 +1412,8 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             skillPunchBase *
             0.2 *
             (1 + fireLevel * 0.15) *
-            fireBonus.damageMul;
+            fireBonus.damageMul *
+            fireMapMul;
           const burnDurationMs = Math.round(
             (2000 + skills.fire.duration * 500) * fireBonus.durationMul,
           );

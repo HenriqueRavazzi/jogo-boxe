@@ -362,6 +362,8 @@ export type GameStoreState = {
    * `skillId` / `statKey` são strings validadas em runtime.
    */
   upgradeSkillStat: (skillId: string, statKey: string) => boolean;
+  /** Compra o máximo de níveis que o saldo permite neste atributo. Retorna quantos comprou. */
+  upgradeSkillStatMax: (skillId: string, statKey: string) => number;
   getSkillStatUpgradeCost: (skillId: string, statKey: string) => number;
   /**
    * Respec: zera stats granulares da árvore roxa e devolve diamantes roxos gastos.
@@ -920,6 +922,27 @@ export function getPurpleSkillSpentForLevel(
     total += getPurpleSkillCostAt(i, prestigeLevel);
   }
   return total;
+}
+
+/** Quantos níveis cabem no saldo até o teto, e o custo total. */
+export function getPurpleSkillMaxBuy(
+  currentLevel: number,
+  prestigeLevel: number,
+  diamonds: number,
+): { levels: number; totalCost: number } {
+  let level = Math.max(0, Math.floor(currentLevel));
+  let remaining = Math.max(0, diamonds);
+  let levels = 0;
+  let totalCost = 0;
+  while (level < MAX_PURPLE_SKILL_STAT_LEVEL) {
+    const cost = getPurpleSkillCostAt(level, prestigeLevel);
+    if (remaining < cost) break;
+    remaining -= cost;
+    totalCost += cost;
+    level += 1;
+    levels += 1;
+  }
+  return { levels, totalCost };
 }
 
 /** Fração devolvida no respec da árvore roxa (1 = 100%). */
@@ -2195,6 +2218,45 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       void syncWithDB();
     });
     return true;
+  },
+
+  upgradeSkillStatMax: (skillId, statKey) => {
+    if (!isSkillUpgradeType(skillId) || !isSkillStatKey(skillId, statKey)) {
+      return 0;
+    }
+    if (!get().unlockedSkills[skillId]) return 0;
+
+    const prestigeLevel = get().prestigeLevel;
+    const startLevel = getSkillStatLevel(get().skills, skillId, statKey);
+    const { levels, totalCost } = getPurpleSkillMaxBuy(
+      startLevel,
+      prestigeLevel,
+      get().purpleDiamonds,
+    );
+    if (levels <= 0) return 0;
+
+    set((s) => {
+      const prevSkill = s.skills[skillId] as Record<string, number>;
+      return {
+        purpleDiamonds: s.purpleDiamonds - totalCost,
+        skills: {
+          ...s.skills,
+          [skillId]: {
+            ...prevSkill,
+            [statKey]: startLevel + levels,
+          },
+        },
+      };
+    });
+
+    get().progressMilestoneQuests([
+      { type: "purple_upgrades_bought", amount: levels },
+    ]);
+
+    void import("@/lib/syncWithDB").then(({ syncWithDB }) => {
+      void syncWithDB();
+    });
+    return levels;
   },
 
   getPurpleSkillInvestment: () =>

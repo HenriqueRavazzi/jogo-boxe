@@ -275,6 +275,12 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         matchSkillMastery: arena.matchSkillMastery,
         masteryGroundZones: arena.masteryGroundZones ?? [],
         matchAuraPrimaryElement: arena.matchAuraPrimaryElement,
+        visualDimension: resolveVisualDimension({
+          runMode: arena.runMode,
+          timeAliveMs: arena.timeAlive * 1000,
+          runStageNumber: arena.runStageNumber,
+          prestigeLevel: game.prestigeLevel ?? 0,
+        }),
       });
 
       const livingEnemies = combat.enemies

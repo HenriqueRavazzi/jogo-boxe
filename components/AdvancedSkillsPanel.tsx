@@ -9,6 +9,7 @@ import {
 import {
   Check,
   ChevronRight,
+  ChevronsUp,
   Circle,
   Coins,
   Crosshair,
@@ -34,7 +35,7 @@ import {
   getSkillMetaCap,
   type SkillUpgradeType,
 } from "@/db/schema";
-import { formatSciNumber } from "@/lib/formatNumber";
+import { getSkillStatPreview } from "@/lib/skillStatPreview";
 import { getMatchSkillMaxLevel } from "@/lib/matchUpgrades";
 import {
   areAllSkillStatsMaxed,
@@ -43,10 +44,10 @@ import {
 import { syncWithDB } from "@/lib/syncWithDB";
 import {
   AURA_ELEMENT_LABELS,
-  getAuraRegenMaxHpRatio,
   listUnlockedAuraElements,
 } from "@/src/game/systems/AuraSystem";
 import {
+  getPurpleSkillMaxBuy,
   getPurpleSkillSpentForLevel,
   getSkillStatLevel,
   useGameStore,
@@ -216,10 +217,6 @@ const CARDS: SkillCardDef[] = [
         label: "Aumentar Poder",
         icon: <Flame className="h-4 w-4" aria-hidden />,
       },
-      pulse: {
-        label: "Acelerar Pulso",
-        icon: <Timer className="h-4 w-4" aria-hidden />,
-      },
       regen: {
         label: "Aumentar Regeneração",
         icon: <HeartPulse className="h-4 w-4" aria-hidden />,
@@ -287,7 +284,9 @@ function SkillDetailModal({
   const unlockedSkills = useGameStore((s) => s.unlockedSkills);
   const prestigeLevel = useGameStore((s) => s.prestigeLevel);
   const getPrestigeMultiplier = useGameStore((s) => s.getPrestigeMultiplier);
+  const getEffectiveStats = useGameStore((s) => s.getEffectiveStats);
   const upgradeSkillStat = useGameStore((s) => s.upgradeSkillStat);
+  const upgradeSkillStatMax = useGameStore((s) => s.upgradeSkillStatMax);
   const getSkillStatUpgradeCost = useGameStore(
     (s) => s.getSkillStatUpgradeCost,
   );
@@ -295,6 +294,8 @@ function SkillDetailModal({
   const matchMax = getMatchSkillMaxLevel(
     getSkillMetaCap(skills[card.type]),
   );
+  const prestigeMul = getPrestigeMultiplier();
+  const punchDamage = getEffectiveStats().damage;
   const statKeys = SKILL_STAT_KEYS[card.type];
   const invested = skillInvested(skills, card.type, prestigeLevel);
   const auraElements =
@@ -308,9 +309,26 @@ function SkillDetailModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const closeIfReadyForMastery = () => {
+    const s = useGameStore.getState();
+    if (
+      areAllSkillStatsMaxed(s.skills, card.type) &&
+      !s.skillMasteryUnlocked[card.type]
+    ) {
+      onClose();
+    }
+  };
+
   const upgradeStat = async (statKey: string) => {
     if (!upgradeSkillStat(card.type, statKey)) return;
     await syncWithDB();
+    closeIfReadyForMastery();
+  };
+
+  const maximizeStat = async (statKey: string) => {
+    if (upgradeSkillStatMax(card.type, statKey) <= 0) return;
+    await syncWithDB();
+    closeIfReadyForMastery();
   };
 
   return (
@@ -404,6 +422,21 @@ function SkillDetailModal({
               icon: <Gem className="h-4 w-4" aria-hidden />,
             };
 
+            const maxBuy = getPurpleSkillMaxBuy(
+              level,
+              prestigeLevel,
+              purpleDiamonds,
+            );
+            const canMaximize = !atMax && maxBuy.levels > 0;
+            const preview = getSkillStatPreview(
+              card.type,
+              statKey,
+              level,
+              prestigeMul,
+              punchDamage,
+              skills,
+            );
+
             return (
               <li
                 key={statKey}
@@ -435,33 +468,65 @@ function SkillDetailModal({
                   </span>
                 </div>
                 <StatProgressBar level={level} />
-                {card.type === "aura" && statKey === "regen" && (
-                  <p className="mt-1.5 text-[11px] text-zinc-500">
-                    {(
-                      getAuraRegenMaxHpRatio(level, getPrestigeMultiplier()) *
-                      100
-                    ).toLocaleString("pt-BR", {
-                      maximumFractionDigits: 2,
-                      minimumFractionDigits: 1,
-                    })}
-                    % da vida máxima por segundo (com Aura ativa na run)
-                  </p>
-                )}
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                      Atual · {preview.label}
+                    </p>
+                    <p className="mt-0.5 font-semibold tabular-nums text-zinc-100">
+                      {preview.current}
+                    </p>
+                  </div>
+                  <div
+                    className={`rounded-lg border px-2 py-1.5 ${
+                      preview.next
+                        ? "border-fuchsia-400/30 bg-fuchsia-500/10"
+                        : "border-white/10 bg-black/20"
+                    }`}
+                  >
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                      {preview.next ? "Próximo nível" : "Teto"}
+                    </p>
+                    <p
+                      className={`mt-0.5 font-semibold tabular-nums ${
+                        preview.next ? "text-fuchsia-100" : "text-zinc-500"
+                      }`}
+                    >
+                      {preview.next ?? preview.current}
+                    </p>
+                  </div>
+                </div>
                 {atMax ? (
                   <div className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-500/15 px-2.5 py-2 text-xs font-bold text-amber-100">
                     <Check className="h-3.5 w-3.5" aria-hidden />
                     Nível máximo ({MAX_PURPLE_SKILL_STAT_LEVEL})
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={!canUpgrade}
-                    onClick={() => void upgradeStat(statKey)}
-                    className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-violet-400/50 bg-violet-500/25 px-2.5 py-2 text-xs font-bold text-violet-50 transition hover:bg-violet-500/40 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Gem className="h-3.5 w-3.5 text-violet-300" aria-hidden />
-                    Upgrade · {formatSciNumber(cost)}
-                  </button>
+                  <div className="mt-2.5 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={!canUpgrade}
+                      onClick={() => void upgradeStat(statKey)}
+                      className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-violet-400/50 bg-violet-500/25 px-2.5 py-2 text-xs font-bold text-violet-50 transition hover:bg-violet-500/40 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Gem className="h-3.5 w-3.5 text-violet-300" aria-hidden />
+                      Upgrade · {formatSciNumber(cost)}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canMaximize}
+                      onClick={() => void maximizeStat(statKey)}
+                      title={
+                        canMaximize
+                          ? `Comprar ${maxBuy.levels} nível(is) por ${formatSciNumber(maxBuy.totalCost)}`
+                          : "Diamantes insuficientes"
+                      }
+                      className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-fuchsia-400/45 bg-fuchsia-500/20 px-2.5 py-2 text-xs font-bold text-fuchsia-50 transition hover:bg-fuchsia-500/35 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronsUp className="h-3.5 w-3.5" aria-hidden />
+                      Maximizar · {maxBuy.levels || 0}
+                    </button>
+                  </div>
                 )}
               </li>
             );
@@ -577,6 +642,12 @@ export function AdvancedSkillsPanel({
   );
   const resetSkillTree = useGameStore((s) => s.resetSkillTree);
   const enforcePurpleSkillCap = useGameStore((s) => s.enforcePurpleSkillCap);
+  const skillMasteryUnlocked = useGameStore((s) => s.skillMasteryUnlocked);
+  const canUnlockSkillMastery = useGameStore((s) => s.canUnlockSkillMastery);
+  const unlockSkillMastery = useGameStore((s) => s.unlockSkillMastery);
+  const getSkillMasteryUnlockCost = useGameStore(
+    (s) => s.getSkillMasteryUnlockCost,
+  );
 
   const selectedCard =
     selected != null ? CARDS.find((c) => c.type === selected) ?? null : null;
@@ -590,6 +661,11 @@ export function AdvancedSkillsPanel({
 
   const unlock = async (type: SkillUpgradeType) => {
     if (!unlockAdvancedSkill(type)) return;
+    await syncWithDB();
+  };
+
+  const unlockMastery = async (type: SkillUpgradeType) => {
+    if (!unlockSkillMastery(type)) return;
     await syncWithDB();
   };
 
@@ -640,6 +716,11 @@ export function AdvancedSkillsPanel({
           );
           const maxTotal =
             SKILL_STAT_KEYS[card.type].length * MAX_PURPLE_SKILL_STAT_LEVEL;
+          const masteryReady =
+            areAllSkillStatsMaxed(skills, card.type) &&
+            !skillMasteryUnlocked[card.type];
+          const masteryCanBuy = canUnlockSkillMastery(card.type);
+          const masteryCost = getSkillMasteryUnlockCost();
 
           if (!unlocked) {
             const mobsOk = totalMobsKilled >= req.requiredMobs;
@@ -729,12 +810,50 @@ export function AdvancedSkillsPanel({
           }
 
           return (
-            <button
+            <div
               key={card.type}
-              type="button"
-              onClick={() => setSelected(card.type)}
-              className="flex flex-col gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-3 py-2.5 text-left transition hover:border-violet-300/50 hover:bg-violet-500/20"
+              className="relative flex flex-col overflow-hidden rounded-xl border border-violet-400/30 bg-violet-500/10"
             >
+              {masteryReady && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-zinc-950/80 px-3 backdrop-blur-[2px]">
+                  <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-200">
+                    <Crown className="h-3.5 w-3.5" aria-hidden />
+                    Atributos no máximo
+                  </p>
+                  <button
+                    type="button"
+                    disabled={!masteryCanBuy}
+                    onClick={() => void unlockMastery(card.type)}
+                    className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-bold transition ${
+                      masteryCanBuy
+                        ? "border-amber-400/60 bg-amber-500/30 text-amber-50 hover:bg-amber-500/45"
+                        : "cursor-not-allowed border-zinc-600/60 bg-zinc-800/80 text-zinc-400"
+                    }`}
+                  >
+                    Liberar maestria
+                    <span className="inline-flex items-center gap-1 tabular-nums text-violet-200">
+                      <Gem className="h-3 w-3" aria-hidden />
+                      {formatSciNumber(masteryCost.purpleDiamonds)}
+                    </span>
+                    <span className="inline-flex items-center gap-1 tabular-nums text-amber-200">
+                      <Crown className="h-3 w-3" aria-hidden />
+                      {formatSciNumber(masteryCost.ascensionShards)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(card.type)}
+                    className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
+                  >
+                    Ver detalhes
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelected(card.type)}
+                className="flex flex-col gap-2 px-3 py-2.5 text-left transition hover:bg-violet-500/20"
+              >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="inline-flex items-center gap-1.5 text-sm font-bold text-violet-100">
@@ -762,7 +881,8 @@ export function AdvancedSkillsPanel({
                 <span className="font-semibold text-violet-200">Detalhes</span>
               </div>
               <StatProgressBar level={totalLevels} max={maxTotal} />
-            </button>
+              </button>
+            </div>
           );
         })}
       </div>

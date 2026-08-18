@@ -14,6 +14,8 @@ import {
   type MatchSkillBonuses,
   type SpecialSkillKey,
 } from "@/lib/matchUpgrades";
+import { getSkillMapDamageMul } from "@/lib/skillMapAffinity";
+import type { DimensionId } from "@/src/game/prestigeVisual";
 import type { ActiveSkillPulseState } from "@/src/game/systems/ActiveSkillsSystem";
 import type { SkillVfxEffect } from "@/src/game/systems/ActiveSkillsSystem";
 import {
@@ -97,6 +99,8 @@ export type RunAuraInput = {
   masteryAbsoluteDomain?: boolean;
   /** Alcance de ataque do herói — a Aura nunca ultrapassa este raio. */
   maxAuraRadius?: number;
+  /** Tema do mapa — sinergias herdam vantagem/desvantagem do elemento. */
+  visualDimension?: DimensionId;
 };
 
 export type RunAuraResult = {
@@ -308,25 +312,15 @@ export function getAuraNeutralDps(
 }
 
 export function getAuraIceStunIntervalMs(
-  metaPulse: number,
   bonus: MatchSkillBonusState = DEFAULT_MATCH_SKILL_BONUS,
-  prestigeMul = 1,
 ): number {
-  const reduced =
-    AURA_ICE_STUN_INTERVAL_MS -
-    Math.max(0, metaPulse) * 120 * prestigeMul;
-  return Math.max(1_000, reduced * bonus.cooldownMul);
+  return Math.max(1_000, AURA_ICE_STUN_INTERVAL_MS * bonus.cooldownMul);
 }
 
 export function getAuraShadowBurstIntervalMs(
-  metaPulse: number,
   bonus: MatchSkillBonusState = DEFAULT_MATCH_SKILL_BONUS,
-  prestigeMul = 1,
 ): number {
-  const reduced =
-    AURA_SHADOW_BURST_INTERVAL_MS -
-    Math.max(0, metaPulse) * 100 * prestigeMul;
-  return Math.max(1_200, reduced * bonus.cooldownMul);
+  return Math.max(1_200, AURA_SHADOW_BURST_INTERVAL_MS * bonus.cooldownMul);
 }
 
 export function getAuraShadowBurstDamage(
@@ -387,7 +381,10 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
     auraPrimaryElement,
     masteryAbsoluteDomain = false,
     maxAuraRadius,
+    visualDimension = 0,
   } = input;
+  const fireMapMul = getSkillMapDamageMul("fire", visualDimension);
+  const shadowMapMul = getSkillMapDamageMul("shadow", visualDimension);
 
   const next: ActiveSkillPulseState = { ...pulseState };
   const newSkillVfx: SkillVfxEffect[] = [];
@@ -493,7 +490,7 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
         bonus,
         prestigeMul,
         elementPowers.fire,
-      ) * (matchSkillBonuses?.fire?.damageMul ?? 1);
+      ) * (matchSkillBonuses?.fire?.damageMul ?? 1) * fireMapMul;
     const tickDamage = dps * dt;
     if (tickDamage > 0) {
       for (const enemy of inAura) {
@@ -519,21 +516,14 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   // Gelo → stun periódico (duração escala com potência)
   if (activeElements.ice) {
     if (next.auraStunNextAt <= 0) {
-      next.auraStunNextAt = now + getAuraIceStunIntervalMs(
-        skills.aura.pulse,
-        bonus,
-        prestigeMul,
-      );
+      next.auraStunNextAt = now + getAuraIceStunIntervalMs(bonus);
     }
     if (now >= next.auraStunNextAt) {
-      next.auraStunNextAt =
-        now +
-        getAuraIceStunIntervalMs(skills.aura.pulse, bonus, prestigeMul);
+      next.auraStunNextAt = now + getAuraIceStunIntervalMs(bonus);
       next.auraPulseAt = now;
       if (inAura.length > 0) {
         const stunMs = Math.round(
           AURA_ICE_STUN_DURATION_MS *
-            (1 + skills.aura.pulse * 0.04 * prestigeMul) *
             elementPowers.ice *
             (matchSkillBonuses?.ice?.durationMul ?? 1),
         );
@@ -561,26 +551,21 @@ export function runAuraSystem(input: RunAuraInput): RunAuraResult {
   // Shadow → explosão periódica
   if (activeElements.shadow) {
     if (next.auraShadowNextAt <= 0) {
-      next.auraShadowNextAt = now + getAuraShadowBurstIntervalMs(
-        skills.aura.pulse,
-        bonus,
-        prestigeMul,
-      );
+      next.auraShadowNextAt = now + getAuraShadowBurstIntervalMs(bonus);
     }
     if (now >= next.auraShadowNextAt) {
-      next.auraShadowNextAt =
-        now +
-        getAuraShadowBurstIntervalMs(skills.aura.pulse, bonus, prestigeMul);
+      next.auraShadowNextAt = now + getAuraShadowBurstIntervalMs(bonus);
       next.auraShadowPulseAt = now;
       if (inAura.length > 0) {
-        const burst = getAuraShadowBurstDamage(
-          baseDamage,
-          auraLevel,
-          skills.aura.damage,
-          bonus,
-          prestigeMul,
-          elementPowers.shadow,
-        );
+        const burst =
+          getAuraShadowBurstDamage(
+            baseDamage,
+            auraLevel,
+            skills.aura.damage,
+            bonus,
+            prestigeMul,
+            elementPowers.shadow,
+          ) * shadowMapMul;
         for (const enemy of inAura) {
           enemy.takeDamage(burst, now);
           skillDamageDealt += burst * enemy.getDamageTakenMultiplier(now);

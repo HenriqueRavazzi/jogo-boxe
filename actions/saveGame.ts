@@ -230,6 +230,41 @@ export async function unlockSave(
   }
 }
 
+/** Lê o progresso mais recente do save autenticado (por UUID). */
+export async function loadSaveById(saveId: string): Promise<{
+  ok: boolean;
+  id?: string;
+  saveName?: string;
+  saveData?: SaveData;
+  error?: string;
+}> {
+  if (!isSaveId(saveId)) {
+    return { ok: false, error: "Save inválido" };
+  }
+
+  try {
+    const rows = await db
+      .select()
+      .from(gameSaves)
+      .where(eq(gameSaves.id, saveId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return { ok: false, error: "Save não encontrado" };
+    }
+
+    return {
+      ok: true,
+      id: row.id,
+      saveName: row.saveName,
+      saveData: mergeSaveRow(row),
+    };
+  } catch (error) {
+    console.error("[loadSaveById]", error);
+    return { ok: false, error: "Falha ao recarregar save" };
+  }
+}
+
 /** Persiste o progresso no save autenticado (por UUID). */
 export async function saveGame(
   saveId: string,

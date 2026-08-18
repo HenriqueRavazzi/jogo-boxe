@@ -45,10 +45,11 @@ export type LightningSkillStats = {
   cooldown: number;
 };
 
-/** Aura: raio da área, poder (DPS), pulso (intervalo de gelo/sombra) e regen de HP. */
+/** Aura: raio da área, poder (DPS) e regen de HP. */
 export type AuraSkillStats = {
   radius: number;
   damage: number;
+  /** @deprecated Sem upgrade; campo legado no save. */
   pulse: number;
   /** Regeneração: % da vida máxima por segundo enquanto a Aura está na run. */
   regen: number;
@@ -142,7 +143,7 @@ export const SKILL_STAT_KEYS = {
   ice: ["duration", "cooldown"],
   fire: ["damage", "duration"],
   lightning: ["damage", "hits", "cooldown"],
-  aura: ["radius", "damage", "pulse", "regen"],
+  aura: ["radius", "damage", "regen"],
   shadow: ["damage", "duration", "cooldown"],
   stone: ["damage", "duration", "cooldown"],
   vendaval: ["damage", "radius", "cooldown"],

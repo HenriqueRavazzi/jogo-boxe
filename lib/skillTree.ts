@@ -28,6 +28,19 @@ export type SkillNodeId =
   | "node_loot_magnet"
   | "node_spark_overdrive"
   | "node_haste"
+  | "node_spark_surge"
+  | "node_spark_tempest"
+  | "node_spark_apex"
+  | "node_jab_specialist"
+  | "node_iron_tempo"
+  | "node_prizefighter"
+  | "node_bloodsport"
+  | "node_crowd_control"
+  | "node_golden_blood"
+  | "node_precision_storm"
+  | "node_vampire_tempo"
+  | "node_heavyweight"
+  | "node_apex_predator"
   | "node_war_discipline"
   | "node_ring_master"
   | "node_adrenaline"
@@ -103,6 +116,19 @@ export const DEFAULT_SKILL_TREE: SkillTreeState = {
   node_loot_magnet: false,
   node_spark_overdrive: false,
   node_haste: false,
+  node_spark_surge: false,
+  node_spark_tempest: false,
+  node_spark_apex: false,
+  node_jab_specialist: false,
+  node_iron_tempo: false,
+  node_prizefighter: false,
+  node_bloodsport: false,
+  node_crowd_control: false,
+  node_golden_blood: false,
+  node_precision_storm: false,
+  node_vampire_tempo: false,
+  node_heavyweight: false,
+  node_apex_predator: false,
   node_war_discipline: false,
   node_ring_master: false,
   node_adrenaline: false,
@@ -388,8 +414,68 @@ export const SKILL_NODES: SkillNodeDef[] = [
     tier: 7,
     accent: "sky",
   },
+  {
+    id: "node_spark_surge",
+    name: "Spark Surge",
+    description: "+7% APS",
+    cost: 400_000,
+    requires: ["node_haste"],
+    branch: "spark",
+    tier: 8,
+    accent: "sky",
+  },
+  {
+    id: "node_spark_tempest",
+    name: "Spark Tempest",
+    description: "+9% APS",
+    cost: 700_000,
+    requires: ["node_spark_surge"],
+    branch: "spark",
+    tier: 9,
+    accent: "sky",
+  },
+  {
+    id: "node_spark_apex",
+    name: "Spark Apex",
+    description: "+11% APS",
+    cost: 1_150_000,
+    requires: ["node_spark_tempest"],
+    branch: "spark",
+    tier: 10,
+    accent: "sky",
+  },
 
   // ── Synergy (multi-ramo) ──────────────────────────────────
+  {
+    id: "node_jab_specialist",
+    name: "Jab Specialist",
+    description: "+18 Range · +6% APS",
+    cost: 22_000,
+    requires: ["node_range_focus", "node_spark_burst"],
+    branch: "synergy",
+    tier: 0,
+    accent: "sky",
+  },
+  {
+    id: "node_iron_tempo",
+    name: "Iron Tempo",
+    description: "+40 Max HP · +6% APS",
+    cost: 28_000,
+    requires: ["node_iron_guard", "node_spark_burst"],
+    branch: "synergy",
+    tier: 1,
+    accent: "rose",
+  },
+  {
+    id: "node_prizefighter",
+    name: "Prizefighter",
+    description: "+12% ouro · +40 Max HP",
+    cost: 38_000,
+    requires: ["node_gold_gloves", "node_hp_2"],
+    branch: "synergy",
+    tier: 2,
+    accent: "yellow",
+  },
   {
     id: "node_ring_master",
     name: "Ring Master",
@@ -397,8 +483,18 @@ export const SKILL_NODES: SkillNodeDef[] = [
     cost: 45_000,
     requires: ["node_range_focus", "node_gold_gloves"],
     branch: "synergy",
-    tier: 0,
+    tier: 3,
     accent: "yellow",
+  },
+  {
+    id: "node_bloodsport",
+    name: "Bloodsport",
+    description: "+14 Damage · +1% Life Steal",
+    cost: 55_000,
+    requires: ["node_dmg_2", "node_life_steal_1"],
+    branch: "synergy",
+    tier: 4,
+    accent: "amber",
   },
   {
     id: "node_adrenaline",
@@ -407,7 +503,27 @@ export const SKILL_NODES: SkillNodeDef[] = [
     cost: 60_000,
     requires: ["node_spark_fury", "node_life_steal_1"],
     branch: "synergy",
-    tier: 1,
+    tier: 5,
+    accent: "emerald",
+  },
+  {
+    id: "node_crowd_control",
+    name: "Crowd Control",
+    description: "+2 empurrão · +8% APS",
+    cost: 120_000,
+    requires: ["node_knockout", "node_extra_arm"],
+    branch: "synergy",
+    tier: 6,
+    accent: "silver",
+  },
+  {
+    id: "node_golden_blood",
+    name: "Golden Blood",
+    description: "+15% ouro · +1% Life Steal",
+    cost: 140_000,
+    requires: ["node_gold_gloves", "node_life_steal_2"],
+    branch: "synergy",
+    tier: 7,
     accent: "emerald",
   },
   {
@@ -418,7 +534,17 @@ export const SKILL_NODES: SkillNodeDef[] = [
     cost: 180_000,
     requires: ["node_crit_power", "node_thick_skin"],
     branch: "synergy",
-    tier: 2,
+    tier: 8,
+    accent: "yellow",
+  },
+  {
+    id: "node_precision_storm",
+    name: "Precision Storm",
+    description: "+5% chance crítica · +7% APS",
+    cost: 210_000,
+    requires: ["node_crit_chance", "node_spark_overdrive"],
+    branch: "synergy",
+    tier: 9,
     accent: "yellow",
   },
   {
@@ -428,18 +554,18 @@ export const SKILL_NODES: SkillNodeDef[] = [
     cost: 320_000,
     requires: ["node_dmg_3", "node_fortitude"],
     branch: "synergy",
-    tier: 3,
+    tier: 10,
     accent: "amber",
   },
   {
-    id: "node_immortal_champion",
-    name: "Immortal Champion",
-    description: "−8% dano recebido · +10 Damage · +1% Life Steal",
-    cost: 750_000,
-    requires: ["node_life_steal_3", "node_dmg_3", "node_spark_overdrive"],
+    id: "node_vampire_tempo",
+    name: "Vampire Tempo",
+    description: "+1% Life Steal · +7% APS",
+    cost: 420_000,
+    requires: ["node_life_steal_3", "node_haste"],
     branch: "synergy",
-    tier: 4,
-    accent: "silver",
+    tier: 11,
+    accent: "emerald",
   },
   {
     id: "node_skill_fortune",
@@ -449,8 +575,38 @@ export const SKILL_NODES: SkillNodeDef[] = [
     cost: 550_000,
     requires: ["node_adrenaline", "node_ring_master"],
     branch: "synergy",
-    tier: 5,
+    tier: 12,
     accent: "violet",
+  },
+  {
+    id: "node_heavyweight",
+    name: "Heavyweight",
+    description: "+100 Max HP · +16 Damage",
+    cost: 580_000,
+    requires: ["node_second_heart", "node_relentless"],
+    branch: "synergy",
+    tier: 13,
+    accent: "rose",
+  },
+  {
+    id: "node_immortal_champion",
+    name: "Immortal Champion",
+    description: "−8% dano recebido · +10 Damage · +1% Life Steal",
+    cost: 750_000,
+    requires: ["node_life_steal_3", "node_dmg_3", "node_spark_overdrive"],
+    branch: "synergy",
+    tier: 14,
+    accent: "silver",
+  },
+  {
+    id: "node_apex_predator",
+    name: "Apex Predator",
+    description: "+8% APS · −8% dano recebido",
+    cost: 1_200_000,
+    requires: ["node_spark_apex", "node_guardian_hide"],
+    branch: "synergy",
+    tier: 15,
+    accent: "silver",
   },
   {
     id: "node_skill_slot",
@@ -460,7 +616,7 @@ export const SKILL_NODES: SkillNodeDef[] = [
     requires: [],
     requiresFullBoard: true,
     branch: "synergy",
-    tier: 6,
+    tier: 16,
     accent: "violet",
   },
 ];
@@ -574,6 +730,9 @@ export function getLifeStealLevel(skillTree: SkillTreeState): number {
   if (skillTree.node_hemostasis) level += 1;
   if (skillTree.node_adrenaline) level += 1;
   if (skillTree.node_immortal_champion) level += 1;
+  if (skillTree.node_bloodsport) level += 1;
+  if (skillTree.node_golden_blood) level += 1;
+  if (skillTree.node_vampire_tempo) level += 1;
   return level;
 }
 
@@ -586,6 +745,9 @@ export function getLifeStealRatio(skillTree: SkillTreeState): number {
   if (skillTree.node_hemostasis) percent += 1.5;
   if (skillTree.node_adrenaline) percent += 1;
   if (skillTree.node_immortal_champion) percent += 1;
+  if (skillTree.node_bloodsport) percent += 1;
+  if (skillTree.node_golden_blood) percent += 1;
+  if (skillTree.node_vampire_tempo) percent += 1;
   return percent / 100;
 }
 
@@ -598,6 +760,7 @@ export function getSkillDamageTakenMultiplier(
   if (skillTree.node_guardian_hide) mul *= 0.9;
   if (skillTree.node_war_discipline) mul *= 0.92;
   if (skillTree.node_immortal_champion) mul *= 0.92;
+  if (skillTree.node_apex_predator) mul *= 0.92;
   return mul;
 }
 
@@ -605,6 +768,7 @@ export function getSkillCritChanceBonus(skillTree: SkillTreeState): number {
   let bonus = 0;
   if (skillTree.node_crit_chance) bonus += 0.08;
   if (skillTree.node_war_discipline) bonus += 0.06;
+  if (skillTree.node_precision_storm) bonus += 0.05;
   return bonus;
 }
 
@@ -616,7 +780,10 @@ export function getSkillCritDamageBonus(skillTree: SkillTreeState): number {
 }
 
 export function getSkillKnockbackBonus(skillTree: SkillTreeState): number {
-  return skillTree.node_knockout ? 3 : 0;
+  let bonus = 0;
+  if (skillTree.node_knockout) bonus += 3;
+  if (skillTree.node_crowd_control) bonus += 2;
+  return bonus;
 }
 
 export function getSkillGoldIncomeMultiplier(
@@ -625,6 +792,8 @@ export function getSkillGoldIncomeMultiplier(
   let mul = 1;
   if (skillTree.node_gold_gloves) mul *= 1.2;
   if (skillTree.node_ring_master) mul *= 1.15;
+  if (skillTree.node_prizefighter) mul *= 1.12;
+  if (skillTree.node_golden_blood) mul *= 1.15;
   return mul;
 }
 
@@ -647,6 +816,9 @@ export function getSkillTreeHpBonus(skillTree: SkillTreeState): number {
   if (skillTree.node_fortitude) bonus += 120;
   if (skillTree.node_second_heart) bonus += 150;
   if (skillTree.node_berserker) bonus += 80;
+  if (skillTree.node_iron_tempo) bonus += 40;
+  if (skillTree.node_prizefighter) bonus += 40;
+  if (skillTree.node_heavyweight) bonus += 100;
   return bonus;
 }
 
@@ -660,6 +832,8 @@ export function getSkillTreeDamageBonus(skillTree: SkillTreeState): number {
   if (skillTree.node_loot_magnet) bonus += 14;
   if (skillTree.node_berserker) bonus += 20;
   if (skillTree.node_immortal_champion) bonus += 10;
+  if (skillTree.node_bloodsport) bonus += 14;
+  if (skillTree.node_heavyweight) bonus += 16;
   return bonus;
 }
 
@@ -668,6 +842,7 @@ export function getSkillTreeRangeBonus(skillTree: SkillTreeState): number {
   let bonus = 0;
   if (skillTree.node_range_focus) bonus += 30;
   if (skillTree.node_ring_master) bonus += 35;
+  if (skillTree.node_jab_specialist) bonus += 18;
   return bonus;
 }
 
@@ -682,7 +857,16 @@ export function getSkillTreeAttackSpeedMultiplier(
   if (skillTree.node_loot_magnet) mul *= 1.12;
   if (skillTree.node_spark_overdrive) mul *= 1.1;
   if (skillTree.node_haste) mul *= 1.06;
+  if (skillTree.node_spark_surge) mul *= 1.07;
+  if (skillTree.node_spark_tempest) mul *= 1.09;
+  if (skillTree.node_spark_apex) mul *= 1.11;
   if (skillTree.node_adrenaline) mul *= 1.08;
+  if (skillTree.node_jab_specialist) mul *= 1.06;
+  if (skillTree.node_iron_tempo) mul *= 1.06;
+  if (skillTree.node_crowd_control) mul *= 1.08;
+  if (skillTree.node_precision_storm) mul *= 1.07;
+  if (skillTree.node_vampire_tempo) mul *= 1.07;
+  if (skillTree.node_apex_predator) mul *= 1.08;
   return mul;
 }
 
