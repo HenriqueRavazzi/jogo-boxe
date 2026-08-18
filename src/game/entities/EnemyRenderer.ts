@@ -709,8 +709,9 @@ export function drawThemedEnemy(
   const dimension = input.visualDimension;
   const theme = getDimensionTheme(dimension);
   const drawer = DRAWERS[theme][input.type] ?? DRAWERS[theme].normal;
+  const filter = getDimensionFilter(dimension);
   ctx.save();
-  ctx.filter = getDimensionFilter(dimension);
+  if (filter !== "none") ctx.filter = filter;
   drawer(ctx, input);
   ctx.restore();
 

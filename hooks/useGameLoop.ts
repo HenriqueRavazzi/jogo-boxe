@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
-import { Enemy } from "@/src/game/entities/Enemy";
+import { Enemy, type EnemyData } from "@/src/game/entities/Enemy";
 import {
   Player,
   facingToCanvasRotation,
@@ -61,6 +61,19 @@ const DROP_RADIUS = 6;
 const GLOVE_RADIUS = 8;
 const CONTACT_DAMAGE = 20;
 const FLOATING_TEXT_MAX_AGE = 60;
+/** Teto de números flutuantes — Aura/splash estourava milhares perto dos 3 min. */
+const MAX_FLOATING_TEXTS = 40;
+/** Distância (px) para overlays pesados de status. */
+const RICH_FX_RADIUS = 220;
+const MAX_RICH_FX_ENEMIES = 18;
+/** Passo máximo de física em segundos de jogo (não de relógio real). */
+const MAX_GAME_STEP_SEC = 1 / 30;
+/**
+ * Teto de passos por frame visível.
+ * 5× a 60 fps precisa ~2–3 passos; hitches não acumulam meio segundo.
+ */
+const MAX_GAME_STEPS_VISIBLE = 5;
+const MAX_GAME_STEPS_HIDDEN = 24;
 
 /** Interpolação linear: start → end. */
 const lerp = (start: number, end: number, t: number): number =>
@@ -96,6 +109,22 @@ function tickActiveAttacks(
     next.push(a);
   }
   return next;
+}
+
+function capFloatingTexts<T extends { isCrit?: boolean }>(
+  texts: T[],
+  max: number,
+): T[] {
+  if (texts.length <= max) return texts;
+  const crits: T[] = [];
+  const rest: T[] = [];
+  for (const t of texts) {
+    if (t.isCrit) crits.push(t);
+    else rest.push(t);
+  }
+  if (crits.length >= max) return crits.slice(crits.length - max);
+  const room = max - crits.length;
+  return [...crits, ...rest.slice(Math.max(0, rest.length - room))];
 }
 
 /** Posição da luva com lerp + easeOutCubic (extensão ou retração). */
@@ -175,28 +204,53 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     let spawnAccumulator = 0;
     /** Relógio da partida (ms) — avança com gameSpeed. */
     let gameClockMs = 0;
+    const enemyById = new Map<string, Enemy>();
+    let frameStats: ReturnType<
+      ReturnType<typeof useGameStore.getState>["getEffectiveStats"]
+    > | null = null;
+    let frameFirstStep = true;
 
-    const update = (realDt: number) => {
+    const hydrateEnemies = (data: EnemyData[]): Enemy[] => {
+      const seen = new Set<string>();
+      const list: Enemy[] = [];
+      for (const d of data) {
+        seen.add(d.id);
+        let enemy = enemyById.get(d.id);
+        if (!enemy) {
+          enemy = Enemy.fromData(d);
+          enemyById.set(d.id, enemy);
+        } else {
+          enemy.syncFromData(d);
+        }
+        list.push(enemy);
+      }
+      for (const id of enemyById.keys()) {
+        if (!seen.has(id)) enemyById.delete(id);
+      }
+      return list;
+    };
+
+    const update = (dt: number) => {
       const arena = useArenaStore.getState();
       const game = useGameStore.getState();
-      const gameSpeed = clampGameSpeed(game.gameSpeedMultiplier);
-      // Física, spawn, timeAlive e timers usam dt em segundos (escalado)
-      const dt = realDt * gameSpeed;
+      const stats = frameStats ?? game.getEffectiveStats();
       // Reinicia o relógio local quando a arena foi resetada (novo start)
       if (arena.timeAlive <= 0) {
         gameClockMs = 0;
+        if (arena.enemies.length === 0) enemyById.clear();
       }
-      gameClockMs += realDt * 1000 * gameSpeed;
+      gameClockMs += dt * 1000;
       const gameNow = gameClockMs;
       /** Segundos vivos — valor único usado no spawn e na store neste frame. */
       const nextTimeAlive = arena.timeAlive + dt;
 
-      // Centro estrito a cada frame (clientWidth/Height = CSS px do canvas)
       const cx = canvas.clientWidth / 2;
       const cy = canvas.clientHeight / 2;
-      useArenaStore.getState().centerPlayer(canvas.clientWidth, canvas.clientHeight);
-
-      const stats = game.getEffectiveStats();
+      if (frameFirstStep) {
+        useArenaStore
+          .getState()
+          .centerPlayer(canvas.clientWidth, canvas.clientHeight);
+      }
 
       const player = new Player(
         cx,
@@ -207,23 +261,9 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         arena.playerRotation,
       );
 
-      const enemies = arena.enemies.map((e) =>
-        Enemy.fromData({
-          ...e,
-          type: e.type ?? "normal",
-          radius: e.radius ?? 12,
-          vx: e.vx ?? 0,
-          vy: e.vy ?? 0,
-          attackDamage: e.attackDamage ?? 1.2,
-          attackCooldown: e.attackCooldown ?? 1000,
-          lastAttackTime: e.lastAttackTime ?? 0,
-          isAttacking: e.isAttacking ?? false,
-          projectileDamage: e.projectileDamage ?? 0,
-          color: e.color ?? "",
-          statusEffects: e.statusEffects ?? [],
-          rewards: e.rewards,
-        }),
-      );
+      const enemies = frameFirstStep
+        ? hydrateEnemies(arena.enemies)
+        : [...enemyById.values()];
       const playerAttackRange =
         stats.attackRange * arena.matchBuffs.attackRange;
       for (const enemy of enemies) {
@@ -299,20 +339,23 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         cameraZoom: 1,
       };
 
-      const floatingTexts = [
-        ...arena.floatingTexts.map((t) => ({
-          ...t,
-          age: t.age + gameSpeed,
-          y: t.y - 0.8 * gameSpeed,
-        })),
-        ...combat.hitSplats,
-      ]
-        .filter((t) => t.age < FLOATING_TEXT_MAX_AGE)
-        .filter((t) => {
-          if (visual.damageTextMode === "off") return false;
-          if (visual.damageTextMode === "crits") return Boolean(t.isCrit);
-          return true;
-        });
+      const floatingTexts = capFloatingTexts(
+        [
+          ...arena.floatingTexts.map((t) => ({
+            ...t,
+            age: t.age + dt * 60,
+            y: t.y - 0.8 * dt * 60,
+          })),
+          ...combat.hitSplats,
+        ]
+          .filter((t) => t.age < FLOATING_TEXT_MAX_AGE)
+          .filter((t) => {
+            if (visual.damageTextMode === "off") return false;
+            if (visual.damageTextMode === "crits") return Boolean(t.isCrit);
+            return true;
+          }),
+        MAX_FLOATING_TEXTS,
+      );
 
       const ricochetPathEffects = [
         ...arena.ricochetPathEffects.filter((e) => e.expiresAt > gameNow),
@@ -322,7 +365,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const skillVfxEffects = [
         ...(arena.skillVfxEffects ?? []).filter((e) => e.expiresAt > gameNow),
         ...combat.skillVfx,
-      ];
+      ].slice(-28);
 
       let shakeFrames = arena.shakeFrames;
       if (visual.screenShake) {
@@ -334,7 +377,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         ) {
           shakeFrames = 16;
         } else if (shakeFrames > 0) {
-          shakeFrames = Math.max(0, shakeFrames - gameSpeed);
+          shakeFrames = Math.max(0, shakeFrames - dt * 60);
         }
       } else {
         shakeFrames = 0;
@@ -559,6 +602,16 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         spawn.spawned.length > 0
           ? [...livingEnemies, ...spawn.spawned]
           : livingEnemies;
+
+      const livingIds = new Set(nextEnemies.map((e) => e.id));
+      for (const id of enemyById.keys()) {
+        if (!livingIds.has(id)) enemyById.delete(id);
+      }
+      for (const spawned of spawn.spawned) {
+        if (!enemyById.has(spawned.id)) {
+          enemyById.set(spawned.id, Enemy.fromData(spawned));
+        }
+      }
 
       useArenaStore.setState({
         playerX: cx,
@@ -892,22 +945,18 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
         drawShadowClone(ctx, clone, now);
       }
 
+      let richFxLeft = MAX_RICH_FX_ENEMIES;
       for (const enemy of enemies) {
-        const enemyEntity = Enemy.fromData({
-          ...enemy,
-          type: enemy.type ?? "normal",
-          radius: enemy.radius ?? 12,
-          statusEffects: enemy.statusEffects ?? [],
-          vx: enemy.vx ?? 0,
-          vy: enemy.vy ?? 0,
-          attackDamage: enemy.attackDamage ?? 1.2,
-          attackCooldown: enemy.attackCooldown ?? 1000,
-          lastAttackTime: enemy.lastAttackTime ?? 0,
-          isAttacking: enemy.isAttacking ?? false,
-          projectileDamage: enemy.projectileDamage ?? 0,
-          color: enemy.color ?? "",
-        });
-        enemyEntity.draw(ctx, now);
+        const cached = enemyById.get(enemy.id);
+        const entity = cached ?? Enemy.fromData(enemy);
+        const dist = Math.hypot(entity.x - playerX, entity.y - playerY);
+        const wantRich =
+          highParticles &&
+          (entity.type === "boss" || dist <= RICH_FX_RADIUS);
+        const richFx =
+          wantRich && (entity.type === "boss" || richFxLeft > 0);
+        if (richFx && entity.type !== "boss") richFxLeft -= 1;
+        entity.draw(ctx, now, visualDimension, richFx);
       }
 
       // Projéteis elétricos
@@ -1027,22 +1076,29 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>) {
     let backgroundIntervalId = 0;
 
     /**
-     * Substeps de física com base em tempo real (performance.now).
-     * Em abas ocultas o rAF é throttled/pausado — o setInterval cobre o gap
-     * e deltas grandes são fatiados para não explodir colisões/spawn.
+     * Substeps em segundos de JOGO.
+     * 5× não pode virar um dt de 80–250ms senão os inimigos teleportam.
      */
-    const MAX_SUBSTEP_SEC = 1 / 20;
-    const MAX_CATCHUP_SEC = 1;
-    /** Intervalo de fallback quando a aba está em segundo plano. */
     const BACKGROUND_TICK_MS = 100;
 
     const processElapsed = (elapsedSec: number) => {
-      let remaining = Math.min(Math.max(0, elapsedSec), MAX_CATCHUP_SEC);
-      while (remaining > 0) {
-        const step = Math.min(remaining, MAX_SUBSTEP_SEC);
+      const game = useGameStore.getState();
+      const speed = clampGameSpeed(game.gameSpeedMultiplier);
+      frameStats = game.getEffectiveStats();
+      const maxSteps = document.hidden
+        ? MAX_GAME_STEPS_HIDDEN
+        : MAX_GAME_STEPS_VISIBLE;
+      let remaining = Math.max(0, elapsedSec) * speed;
+      let steps = 0;
+      frameFirstStep = true;
+      while (remaining > 1e-6 && steps < maxSteps) {
+        const step = Math.min(remaining, MAX_GAME_STEP_SEC);
         update(step);
         remaining -= step;
+        steps += 1;
+        frameFirstStep = false;
       }
+      frameStats = null;
     };
 
     const runFrame = (now: number) => {

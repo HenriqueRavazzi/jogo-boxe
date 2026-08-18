@@ -117,6 +117,15 @@ export type HitSplat = {
   isCrit?: boolean;
 };
 
+let fxSeq = 0;
+function nextFxId(): string {
+  fxSeq += 1;
+  return `fx${fxSeq}`;
+}
+
+/** Splash de Aura+Ricochete: dano em até N outros na aura (sem texto por alvo). */
+const MAX_AURA_SPLASH_TARGETS = 8;
+
 /** Segmento visual da cadeia de ricochete (player → alvos). */
 export type RicochetPathPoint = { x: number; y: number };
 
@@ -572,7 +581,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
   // Maestria Pedra: fissura permanente no chão
   if (mastery.stone && activeSkills.pulseState.stonePulseAt === now) {
     masteryGroundZones.push({
-      id: crypto.randomUUID(),
+      id: nextFxId(),
       kind: "fissure",
       x: player.x,
       y: player.y,
@@ -749,7 +758,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       skillDamageFromLightning += dmg * enemy.getDamageTakenMultiplier(now);
       skillHitsFromLightning += 1;
       pendingLightningSplats.push({
-        id: crypto.randomUUID(),
+        id: nextFxId(),
         x: enemy.x,
         y: enemy.y - 6,
         text: formatSciNumber(
@@ -763,7 +772,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
 
     if (mastery.lightning) {
       masteryGroundZones.push({
-        id: crypto.randomUUID(),
+        id: nextFxId(),
         kind: "tesla",
         x: blastX,
         y: blastY,
@@ -1064,7 +1073,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       expiresAt: now + PARRY_VFX_MS,
     });
     pendingParrySplats.push({
-      id: crypto.randomUUID(),
+      id: nextFxId(),
       x: player.x,
       y: player.y - 30,
       text: "PARRY!",
@@ -1089,7 +1098,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         Math.round(counterDamage * enemy.getDamageTakenMultiplier(now)),
       );
       pendingParrySplats.push({
-        id: crypto.randomUUID(),
+        id: nextFxId(),
         x: enemy.x,
         y: enemy.y,
         text: formatSciNumber(displayDamage),
@@ -1130,7 +1139,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
       auraStoneOutgoingMul(enemy);
 
     projectiles.push({
-      id: crypto.randomUUID(),
+      id: nextFxId(),
       x: enemy.x,
       y: enemy.y,
       vx: (dx / len) * RANGED_PROJECTILE_SPEED,
@@ -1162,7 +1171,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
     const healed = player.hp - hpBefore;
     if (healed > 0) {
       hitSplats.push({
-        id: crypto.randomUUID(),
+        id: nextFxId(),
         x: player.x,
         y: player.y - player.radius - 8,
         text: `+${formatSciNumber(Math.max(1, Math.round(healed)))}`,
@@ -1270,7 +1279,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         );
 
         newAttacks.push({
-          id: crypto.randomUUID(),
+          id: nextFxId(),
           targetX: enemy.x,
           targetY: enemy.y,
           startX: rest.x,
@@ -1289,7 +1298,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
         const displayDamage = Math.round(damage);
 
         hitSplats.push({
-          id: crypto.randomUUID(),
+          id: nextFxId(),
           x: enemy.x,
           y: enemy.y,
           text: isCrit ? `${formatSciNumber(displayDamage)}!` : formatSciNumber(displayDamage),
@@ -1313,20 +1322,14 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             aura.elementPowers.ricochet *
             (matchSkillBonuses?.aura.ricochetSplashMul ?? 1) *
             ricochetMapMul;
+          let splashHits = 0;
           for (const other of living) {
+            if (splashHits >= MAX_AURA_SPLASH_TARGETS) break;
             if (other.isDead || other.id === enemy.id) continue;
             const dist = Math.hypot(other.x - player.x, other.y - player.y);
             if (dist > aura.auraRadius + other.radius) continue;
             addDamage(other.id, splash, "skill");
-            hitSplats.push({
-              id: crypto.randomUUID(),
-              x: other.x,
-              y: other.y,
-              text: formatSciNumber(Math.max(1, Math.round(splash))),
-              age: 0,
-              color: "#c4b5fd",
-              scale: 0.85,
-            });
+            splashHits += 1;
           }
         }
 
@@ -1370,7 +1373,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             );
 
             newAttacks.push({
-              id: crypto.randomUUID(),
+              id: nextFxId(),
               startX: prevX,
               startY: prevY,
               targetX: target.x,
@@ -1388,7 +1391,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             });
 
             hitSplats.push({
-              id: crypto.randomUUID(),
+              id: nextFxId(),
               x: target.x,
               y: target.y,
               text: formatSciNumber(displayBounce),
@@ -1432,7 +1435,7 @@ export function runCombatSystem(input: CombatSystemInput): CombatSystemResult {
             expiresAt: now + FIRE_HIT_VFX_MS,
           });
           hitSplats.push({
-            id: crypto.randomUUID(),
+            id: nextFxId(),
             x: enemy.x + 10,
             y: enemy.y - 10,
             text: `BURN×${stacks}`,

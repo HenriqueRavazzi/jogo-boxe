@@ -37,7 +37,7 @@ export function TopBar() {
   const runMode = useArenaStore((s) => s.runMode);
   const runStage = useArenaStore((s) => s.runStage);
   const runStageNumber = useArenaStore((s) => s.runStageNumber);
-  const timeAlive = useArenaStore((s) => s.timeAlive);
+  const timeAlive = useArenaStore((s) => Math.floor(s.timeAlive));
   const prestigeLevel = useGameStore((s) => s.prestigeLevel);
   const stageBossDefeated = useArenaStore((s) => s.stageBossDefeated);
   const stageEnemiesDefeated = useArenaStore((s) => s.stageEnemiesDefeated);

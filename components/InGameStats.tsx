@@ -12,9 +12,9 @@ import { useGameStore } from "@/store/useGameStore";
 
 /** Painel lateral de stats em tempo real durante a partida. */
 export function InGameStats() {
-  const currentHp = useArenaStore((s) => s.currentHp);
+  const currentHp = useArenaStore((s) => Math.ceil(s.currentHp));
   const matchLevel = useArenaStore((s) => s.matchLevel);
-  const timeAlive = useArenaStore((s) => s.timeAlive);
+  const timeAlive = useArenaStore((s) => Math.floor(s.timeAlive));
   const matchBuffs = useArenaStore((s) => s.matchBuffs);
   const runMode = useArenaStore((s) => s.runMode);
   const runStage = useArenaStore((s) => s.runStage);

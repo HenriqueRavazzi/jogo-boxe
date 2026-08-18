@@ -1,14 +1,24 @@
 "use client";
 
+import { useMemo } from "react";
 import { formatSciNumber } from "@/lib/formatNumber";
 import { useArenaStore } from "@/store/useArenaStore";
 
 /** Barras de vida no topo — uma por boss vivo. */
 export function BossHealthBar() {
-  // Selecionar `enemies` (ref estável); filtrar no render.
-  // `.filter()` no seletor cria array novo a cada getSnapshot → React #185.
-  const enemies = useArenaStore((s) => s.enemies);
-  const bosses = enemies.filter((e) => e.type === "boss" && e.hp > 0);
+  // String estável: o seletor não devolve array novo a cada frame.
+  const bossKey = useArenaStore((s) =>
+    s.enemies
+      .filter((e) => e.type === "boss" && e.hp > 0)
+      .map((e) => `${e.id}:${Math.ceil(e.hp)}:${e.maxHp}`)
+      .join("|"),
+  );
+  const bosses = useMemo(() => {
+    if (!bossKey) return [];
+    return useArenaStore
+      .getState()
+      .enemies.filter((e) => e.type === "boss" && e.hp > 0);
+  }, [bossKey]);
 
   if (bosses.length === 0) return null;
 

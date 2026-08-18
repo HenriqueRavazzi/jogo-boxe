@@ -821,8 +821,8 @@ function SkillDetailPanel({
   const matchBuffs = useArenaStore((s) => s.matchBuffs);
   const matchSkillBonuses = useArenaStore((s) => s.matchSkillBonuses);
   const activeVisualDimension = useArenaStore((s) => s.activeVisualDimension);
-  const pulse = useArenaStore((s) => s.activeSkillPulse);
-  const gameClockMs = useArenaStore((s) => s.gameClockMs);
+  const pulse = useArenaStore.getState().activeSkillPulse;
+  const gameClockMs = useArenaStore.getState().gameClockMs;
   const skills = useGameStore((s) => s.skills);
 
   const ui = SKILL_UI[skillKey];
@@ -976,8 +976,8 @@ export function HUD() {
   const matchSkillMastery = useArenaStore((s) => s.matchSkillMastery);
   const matchSkillBonuses = useArenaStore((s) => s.matchSkillBonuses);
   const activeVisualDimension = useArenaStore((s) => s.activeVisualDimension);
-  const pulse = useArenaStore((s) => s.activeSkillPulse);
-  const gameClockMs = useArenaStore((s) => s.gameClockMs);
+  const pulse = useArenaStore.getState().activeSkillPulse;
+  const gameClockMs = useArenaStore.getState().gameClockMs;
   const skills = useGameStore((s) => s.skills);
   const skillTree = useGameStore((s) => s.skillTree);
   const [, setTick] = useState(0);

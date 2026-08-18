@@ -1,10 +1,8 @@
 /** Entidade inimigo — atributos, chase, melee, ranged, status e desenho. */
 
 import type { EnemyRewards } from "@/lib/gameConfig";
-import { resolveVisualDimension } from "@/src/game/multiverseLoop";
 import { drawThemedEnemy } from "@/src/game/entities/EnemyRenderer";
-import { useArenaStore } from "@/store/useArenaStore";
-import { useGameStore } from "@/store/useGameStore";
+import type { DimensionId } from "@/src/game/prestigeVisual";
 
 const EDGE_MARGIN = 24;
 const DEFAULT_HP = 30;
@@ -319,6 +317,37 @@ export class Enemy {
       data.rewards ? { ...data.rewards } : { ...DEFAULT_ENEMY_REWARDS },
     );
     return enemy;
+  }
+
+  /** Atualiza o snapshot sem realocar a instância (evita GC no game loop). */
+  syncFromData(data: EnemyData): void {
+    const type = data.type ?? this.type;
+    this.x = data.x;
+    this.y = data.y;
+    this.hp = data.hp;
+    this.maxHp = data.maxHp;
+    this.speed = data.speed;
+    this.vx = data.vx ?? 0;
+    this.vy = data.vy ?? 0;
+    this.attackDamage =
+      data.attackDamage ??
+      (data as { contactDamage?: number }).contactDamage ??
+      this.attackDamage;
+    this.attackCooldown =
+      data.attackCooldown ??
+      (type === "ranged"
+        ? RANGED_ATTACK_COOLDOWN_MS
+        : DEFAULT_ATTACK_COOLDOWN_MS);
+    this.lastAttackTime = data.lastAttackTime ?? 0;
+    this.isAttacking = data.isAttacking ?? false;
+    this.type = type;
+    this.radius = data.radius ?? ENEMY_RADIUS[type];
+    this.statusEffects = data.statusEffects ?? this.statusEffects;
+    this.projectileDamage =
+      data.projectileDamage ??
+      (type === "ranged" ? this.attackDamage * 1.5 : 0);
+    this.color = data.color ?? this.color;
+    if (data.rewards) this.rewards = data.rewards;
   }
 
   pruneStatusEffects(now: number): void {
@@ -787,21 +816,23 @@ export class Enemy {
       type: this.type,
       radius: this.radius,
       color: this.color || undefined,
-      statusEffects: this.statusEffects.map((s) => ({
-        ...s,
-        burnStackExpires: s.burnStackExpires
-          ? [...s.burnStackExpires]
-          : undefined,
-      })),
-      rewards: { ...this.rewards },
+      statusEffects: this.statusEffects,
+      rewards: this.rewards,
     };
   }
 
   /**
    * Desenha o inimigo temático (prestígio) + overlays de status.
    * Hitbox de colisão permanece o círculo `this.radius` — só o visual muda.
+   * `visualDimension` deve vir do game loop (não consultar stores aqui).
+   * Overlays pesados (gelo/raio/fogo) só com `richFx`.
    */
-  draw(ctx: CanvasRenderingContext2D, now: number): void {
+  draw(
+    ctx: CanvasRenderingContext2D,
+    now: number,
+    visualDimension: DimensionId = 0,
+    richFx = true,
+  ): void {
     this.pruneStatusEffects(now);
     const hpPercent = Math.max(0, Math.min(1, this.hp / this.maxHp));
     const frozen = this.hasStatus("freeze", now);
@@ -809,14 +840,6 @@ export class Enemy {
     const burning = this.hasStatus("burn", now);
     const quaked = this.hasStatus("quake", now);
     const vulnerable = this.isVulnerable(now);
-    const prestige = useGameStore.getState().prestigeLevel ?? 0;
-    const arena = useArenaStore.getState();
-    const visualDimension = resolveVisualDimension({
-      runMode: arena.runMode,
-      timeAliveMs: arena.timeAlive * 1000,
-      runStageNumber: arena.runStageNumber,
-      prestigeLevel: prestige,
-    });
 
     drawThemedEnemy(ctx, {
       x: this.x,
@@ -831,6 +854,8 @@ export class Enemy {
       burning,
       catalogColor: this.color || undefined,
     });
+
+    if (!richFx) return;
 
     if (frozen) {
       ctx.save();
@@ -892,15 +917,11 @@ export class Enemy {
       ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(59, 130, 246, 0.65)";
       ctx.lineWidth = 2.5;
-      ctx.shadowColor = "#3b82f6";
-      ctx.shadowBlur = 14;
       ctx.stroke();
 
       ctx.strokeStyle = "rgba(125, 211, 252, 0.95)";
       ctx.lineWidth = 1.6;
-      ctx.shadowColor = "#38bdf8";
-      ctx.shadowBlur = 8;
-      const sparks = 7;
+      const sparks = 4;
       for (let i = 0; i < sparks; i++) {
         const angle = (Math.PI * 2 * i) / sparks + now * 0.018;
         const inner = this.radius * 0.4;
@@ -937,8 +958,6 @@ export class Enemy {
       ctx.arc(this.x, this.y, this.radius + 4, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(168, 162, 158, 0.85)";
       ctx.lineWidth = 2.5;
-      ctx.shadowColor = "#a8a29e";
-      ctx.shadowBlur = 10;
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(this.x, this.y, this.radius * 0.55, 0, Math.PI * 2);
@@ -1006,13 +1025,10 @@ export class Enemy {
       ctx.lineWidth = 1.6 + stacks * 0.25;
       ctx.stroke();
       if (stacks >= 3) {
-        ctx.shadowColor = "#ef4444";
-        ctx.shadowBlur = 8 + stacks * 2;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius * 0.5, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(251, 146, 60, ${0.14 + stacks * 0.03})`;
         ctx.fill();
-        ctx.shadowBlur = 0;
       }
       ctx.restore();
     }
