@@ -6,6 +6,9 @@ import {
   gameSaves,
   type SaveData,
 } from "@/db/schema";
+import {
+  getSaveSessionFromCookieHeader,
+} from "@/lib/saveSession";
 import { isSaveId, normalizeSaveData } from "@/lib/saveSlots";
 
 type Params = { params: Promise<{ saveId: string }> };
@@ -21,11 +24,21 @@ function columnsFromSave(saveData: SaveData) {
   };
 }
 
-/** Atualiza o progresso do save autenticado (por UUID). */
+/** Atualiza o progresso do save — exige cookie de sessão do mesmo UUID. */
 export async function PUT(request: Request, { params }: Params) {
   const { saveId } = await params;
   if (!isSaveId(saveId)) {
     return NextResponse.json({ error: "Save inválido" }, { status: 400 });
+  }
+
+  const session = getSaveSessionFromCookieHeader(
+    request.headers.get("cookie"),
+  );
+  if (!session || session.saveId !== saveId) {
+    return NextResponse.json(
+      { error: "Sessão expirada — entre no save novamente" },
+      { status: 401 },
+    );
   }
 
   try {

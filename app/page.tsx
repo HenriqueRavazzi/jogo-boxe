@@ -47,7 +47,7 @@ export default function Home() {
   // Persiste save ao entrar no resumo (recompensas já no store)
   useEffect(() => {
     if (!showRunSummary || !activeSaveId) return;
-    void syncWithDB();
+    void syncWithDB({ flush: true });
   }, [showRunSummary, activeSaveId]);
 
   // Carrega game_settings + difficulties do Neon
@@ -70,7 +70,7 @@ export default function Home() {
   // Sync com Neon ao voltar ao menu
   useEffect(() => {
     if (gameState === "menu" && activeSaveId) {
-      void syncWithDB();
+      void syncWithDB({ flush: true });
     }
   }, [gameState, activeSaveId]);
 
@@ -90,7 +90,7 @@ export default function Home() {
     if (busy) return;
     setBusy(true);
     try {
-      await syncWithDB();
+      await syncWithDB({ flush: true });
       exitMatch();
     } finally {
       setBusy(false);
@@ -107,7 +107,7 @@ export default function Home() {
       if (arena.runMode === "stage" && arena.runStageNumber > 0) {
         useGameStore.getState().setSelectedStage(arena.runStageNumber);
       }
-      await syncWithDB();
+      await syncWithDB({ flush: true });
       startGame();
     } finally {
       setBusy(false);
@@ -122,7 +122,7 @@ export default function Home() {
     setBusy(true);
     try {
       useGameStore.getState().setSelectedStage(next);
-      await syncWithDB();
+      await syncWithDB({ flush: true });
       startGame();
     } finally {
       setBusy(false);
@@ -188,10 +188,10 @@ export default function Home() {
           canPlay={canPlay}
           isGameOver={false}
           onStart={() => {
-            void syncWithDB().finally(() => startGame());
+            void syncWithDB({ flush: true }).finally(() => startGame());
           }}
           onOpenTalents={() => {
-            void syncWithDB().finally(() => setShowTalents(true));
+            void syncWithDB({ flush: true }).finally(() => setShowTalents(true));
           }}
           onSaveReady={() => setSaveReady(true)}
         />
@@ -213,7 +213,7 @@ export default function Home() {
         <SkillTree
           onClose={() => {
             setShowTalents(false);
-            void syncWithDB();
+            void syncWithDB({ flush: true });
           }}
         />
       )}

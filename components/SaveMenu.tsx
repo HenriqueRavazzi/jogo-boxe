@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { RefreshCw } from "lucide-react";
 import {
   createSave,
   deleteSave,
   loadSaveById,
+  logoutSaveSession,
+  restoreSaveFromSession,
   unlockSaveByName,
 } from "@/actions/saveGame";
+import { syncWithDB } from "@/lib/syncWithDB";
 import { useGameStore } from "@/store/useGameStore";
 
 type SaveMenuProps = {
@@ -28,8 +31,33 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [reloading, setReloading] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+
+  // Cookie de sessão válido → entra sem pedir senha de novo.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (useGameStore.getState().activeSaveId) {
+          onSaveReady();
+          return;
+        }
+        const result = await restoreSaveFromSession();
+        if (cancelled) return;
+        if (result.ok && result.id && result.saveData) {
+          hydrateFromSave(result.id, result.saveData, result.saveName);
+          onSaveReady();
+        }
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateFromSave, onSaveReady]);
 
   const resetForm = () => {
     setPassword("");
@@ -77,8 +105,17 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
   };
 
   const handleLogout = () => {
-    clearActiveSave();
-    resetForm();
+    void (async () => {
+      setBusy(true);
+      try {
+        await syncWithDB({ flush: true });
+        await logoutSaveSession();
+        clearActiveSave();
+        resetForm();
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
 
   const handleReload = async () => {
@@ -122,6 +159,19 @@ export function SaveMenu({ onSaveReady }: SaveMenuProps) {
       setBusy(false);
     }
   };
+
+  if (restoring) {
+    return (
+      <div className="flex w-full flex-col gap-3">
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
+          Save
+        </p>
+        <p className="rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-3 text-center text-xs text-zinc-400">
+          Restaurando sessão…
+        </p>
+      </div>
+    );
+  }
 
   if (activeSaveId && activeSaveName) {
     return (

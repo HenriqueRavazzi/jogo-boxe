@@ -359,8 +359,8 @@ export const gameSaves = pgTable("game_saves", {
   id: uuid("id").defaultRandom().primaryKey(),
   /** Nome único do save (visível na lista). */
   saveName: varchar("save_name", { length: 64 }).notNull().unique(),
-  /** Senha simples de autenticação do save. */
-  password: varchar("password", { length: 128 }).notNull(),
+  /** Hash scrypt (`scrypt$v1$…`) ou plaintext legado até o próximo login. */
+  password: varchar("password", { length: 255 }).notNull(),
   saveData: jsonb("save_data").$type<SaveData>().notNull(),
   /** Purple Diamonds (também espelhado em save_data). */
   purpleDiamonds: integer("purple_diamonds").notNull().default(0),
